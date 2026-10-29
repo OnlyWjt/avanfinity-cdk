@@ -20,11 +20,14 @@
   "dependencies": {
     "@hono/node-server": "^1.19.17",
     "hono": "^4.13.14",
-    "nodemailer": "^6.10.1"
+    "mysql2": "^3.24.6",
+    "nodemailer": "^6.10.1",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@types/nodemailer": "^6.4.24",
+    "@types/pg": "^8.23.1",
     "jsqr": "^1.4.0",
     "puppeteer-core": "^23.11.1",
     "typescript": "^5.9.3"

@@ -1,6 +1,7 @@
 /**
- * 数据库在线备份：用 SQLite 的 VACUUM INTO 生成一致的快照，服务运行中也可以执行
+ * 数据库在线备份（SQLite）：用 VACUUM INTO 生成一致的快照，服务运行中也可以执行
  * （WAL 模式下直接复制 data/ 目录可能拿到损坏的库）
+ * PostgreSQL / MySQL 请用数据库自带的工具备份（pg_dump / mysqldump），见 docs/deploy.md
  *
  *   npm run backup                       备份到 backups/，保留最近 14 份
  *   BACKUP_DIR=/mnt/bak BACKUP_KEEP=30 npm run backup
@@ -11,9 +12,20 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { config, ROOT } from '../server/config.ts';
+import { ROOT } from '../server/config.ts';
+import { databaseUrl } from '../server/db.ts';
 
-const src = process.env.DB_FILE || resolve(config.dataDir, 'cdk.db');
+const url = databaseUrl();
+if (!/^(sqlite|file):/i.test(url)) {
+  const pg = /^postgres/i.test(url);
+  console.error(`[backup] 当前用的是 ${pg ? 'PostgreSQL' : 'MySQL'}，请用 ${pg ? 'pg_dump' : 'mysqldump'} 备份，例如：
+  ${pg
+    ? 'docker compose exec -T postgres pg_dump -U cdk -Fc cdk > cdk-$(date +%F).dump'
+    : 'docker compose exec -T mysql mysqldump -u cdk -p --single-transaction cdk > cdk-$(date +%F).sql'}
+详见 docs/deploy.md`);
+  process.exit(2);
+}
+const src = url.replace(/^(sqlite|file):(\/\/)?/i, '');
 const dir = resolve(ROOT, process.env.BACKUP_DIR || 'backups');
 const keep = Math.max(1, Number(process.env.BACKUP_KEEP) || 14);
 mkdirSync(dir, { recursive: true });

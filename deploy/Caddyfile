@@ -1,0 +1,7 @@
+# docker compose --profile caddy 使用：自动申请和续期 HTTPS 证书
+# 需要：DOMAIN 解析到这台服务器，80 / 443 端口没被占用
+# 应用那边配合设置 TRUST_PROXY=1、COOKIE_SECURE=1、PUBLIC_URL=https://你的域名
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8080
+}

@@ -8,14 +8,29 @@
 
 ## 运行要求
 
-- Node.js **24+**（直接运行 TypeScript、使用内置 SQLite，无需编译）
+- Docker（推荐），或者 Node.js **24+**（直接运行 TypeScript，无需编译）
+- 数据库三选一：**SQLite**（默认，不需要额外服务）、**PostgreSQL** 13+、**MySQL** 8.0+
 - 一台有固定出口 IP 的服务器（卡台写接口要求 IP 白名单）
 
 ## 部署
 
+完整说明（Docker Compose、直接运行、反向代理、备份恢复、换数据库、上线检查清单）见 **[docs/deploy.md](docs/deploy.md)**。
+
+**Docker Compose（推荐）**
+
+```bash
+cp .env.example .env              # 至少填 MASTER_KEY、PUBLIC_URL
+docker compose up -d              # SQLite
+docker compose --profile postgres up -d                    # 带 PostgreSQL
+docker compose --profile mysql up -d                       # 带 MySQL
+docker compose --profile postgres --profile caddy up -d    # 再加自动 HTTPS
+```
+
+**直接运行**
+
 ```bash
 npm install --omit=dev
-cp .env.example .env        # 填写 PUBLIC_URL、MASTER_KEY 等
+cp .env.example .env              # 填写 PUBLIC_URL、MASTER_KEY；用 PG / MySQL 再填 DATABASE_URL
 npm start
 ```
 
@@ -28,13 +43,13 @@ npm start
 5. **兑换策略**：默认策略是自有码；按需新建，比如「淘宝渠道 · 严格」
 6. **生成 CDK**，把码发给买家
 
-建议放在 Nginx / Caddy 后面并开启 HTTPS，`.env` 里设置 `TRUST_PROXY=1`（套了 Cloudflare 则设为 `cf`）、`COOKIE_SECURE=1`，`PUBLIC_URL` 填外网 https 地址（支付回调要用）。
-
 运维要点：
-- **MASTER_KEY 必须在 `.env` 里设置**：`PUBLIC_URL` 是 https 或 `NODE_ENV=production` 时，没设置会拒绝启动。早期版本自动生成在 `data/.master_key` 的，把内容填进 `.env` 后把这个文件移出数据目录
-- **只能跑一个进程**：限流、兑换锁、用户 Session、自动重试都在内存里，不要用 pm2 cluster 或开多个实例。用 pm2（fork 模式）/ systemd 守护即可
+- **MASTER_KEY 必须在 `.env` 里设置**：`PUBLIC_URL` 是 https 或 `NODE_ENV=production` 时，没设置会拒绝启动。它要和数据库备份**分开**保存
+- **只能跑一个实例**：限流、兑换锁、事务互斥、用户 Session 都在进程内存里，不要开多个容器副本、不要用 pm2 cluster
+- **HTTPS**：放在 Nginx / Caddy 后面（或用 compose 的 caddy profile），`.env` 里设置 `TRUST_PROXY=1`（套了 Cloudflare 则设为 `cf`）、`COOKIE_SECURE=1`，`PUBLIC_URL` 填外网 https 地址（支付回调要用）
 - **健康检查**：`GET /healthz`，正常返回 `{"ok":true}`
-- **备份**：`npm run backup` 在线生成一致的数据库快照到 `backups/`（保留最近 14 份，可用 `BACKUP_DIR`、`BACKUP_KEEP` 调整），建议加到 crontab 每天跑。不要直接复制运行中的 `data/` 目录（WAL 模式下可能拿到损坏的库）。`MASTER_KEY` 单独保管，不要和备份放在一起
+- **备份**：SQLite 用 `npm run backup`（在线快照，不要直接复制运行中的数据库文件）；PostgreSQL / MySQL 用 `pg_dump` / `mysqldump`。命令见 docs/deploy.md
+- **命令行建管理员 / 重置密码**：`npm run admin:create -- 邮箱 密码`（Docker：`docker compose exec app npm run admin:create -- 邮箱 密码`）
 
 ## 通知
 
@@ -128,6 +143,8 @@ node --no-warnings scripts/seed-shop.ts  # 本地体验：开商城、接模拟�
 npm test                        # 先类型检查，再在随机空闲端口 + 独立数据目录上跑接口、扩展、商城、直充、浏览器五套测试（约 5 分钟）
                                 # 通过后自动删除数据目录，失败时保留并打印路径；KEEP_TEST_DATA=1 总是保留（截图在里面的 shots/）
 SKIP_UI=1 npm test              # 没有 Chrome 时跳过浏览器测试
+TEST_DATABASE_URL=postgres://user:pass@localhost:5432/cdk_test npm test   # 在 PostgreSQL 上跑（会清空这个库，库名必须含 test）
+TEST_DATABASE_URL=mysql://user:pass@localhost:3306/cdk_test npm test      # 在 MySQL 上跑
 npm run typecheck
 ```
 
@@ -142,6 +159,8 @@ npm run typecheck
 ```
 server/
   main.ts               入口、路由挂载、后台任务
+  db.ts                 数据库接口（SQLite / PostgreSQL / MySQL），写 SQL 的规则见 docs/database.md
+  db/                   三种数据库的驱动、表结构与迁移
   avan/client.ts        卡台 API 客户端
   avan/normalize.ts     GPT 公开兑换接口字段兼容
   services/redeem.ts    兑换引擎（状态机、重试、审核）
@@ -160,4 +179,6 @@ server/
   mock/pay-mock.ts      模拟支付网关
 web/                    前端页面（兑换页、后台、shop/ 商城、account/ 买家中心、agent/ 代理中心）
 cdk-design/             设计稿与原型
+docs/                   部署（deploy.md）、数据库开发（database.md）、直充设计等文档
+Dockerfile              生产镜像；docker-compose.yml 一键部署（可选 PostgreSQL / MySQL / Caddy）
 ```

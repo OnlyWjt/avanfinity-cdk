@@ -1,0 +1,21 @@
+# 不进镜像：依赖在镜像里重新安装；数据、密钥、设计稿、测试产物都不要打进去
+node_modules
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+data
+data-*
+backups
+*.log
+cdk-design
+myagents_files
+docs
+Dockerfile
+docker-compose*.yml
+deploy
+
+# 模拟卡台只用于本地开发和测试
+server/mock

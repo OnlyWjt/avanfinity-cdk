@@ -32,28 +32,28 @@ function profitOf(rows: { product: string; plan: string; cost_usd: string | null
   return { sales, cost, profit: sales - cost, margin: sales ? (sales - cost) / sales : null, priced, count: rows.length };
 }
 
-export function overview() {
+export async function overview() {
   const today = startOfDay();
-  const done = q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at >= ?", [today]);
-  const daily = Array.from({ length: 10 }, (_, i) => {
+  const done = await q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at >= ?", [today]);
+  const daily = Array.from({ length: 10 }, async (_, i) => {
     const from = startOfDay(9 - i), to = i === 9 ? new Date(Date.now() + 1000).toISOString() : startOfDay(8 - i);
-    return profitOf(q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at >= ? AND completed_at < ?", [from, to])).profit;
+    return profitOf(await q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at >= ? AND completed_at < ?", [from, to])).profit;
   });
   const month = startOfDay(29);
-  const issued = q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ?', [month])!.n;
-  const issuedPrev = q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ? AND created_at < ?', [startOfDay(59), month])!.n;
-  const issuedDaily = Array.from({ length: 7 }, (_, i) => q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ? AND created_at < ?', [startOfDay(6 - i), i === 6 ? new Date(Date.now() + 1000).toISOString() : startOfDay(5 - i)])!.n);
-  const r30 = q.get<any>(`SELECT SUM(status='completed') ok, SUM(status IN ${FAILED}) bad, SUM(status IN ('processing','funding','funded','retrying','paid_pending_delivery')) run FROM redemptions WHERE created_at >= ?`, [month])!;
-  const blocked = q.all<{ stage: string; n: number }>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at >= ? GROUP BY stage", [today]);
-  const unused = Object.fromEntries(q.all<any>("SELECT product, COUNT(*) n FROM codes WHERE status = 'unused' GROUP BY product").map(r => [r.product, r.n]));
-  const todayBy = Object.fromEntries(q.all<any>("SELECT product, COUNT(*) n FROM redemptions WHERE status = 'completed' AND completed_at >= ? GROUP BY product", [today]).map(r => [r.product, r.n]));
+  const issued = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ?', [month]))!.n;
+  const issuedPrev = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ? AND created_at < ?', [startOfDay(59), month]))!.n;
+  const issuedDaily = Array.from({ length: 7 }, async (_, i) => (await q.get<{ n: number }>('SELECT COUNT(*) n FROM codes WHERE created_at >= ? AND created_at < ?', [startOfDay(6 - i), i === 6 ? new Date(Date.now() + 1000).toISOString() : startOfDay(5 - i)]))!.n);
+  const r30 = (await q.get<any>(`SELECT SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status IN ${FAILED} THEN 1 ELSE 0 END) bad, SUM(CASE WHEN status IN ('processing','funding','funded','retrying','paid_pending_delivery') THEN 1 ELSE 0 END) run FROM redemptions WHERE created_at >= ?`, [month]))!;
+  const blocked = await q.all<{ stage: string; n: number }>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at >= ? GROUP BY stage", [today]);
+  const unused = Object.fromEntries((await q.all<any>("SELECT product, COUNT(*) n FROM codes WHERE status = 'unused' GROUP BY product")).map(r => [r.product, r.n]));
+  const todayBy = Object.fromEntries((await q.all<any>("SELECT product, COUNT(*) n FROM redemptions WHERE status = 'completed' AND completed_at >= ? GROUP BY product", [today])).map(r => [r.product, r.n]));
   // 和兑换记录「需处理」页签、侧边栏角标同一个口径
-  const attention = q.all<any>("SELECT status, stage, COUNT(*) n FROM redemptions WHERE status IN ('manual_review','requires_action','approved') GROUP BY status, stage");
-  const strategies = listStrategies().map(s => {
-    const r = q.get<any>("SELECT SUM(status='blocked') blocked, SUM(status='completed') ok, SUM(status='manual_review') review FROM redemptions WHERE strategy_id = ? AND created_at >= ?", [s.id, today])!;
+  const attention = await q.all<any>("SELECT status, stage, COUNT(*) n FROM redemptions WHERE status IN ('manual_review','requires_action','approved') GROUP BY status, stage");
+  const strategies = await Promise.all((await listStrategies()).map(async s => {
+    const r = (await q.get<any>("SELECT SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) blocked, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status='manual_review' THEN 1 ELSE 0 END) review FROM redemptions WHERE strategy_id = ? AND created_at >= ?", [s.id, today]))!;
     return { id: s.id, name: s.name, on: s.on, blocked: r.blocked || 0, ok: r.ok || 0, review: r.review || 0 };
-  });
-  const retried = q.get<{ n: number }>("SELECT COUNT(*) n FROM redemptions WHERE status = 'completed' AND attempts > 1 AND completed_at >= ?", [today])!.n;
+  }));
+  const retried = (await q.get<{ n: number }>("SELECT COUNT(*) n FROM redemptions WHERE status = 'completed' AND attempts > 1 AND completed_at >= ?", [today]))!.n;
   return {
     today: { redeemed: done.length, ...profitOf(done), dailyProfit: daily },
     issued: { month: issued, prev: issuedPrev, daily: issuedDaily },
@@ -63,28 +63,28 @@ export function overview() {
   };
 }
 
-export function insights(days: number) {
+export async function insights(days: number) {
   const from = startOfDay(days - 1);
-  const series = Array.from({ length: Math.min(days, 30) }, (_, i) => {
+  const series = Array.from({ length: Math.min(days, 30) }, async (_, i) => {
     const n = Math.min(days, 30), a = startOfDay(n - 1 - i), b = i === n - 1 ? new Date(Date.now() + 1000).toISOString() : startOfDay(n - 2 - i);
-    const r = q.get<any>(`SELECT SUM(status='completed') ok, SUM(status IN ${FAILED}) bad FROM redemptions WHERE created_at >= ? AND created_at < ?`, [a, b])!;
+    const r = (await q.get<any>(`SELECT SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status IN ${FAILED} THEN 1 ELSE 0 END) bad FROM redemptions WHERE created_at >= ? AND created_at < ?`, [a, b]))!;
     return { day: a.slice(5, 10), ok: r.ok || 0, bad: r.bad || 0 };
   });
-  const tot = q.get<any>(`SELECT COUNT(*) n, SUM(status='completed') ok, SUM(status IN ${FAILED}) bad, SUM(status='blocked') blocked FROM redemptions WHERE created_at >= ?`, [from])!;
-  const byPlan = q.all<any>(`SELECT product, plan, SUM(status='completed') ok, SUM(status IN ${FAILED}) bad FROM redemptions WHERE created_at >= ? GROUP BY product, plan`, [from])
+  const tot = (await q.get<any>(`SELECT COUNT(*) n, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status IN ${FAILED} THEN 1 ELSE 0 END) bad, SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) blocked FROM redemptions WHERE created_at >= ?`, [from]))!;
+  const byPlan = (await q.all<any>(`SELECT product, plan, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status IN ${FAILED} THEN 1 ELSE 0 END) bad FROM redemptions WHERE created_at >= ? GROUP BY product, plan`, [from]))
     .map(r => ({ label: fullPlanLabel(r.product, r.plan), ok: r.ok, bad: r.bad, rate: r.ok + r.bad ? Math.round((r.ok / (r.ok + r.bad)) * 100) : null }));
-  const byStrategy = q.all<any>(`SELECT s.name, SUM(r.status='completed') ok, SUM(r.status IN ${FAILED}) bad, SUM(r.status='blocked') blocked, COUNT(*) n FROM redemptions r JOIN strategies s ON s.id = r.strategy_id WHERE r.created_at >= ? GROUP BY s.id`, [from])
+  const byStrategy = (await q.all<any>(`SELECT s.name, SUM(CASE WHEN r.status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN r.status IN ${FAILED} THEN 1 ELSE 0 END) bad, SUM(CASE WHEN r.status='blocked' THEN 1 ELSE 0 END) blocked, COUNT(*) n FROM redemptions r JOIN strategies s ON s.id = r.strategy_id WHERE r.created_at >= ? GROUP BY s.id`, [from]))
     .map(r => ({ name: r.name, rate: r.ok + r.bad ? Math.round((r.ok / (r.ok + r.bad)) * 100) : null, blockRate: r.n ? Math.round((r.blocked / r.n) * 100) : 0 }));
-  const reasons = q.all<any>(`SELECT COALESCE(error_code, 'unknown') code, MAX(error_msg) msg, COUNT(*) n FROM redemptions WHERE status IN ${FAILED} AND created_at >= ? GROUP BY COALESCE(error_code, 'unknown') ORDER BY n DESC LIMIT 8`, [from]);
-  const blockReasons = q.all<any>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at >= ? GROUP BY stage ORDER BY n DESC", [from]);
+  const reasons = await q.all<any>(`SELECT COALESCE(error_code, 'unknown') code, MAX(error_msg) msg, COUNT(*) n FROM redemptions WHERE status IN ${FAILED} AND created_at >= ? GROUP BY COALESCE(error_code, 'unknown') ORDER BY n DESC LIMIT 8`, [from]);
+  const blockReasons = await q.all<any>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at >= ? GROUP BY stage ORDER BY n DESC", [from]);
   return { totals: { n: tot.n, ok: tot.ok || 0, failed: tot.bad || 0, blocked: tot.blocked || 0 }, series, byPlan, byStrategy, reasons, blockReasons };
 }
 
 export async function pricing() {
   const retail = getSetting('retail'), fx = getSetting('fx').usdCny, defaults = getSetting('socialDefaults');
   const [offers, xp, tp] = await Promise.all([gptOffers(), socialPlans('x'), socialPlans('tg')]);
-  const unused = Object.fromEntries(q.all<any>("SELECT product || '.' || plan k, COUNT(*) n FROM codes WHERE status = 'unused' GROUP BY product, plan").map(r => [r.k, r.n]));
-  const sold30 = Object.fromEntries(q.all<any>("SELECT product || '.' || plan k, COUNT(*) n, AVG(CAST(cost_usd AS REAL)) avg FROM redemptions WHERE status = 'completed' AND completed_at >= ? GROUP BY product, plan", [startOfDay(29)]).map(r => [r.k, r]));
+  const unused = Object.fromEntries((await q.all<any>("SELECT CONCAT(product, '.', plan) k, COUNT(*) n FROM codes WHERE status = 'unused' GROUP BY product, plan")).map(r => [r.k, r.n]));
+  const sold30 = Object.fromEntries((await q.all<any>("SELECT CONCAT(product, '.', plan) k, COUNT(*) n, AVG(CAST(cost_usd AS DECIMAL(20,6))) avg FROM redemptions WHERE status = 'completed' AND completed_at >= ? GROUP BY product, plan", [startOfDay(29)])).map(r => [r.k, r]));
   const gpt = planKeys('gpt').map(k => {
     const o = offers.val?.find(x => x.plan === k);
     return { key: k, label: fullPlanLabel('gpt', k), status: o?.pricingStatus ?? null, enabled: !!o?.enabled, cost: o?.salePrice ? Number(o.salePrice) : null, stock: o?.stock ?? null, unused: unused[`gpt.${k}`] || 0, retail: retail[`gpt.${k}`] ?? null, sold30: sold30[`gpt.${k}`]?.n || 0 };

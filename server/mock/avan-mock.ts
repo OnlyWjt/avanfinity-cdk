@@ -56,11 +56,11 @@ async function emit(type: string, object: unknown) {
     await fetch(WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Avanfinity-Webhook-Id': id, 'X-Avanfinity-Webhook-Timestamp': ts, 'X-Avanfinity-Signature': sig }, body, signal: AbortSignal.timeout(5000) });
   } catch { /* 接收方没启动时忽略 */ }
 }
-function addTx(merchant: string, amount: string, status: 'APPROVED' | 'DECLINED', reason?: string) {
+async function addTx(merchant: string, amount: string, status: 'APPROVED' | 'DECLINED', reason?: string) {
   const last4 = String(1000 + Math.floor(Math.random() * 8999));
   const t = { id: ++txId, authId: 'auth_' + hexs(6), cardId: 10000 + Math.floor(Math.random() * 99), type: 'AUTH', status, authAmount: amount, settleAmount: amount, authCurrency: 'USD', settleCurrency: 'USD', merchantName: merchant, merchantCountry: 'US', failedReason: reason || null, authTime: new Date().toISOString(), createdAt: new Date().toISOString(), cardNumberMasked: '5319 93** **** ' + last4 };
   txs.unshift(t);
-  emit('card.transaction.updated', { transactionId: t.id, cardId: t.cardId, type: t.type, status: t.status, authAmount: amount, settleAmount: amount, authCurrency: 'USD', settleCurrency: 'USD', merchantName: merchant, merchantCountry: 'US', authTime: t.authTime });
+  await emit('card.transaction.updated', { transactionId: t.id, cardId: t.cardId, type: t.type, status: t.status, authAmount: amount, settleAmount: amount, authCurrency: 'USD', settleCurrency: 'USD', merchantName: merchant, merchantCountry: 'US', authTime: t.authTime });
   return last4;
 }
 
@@ -153,23 +153,23 @@ app.post('/api/public/cdk/redeem', async c => {
   preflights.delete(b.preflightToken);
   const o: GptOrder = { id: randomUUID(), cdkId: k.id, plan: k.plan, status: 'queued', stage: 'queued', email: pf.email, progress: [step('兑换码已确认'), step('账号与报价已确认')], cardLastFour: null, nextAction: 'wait', invoiceUrls: [], willRenew: true, decline: pf.decline };
   orders.set(o.id, o); k.orderId = o.id; k.status = 'reserved'; k.email = pf.email; k.updatedAt = new Date().toISOString();
-  emit('openai.cdk.reserved', { eventId: randomUUID(), cdkId: k.id, status: 'reserved', occurredAt: k.updatedAt });
-  later(1200, () => { o.status = 'running'; o.stage = 'paying'; o.progress.push(step('正在付款', 'running')); emit('openai.direct.progress', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: o.status, stage: o.stage }); });
-  later(2600, () => {
+  await emit('openai.cdk.reserved', { eventId: randomUUID(), cdkId: k.id, status: 'reserved', occurredAt: k.updatedAt });
+  later(1200, async () => { o.status = 'running'; o.stage = 'paying'; o.progress.push(step('正在付款', 'running')); await emit('openai.direct.progress', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: o.status, stage: o.stage }); });
+  later(2600, async () => {
     o.progress[o.progress.length - 1].status = o.decline ? 'failed' : 'done';
     if (o.decline) {
-      o.cardLastFour = addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'DECLINED', 'do_not_honor');
+      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'DECLINED', 'do_not_honor');
       o.status = 'declined'; o.stage = 'payment_declined'; o.nextAction = 'change_card_and_reorder'; o.failure = { code: 'card_declined', message: '支付被拒（do_not_honor）' };
       k.status = 'unused'; k.orderId = undefined; k.device = undefined;
-      emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'declined', order: orderView(o).order });
-      emit('openai.cdk.released', { eventId: randomUUID(), cdkId: k.id, status: 'unused' });
+      await emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'declined', order: orderView(o).order });
+      await emit('openai.cdk.released', { eventId: randomUUID(), cdkId: k.id, status: 'unused' });
     } else {
-      o.cardLastFour = addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'APPROVED');
+      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'APPROVED');
       o.progress.push(step('会员已开通'), step('自动续费已关闭'));
       o.status = 'completed'; o.stage = 'completed'; o.nextAction = 'none'; o.willRenew = false; o.invoiceUrls = ['https://invoice.stripe.com/i/mock_' + hexs(6)];
       k.status = 'consumed';
-      emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'completed', order: orderView(o).order });
-      emit('openai.cdk.consumed', { eventId: randomUUID(), cdkId: k.id, status: 'consumed' });
+      await emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'completed', order: orderView(o).order });
+      await emit('openai.cdk.consumed', { eventId: randomUUID(), cdkId: k.id, status: 'consumed' });
     }
     k.updatedAt = new Date().toISOString();
   });
@@ -235,17 +235,17 @@ app.post('/api/v1/gpt-direct/preflight', async c => {
     paymentCountry: country, paymentCurrency: currency, quotes, quoteError: '', quoteEstimatesUsd: usd }));
 });
 
-function finishDirect(o: DirectOrder, ok: boolean) {
+async function finishDirect(o: DirectOrder, ok: boolean) {
   const t = o.task!, a = t.attempts[t.attempts.length - 1];
   if (ok) {
     o.status = 'completed'; o.stage = 'completed'; o.nextAction = 'none'; o.invoiceUrls = ['https://invoice.stripe.com/i/mock_' + hexs(6)];
     a.status = 'completed'; t.status = 'completed';
-    addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'APPROVED');
-    emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, status: 'completed' });
+    await addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'APPROVED');
+    await emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, status: 'completed' });
   } else {
     o.status = 'declined'; o.stage = 'payment_declined'; o.nextAction = 'change_card_and_reorder';
     a.status = 'failed'; a.failureCode = 'card_declined';
-    addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'DECLINED', 'do_not_honor');
+    await addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'DECLINED', 'do_not_honor');
   }
   t.updatedAt = new Date().toISOString();
 }
@@ -255,7 +255,7 @@ function runAttempt(t: DirectTask, email: string, n: number) {
   t.attempts.push({ attempt: n, newCard: true, cardId: 20000 + n, cardLastFour: o.cardLastFour, orderId: o.id, status: 'funding', failureCode: null, reservedDebitUsd: '0.50' });
   t.status = 'running';
   later(500, () => { t.attempts[n - 1].status = 'payment'; });
-  later(1200, () => {
+  later(1200, async () => {
     if (email.includes('needsess')) { o.status = 'requires_action'; o.nextAction = 'submit_session'; t.status = 'requires_action'; t.attempts[n - 1].status = 'pending'; return; }
     if (email.includes('seller')) {
       o.status = 'requires_action'; o.nextAction = 'reconcile_original_payment'; t.status = 'requires_action'; t.attempts[n - 1].status = 'pending';
@@ -263,10 +263,10 @@ function runAttempt(t: DirectTask, email: string, n: number) {
       return;
     }
     const declined = email.includes('decline');
-    finishDirect(o, !declined);
+    await finishDirect(o, !declined);
     if (declined) {
       if (n < 2 && !t.forceNewCard) runAttempt(t, email, n + 1);
-      else { t.status = 'failed'; t.failureCode = 'card_declined'; t.reservedDebitUsd = (0.5 * n).toFixed(2); emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, status: 'declined' }); }
+      else { t.status = 'failed'; t.failureCode = 'card_declined'; t.reservedDebitUsd = (0.5 * n).toFixed(2); await emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, status: 'declined' }); }
     }
   });
 }
@@ -383,7 +383,7 @@ for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/redeem
     });
   } else if (s.status === 'funded') {
     s.status = 'paying';
-    later(2000, () => { addTx(s.kind === 'x' ? 'X CORP. PAID FEATURES' : 'TELEGRAM PREMIUM', (s.amountMinor! / 100).toFixed(2), 'APPROVED'); s.status = 'completed'; });
+    later(2000, async () => { await addTx(s.kind === 'x' ? 'X CORP. PAID FEATURES' : 'TELEGRAM PREMIUM', (s.amountMinor! / 100).toFixed(2), 'APPROVED'); s.status = 'completed'; });
   }
   return c.json(ok200(pubView(s)));
 });

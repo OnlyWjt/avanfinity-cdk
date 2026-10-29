@@ -25,10 +25,10 @@ export async function sendMail(mail: Mail) {
       if (!mailConfigured()) throw new Error('还没有配置 SMTP');
       await transport().sendMail({ from: m.fromName ? `"${m.fromName.replace(/"/g, '')}" <${m.from}>` : m.from, to: mail.to, subject: mail.subject, html: mail.html, text: mail.text });
     }
-    q.run('INSERT INTO mail_log(to_addr, subject, ref, status, created_at) VALUES (?, ?, ?, ?, ?)', [mail.to, mail.subject, mail.ref ?? null, 'sent', now()]);
+    await q.run('INSERT INTO mail_log(to_addr, subject, ref, status, created_at) VALUES (?, ?, ?, ?, ?)', [mail.to, mail.subject, mail.ref ?? null, 'sent', now()]);
     return true;
   } catch (e: any) {
-    q.run('INSERT INTO mail_log(to_addr, subject, ref, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?)', [mail.to, mail.subject, mail.ref ?? null, 'failed', String(e?.message || e).slice(0, 300), now()]);
+    await q.run('INSERT INTO mail_log(to_addr, subject, ref, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?)', [mail.to, mail.subject, mail.ref ?? null, 'failed', String(e?.message || e).slice(0, 300), now()]);
     throw e;
   }
 }

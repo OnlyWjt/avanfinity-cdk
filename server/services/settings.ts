@@ -101,22 +101,31 @@ const DEFAULTS = {
 type Defaults = typeof DEFAULTS;
 export type SettingKey = keyof Defaults;
 
+/**
+ * 设置全部缓存在内存里（只有一个进程），启动时 loadSettings 一次性读入，之后读是同步的。
+ * 写入时先更新缓存再落库，所以 setSetting 返回前缓存就已经是新值
+ */
 const cache = new Map<string, unknown>();
+const merge = (key: SettingKey, raw: string) => {
+  const def = DEFAULTS[key];
+  return Array.isArray(def) || typeof def !== 'object' ? parse(raw, def) : { ...def, ...parse(raw, {}) };
+};
+export async function loadSettings() {
+  cache.clear();
+  for (const r of await q.all<{ key: string; value: string }>('SELECT "key", value FROM settings'))
+    if (r.key in DEFAULTS) cache.set(r.key, merge(r.key as SettingKey, r.value));
+}
 
 export function getSetting<K extends SettingKey>(key: K): Defaults[K] {
-  if (cache.has(key)) return structuredClone(cache.get(key)) as Defaults[K];
-  const row = q.get<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
-  const def = DEFAULTS[key];
-  const val = row ? (Array.isArray(def) || typeof def !== 'object' ? parse(row.value, def) : { ...def, ...parse(row.value, {}) }) : def;
-  cache.set(key, val);
-  return structuredClone(val) as Defaults[K];
+  if (!cache.has(key)) cache.set(key, structuredClone(DEFAULTS[key]));
+  return structuredClone(cache.get(key)) as Defaults[K];
 }
-export function setSetting<K extends SettingKey>(key: K, value: Defaults[K]) {
-  q.run('INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at', [key, json(value), now()]);
+export async function setSetting<K extends SettingKey>(key: K, value: Defaults[K]) {
   cache.set(key, structuredClone(value));
+  await q.upsert('settings', { key, value: json(value), updated_at: now() }, ['key'], ['value', 'updated_at']);
 }
-export function patchSetting<K extends SettingKey>(key: K, patch: Partial<Defaults[K]>) {
-  setSetting(key, { ...getSetting(key), ...patch });
+export async function patchSetting<K extends SettingKey>(key: K, patch: Partial<Defaults[K]>) {
+  await setSetting(key, { ...getSetting(key), ...patch });
 }
 
 /* ---------- 卡台凭据（解密只在服务端使用） ---------- */
@@ -129,13 +138,13 @@ export function avanCredentials() {
     webhookSecret: decryptOpt(s.webhookSecretEnc),
   };
 }
-export function saveAvanCredentials(p: { baseUrl?: string; appId?: string; appSecret?: string; webhookSecret?: string }) {
+export async function saveAvanCredentials(p: { baseUrl?: string; appId?: string; appSecret?: string; webhookSecret?: string }) {
   const s = getSetting('avan');
   if (p.baseUrl !== undefined) s.baseUrl = p.baseUrl.trim().replace(/\/$/, '');
   if (p.appId !== undefined) s.appId = p.appId.trim();
   if (p.appSecret) s.appSecretEnc = encryptOpt(p.appSecret.trim());
   if (p.webhookSecret) s.webhookSecretEnc = encryptOpt(p.webhookSecret.trim());
-  setSetting('avan', s);
+  await setSetting('avan', s);
 }
 export const mask = (s: string | null, keep = 4) => (s ? s.slice(0, Math.min(8, s.length - keep)) + '…' + s.slice(-keep) : '');
 

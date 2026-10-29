@@ -61,10 +61,10 @@ export async function generateBatch(p: { product: Product; plan: string; quantit
   if (!planKeys(p.product).includes(p.plan)) throw bad('套餐不正确');
   if (!Number.isInteger(p.quantity) || p.quantity < 1 || p.quantity > 50) throw bad('数量 1–50');
   if (!/^[!#-~]{8,128}$/.test(p.idemKey)) throw bad('幂等键不正确');
-  const replay = q.get<{ id: string }>('SELECT id FROM batches WHERE idem_key = ?', [p.idemKey]);
-  if (replay) return { ...batchResult(replay.id), replayed: true };
+  const replay = await q.get<{ id: string }>('SELECT id FROM batches WHERE idem_key = ?', [p.idemKey]);
+  if (replay) return { ...await batchResult(replay.id), replayed: true };
 
-  const s = getStrategy(p.strategyId);
+  const s = await getStrategy(p.strategyId);
   if (!s.on) throw bad('这条策略已停用');
   if (!s.prod.includes(p.product)) throw bad(`策略「${s.name}」不适用于这个产品`);
 
@@ -106,7 +106,7 @@ export async function generateBatch(p: { product: Product; plan: string; quantit
     const seen = new Set<string>();
     while (codes.length < p.quantity) {
       const c = ownCode(s.prefix);
-      if (seen.has(c) || q.get('SELECT 1 FROM codes WHERE code_hash = ?', [lookupHash(c)])) continue;
+      if (seen.has(c) || await q.get('SELECT 1 FROM codes WHERE code_hash = ?', [lookupHash(c)])) continue;
       seen.add(c); codes.push({ code: c, upstreamId: null, upstreamStatus: null });
     }
   } else if (p.product === 'gpt') {
@@ -119,40 +119,41 @@ export async function generateBatch(p: { product: Product; plan: string; quantit
     codes = r.list.map(i => ({ code: i.code || null, upstreamId: i.id, upstreamStatus: i.status }));
   }
 
-  tx(() => {
-    q.run('INSERT INTO batches(id, product, plan, quantity, mode, strategy_id, params, cost_usd, memo, idem_key, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  await tx(async () => {
+    await q.run('INSERT INTO batches(id, product, plan, quantity, mode, strategy_id, params, cost_usd, memo, idem_key, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [batchId, p.product, p.plan, codes.length, s.mode, s.id, json(params), costUsd, (p.memo || '').slice(0, 100), p.idemKey, p.userId, created]);
-    for (const c of codes) {
-      q.run('INSERT INTO codes(id, batch_id, product, plan, mode, strategy_id, code_enc, code_hash, display, status, upstream_id, upstream_status, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    // seq：码在批次里的顺序（导出、订单页按它排）
+    for (const [i, c] of codes.entries()) {
+      await q.run('INSERT INTO codes(id, batch_id, product, plan, mode, strategy_id, code_enc, code_hash, display, status, upstream_id, upstream_status, expires_at, created_at, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         ['c_' + hex(8), batchId, p.product, p.plan, s.mode, s.id, c.code ? encrypt(c.code) : null, c.code ? lookupHash(c.code) : null,
-          c.code ? displayCode(c.code) : (c.upstreamId ? 'AVF-********' : '—'), 'unused', c.upstreamId, c.upstreamStatus, expiresAt, created]);
+          c.code ? displayCode(c.code) : (c.upstreamId ? 'AVF-********' : '—'), 'unused', c.upstreamId, c.upstreamStatus, expiresAt, created, i]);
     }
   });
-  return { ...batchResult(batchId), replayed: false };
+  return { ...await batchResult(batchId), replayed: false };
 }
 
-function batchResult(batchId: string) {
-  const b = q.get<any>('SELECT * FROM batches WHERE id = ?', [batchId])!;
-  const rows = q.all<any>('SELECT code_enc FROM codes WHERE batch_id = ? ORDER BY rowid', [batchId]);
+async function batchResult(batchId: string) {
+  const b = (await q.get<any>('SELECT * FROM batches WHERE id = ?', [batchId]))!;
+  const rows = await q.all<any>('SELECT code_enc FROM codes WHERE batch_id = ? ORDER BY seq', [batchId]);
   return { batchId, product: b.product, plan: b.plan, mode: b.mode, strategyId: b.strategy_id, label: fullPlanLabel(b.product, b.plan), codes: rows.map(r => decryptOpt(r.code_enc)).filter(Boolean) as string[], missing: rows.filter(r => !r.code_enc).length };
 }
 
 /* ---------------- 列表 / 详情 ---------------- */
-export function listCodes(f: { product: Product; status?: string; plan?: string; strategy?: string; q?: string; page: number; size: number }) {
+export async function listCodes(f: { product: Product; status?: string; plan?: string; strategy?: string; q?: string; page: number; size: number }) {
   const where = ['c.product = ?'], args: any[] = [f.product];
   if (f.status) { where.push('c.status = ?'); args.push(f.status); }
   if (f.plan) { where.push('c.plan = ?'); args.push(f.plan); }
   if (f.strategy) { where.push('c.strategy_id = ?'); args.push(f.strategy); }
   if (f.q) {
     const qq = f.q.trim().toUpperCase();
-    where.push('(c.display LIKE ? OR c.account LIKE ? OR c.batch_id LIKE ? OR b.memo LIKE ? OR c.code_hash = ?)');
+    where.push('(LOWER(c.display) LIKE LOWER(?) OR LOWER(c.account) LIKE LOWER(?) OR LOWER(c.batch_id) LIKE LOWER(?) OR LOWER(b.memo) LIKE LOWER(?) OR c.code_hash = ?)');
     args.push(`%${qq.slice(0, 12)}%`, `%${f.q}%`, `%${f.q}%`, `%${f.q}%`, lookupHash(qq));
   }
   const w = where.join(' AND ');
-  const total = q.get<{ n: number }>(`SELECT COUNT(*) n FROM codes c JOIN batches b ON b.id = c.batch_id WHERE ${w}`, args)!.n;
-  const rows = q.all<any>(`SELECT c.*, b.memo, b.cost_usd, s.name strategy_name, s.config strategy_cfg, r.status r_status, r.error_msg r_error
+  const total = (await q.get<{ n: number }>(`SELECT COUNT(*) n FROM codes c JOIN batches b ON b.id = c.batch_id WHERE ${w}`, args))!.n;
+  const rows = await q.all<any>(`SELECT c.*, b.memo, b.cost_usd, s.name strategy_name, s.config strategy_cfg, r.status r_status, r.error_msg r_error
     FROM codes c JOIN batches b ON b.id = c.batch_id JOIN strategies s ON s.id = c.strategy_id LEFT JOIN redemptions r ON r.id = c.redemption_id
-    WHERE ${w} ORDER BY c.created_at DESC, c.rowid DESC LIMIT ? OFFSET ?`, [...args, f.size, (f.page - 1) * f.size]);
+    WHERE ${w} ORDER BY c.created_at DESC, c.seq DESC LIMIT ? OFFSET ?`, [...args, f.size, (f.page - 1) * f.size]);
   return { total, list: rows.map(codeView) };
 }
 function codeView(r: any) {
@@ -164,17 +165,17 @@ function codeView(r: any) {
     redemptionId: r.redemption_id, redemptionStatus: r.r_status, redemptionError: r.r_error, hasCode: !!r.code_enc,
   };
 }
-export function codeDetail(id: string) {
-  const r = q.get<any>(`SELECT c.*, b.memo, b.cost_usd, b.params, s.name strategy_name, s.config strategy_cfg, r.status r_status, r.error_msg r_error
+export async function codeDetail(id: string) {
+  const r = await q.get<any>(`SELECT c.*, b.memo, b.cost_usd, b.params, s.name strategy_name, s.config strategy_cfg, r.status r_status, r.error_msg r_error
     FROM codes c JOIN batches b ON b.id = c.batch_id JOIN strategies s ON s.id = c.strategy_id LEFT JOIN redemptions r ON r.id = c.redemption_id WHERE c.id = ?`, [id]);
   if (!r) throw notFound('兑换码不存在');
-  const redemptions = q.all<any>('SELECT id, status, account, error_msg, rule, attempts, created_at, completed_at FROM redemptions WHERE code_id = ? ORDER BY created_at DESC', [id]);
-  const upstream = q.all<any>('SELECT id, status, created_at FROM upstream_codes WHERE code_id = ? ORDER BY created_at', [id]);
+  const redemptions = await q.all<any>('SELECT id, status, account, error_msg, rule, attempts, created_at, completed_at FROM redemptions WHERE code_id = ? ORDER BY created_at DESC', [id]);
+  const upstream = await q.all<any>('SELECT id, status, created_at FROM upstream_codes WHERE code_id = ? ORDER BY created_at', [id]);
   return { ...codeView(r), params: parse(r.params, {}), redemptions, upstream };
 }
 
-export function codeStats() {
-  const rows = q.all<{ product: string; status: string; n: number }>('SELECT product, status, COUNT(*) n FROM codes GROUP BY product, status');
+export async function codeStats() {
+  const rows = await q.all<{ product: string; status: string; n: number }>('SELECT product, status, COUNT(*) n FROM codes GROUP BY product, status');
   const out: Record<string, Record<string, number>> = { gpt: {}, x: {}, tg: {} };
   for (const r of rows) out[r.product][r.status] = r.n;
   return out;
@@ -183,13 +184,13 @@ export function codeStats() {
 /* ---------------- 导出 ---------------- */
 export async function exportCodes(ids: string[]) {
   if (!ids.length || ids.length > 1000) throw bad('一次最多导出 1000 张');
-  const rows = q.all<any>(`SELECT * FROM codes WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  const rows = await q.all<any>(`SELECT * FROM codes WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
   const out: { id: string; code: string | null; plan: string; product: string; status: string; note?: string }[] = [];
   for (const r of rows) {
     let code = decryptOpt(r.code_enc);
     let note: string | undefined;
     if (!code && r.mode === 'hosted' && r.product !== 'gpt' && r.upstream_id) {
-      try { code = (await avan.socialExport(r.product, r.upstream_id)).code; q.run('UPDATE codes SET code_enc = ?, code_hash = ?, display = ? WHERE id = ?', [encrypt(code), lookupHash(code), displayCode(code), r.id]); }
+      try { code = (await avan.socialExport(r.product, r.upstream_id)).code; await q.run('UPDATE codes SET code_enc = ?, code_hash = ?, display = ? WHERE id = ?', [encrypt(code), lookupHash(code), displayCode(code), r.id]); }
       catch (e: any) { note = '卡台导出失败：' + e.message; }
     }
     if (!code) note ??= '卡台 GPT 码只在生成时返回一次，本地没有保存到完整码';
@@ -202,26 +203,26 @@ export async function exportCodes(ids: string[]) {
 export async function revokeCodes(ids: string[]) {
   const results: { id: string; ok: boolean; msg: string }[] = [];
   for (const id of ids) {
-    const r = q.get<any>('SELECT * FROM codes WHERE id = ?', [id]);
+    const r = await q.get<any>('SELECT * FROM codes WHERE id = ?', [id]);
     if (!r) { results.push({ id, ok: false, msg: '不存在' }); continue; }
     if (r.status === 'revoked') { results.push({ id, ok: true, msg: '已是撤销状态' }); continue; }
     if (r.status === 'redeemed') { results.push({ id, ok: false, msg: '已兑换，不能撤销' }); continue; }
-    if (pendingDirect(r.id)) { results.push({ id, ok: false, msg: '有一笔直充还没有结果，不能撤销' }); continue; }
+    if (await pendingDirect(r.id)) { results.push({ id, ok: false, msg: '有一笔直充还没有结果，不能撤销' }); continue; }
     if (r.status === 'in_use') {
-      const red = r.redemption_id && q.get<any>('SELECT status FROM redemptions WHERE id = ?', [r.redemption_id]);
+      const red = r.redemption_id && await q.get<any>('SELECT status FROM redemptions WHERE id = ?', [r.redemption_id]);
       if (red && ['processing', 'funding', 'funded', 'paid_pending_delivery'].includes(red.status)) { results.push({ id, ok: false, msg: '正在付款，不能撤销' }); continue; }
     }
     try {
       if (r.mode === 'hosted' && r.product !== 'gpt' && r.upstream_id) await avan.socialRevoke(r.product, r.upstream_id, 'rv-' + r.id);
       if (r.mode === 'own') {
         // 已经临时生成的卡台 X/TG 码一起撤销（GPT 卡台码没有撤销接口，未兑换不产生费用）
-        for (const u of q.all<any>("SELECT * FROM upstream_codes WHERE code_id = ? AND status IN ('issued','released')", [id])) {
+        for (const u of await q.all<any>("SELECT * FROM upstream_codes WHERE code_id = ? AND status IN ('issued','released')", [id])) {
           if (u.product !== 'gpt') await avan.socialRevoke(u.product, u.id, 'rv-' + u.id).catch(() => {});
-          q.run("UPDATE upstream_codes SET status = 'revoked' WHERE id = ?", [u.id]);
+          await q.run("UPDATE upstream_codes SET status = 'revoked' WHERE id = ?", [u.id]);
         }
       }
-      q.run("UPDATE codes SET status = 'revoked' WHERE id = ?", [id]);
-      if (r.redemption_id) q.run("UPDATE redemptions SET status = 'cancelled', error_msg = '兑换码已被撤销', updated_at = ? WHERE id = ? AND status IN ('started','quoted','blocked','manual_review','requires_action')", [now(), r.redemption_id]);
+      await q.run("UPDATE codes SET status = 'revoked' WHERE id = ?", [id]);
+      if (r.redemption_id) await q.run("UPDATE redemptions SET status = 'cancelled', error_msg = '兑换码已被撤销', updated_at = ? WHERE id = ? AND status IN ('started','quoted','blocked','manual_review','requires_action')", [now(), r.redemption_id]);
       results.push({ id, ok: true, msg: r.mode === 'hosted' && r.product === 'gpt' ? '已在本系统停用；卡台 GPT 码没有撤销接口，在卡台官方兑换页仍可能被兑换' : '已撤销' });
     } catch (e) {
       results.push({ id, ok: false, msg: e instanceof AvanError ? `卡台拒绝：${e.message}` : String(e) });

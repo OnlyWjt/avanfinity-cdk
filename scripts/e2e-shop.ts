@@ -263,7 +263,8 @@ ok((await ag('GET', '/api/shop/agent/withdrawals')).data.list[0].account.include
 const rf0 = await admin('POST', `/api/admin/shop/orders/${os.data.no}/refund`, { note: '买家申请退款' });
 ok(rf0.status === 409 && rf0.data.code === 'REFUND_CONFIRM' && rf0.data.hostedGpt === 1, '卡台 GPT 码无法真正撤销：退款前先要求确认');
 const [rf, rf2] = await Promise.all([admin('POST', `/api/admin/shop/orders/${os.data.no}/refund`, { note: '买家申请退款', force: true }), admin('POST', `/api/admin/shop/orders/${os.data.no}/refund`, { note: '并发再点一次', force: true })]);
-ok(rf.status === 200 && rf2.status === 400, '后台确认退款；同时点两次只退一次');
+const rfOk = [rf, rf2].filter(r => r.status === 200), rfNo = [rf, rf2].filter(r => r.status === 400);
+ok(rfOk.length === 1 && rfNo.length === 1, `后台确认退款；同时点两次只退一次（${rf.status} / ${rf2.status} ${rfNo[0]?.data.error || ''}）`);
 const drf = (await admin('GET', '/api/admin/shop/orders/' + os.data.no)).data;
 ok(drf.status === 'refunded' && drf.codes.every((c: any) => c.status === 'revoked'), '退款后兑换码作废');
 ok((await ag('GET', '/api/shop/agent/dashboard')).data.agent.earnings === 1199 - 500 - 699 - 800, '退款冲回代理利润（可提现变为负数，等后续收益抵扣）');

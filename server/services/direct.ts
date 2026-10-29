@@ -10,7 +10,7 @@
  *   reserved 进行中 / 结果未知（按预留额计）  spent 成功（按实际花费计）
  *   released 失败（按卡台仍占用的金额计）     cancelled 没有下单成功（不计）
  */
-import { q, tx, now } from '../db.ts';
+import { q, tx, now, sql } from '../db.ts';
 import { avan, type GptAutoTask, type GptDirectOrder } from '../avan/client.ts';
 import { getSetting, patchSetting, type DirectGuard } from './settings.ts';
 import { startOfDay } from './stats.ts';
@@ -39,11 +39,11 @@ async function alert(text: string) {
  *   - 已结束但费用还没核对（cost_verified = 0）：按预算和已知花费中较大的计，宁可多算
  *   - 已核对：按实际花费计；卡台没受理（cancelled）不计
  */
-export function usedToday(): number {
-  const r = q.get<{ v: number | null }>(`SELECT SUM(CASE
-      WHEN status = 'reserved' THEN CAST(reserved_usd AS REAL)
-      WHEN status IN ('spent','released') AND cost_verified = 1 THEN COALESCE(CAST(actual_usd AS REAL), 0)
-      WHEN status IN ('spent','released') THEN MAX(CAST(reserved_usd AS REAL), COALESCE(CAST(actual_usd AS REAL), 0))
+export async function usedToday(): Promise<number> {
+  const r = await q.get<{ v: number | null }>(`SELECT SUM(CASE
+      WHEN status = 'reserved' THEN ${sql.num('reserved_usd')}
+      WHEN status IN ('spent','released') AND cost_verified = 1 THEN COALESCE(${sql.num('actual_usd')}, 0)
+      WHEN status IN ('spent','released') THEN ${sql.greatest(sql.num('reserved_usd'), `COALESCE(${sql.num('actual_usd')}, 0)`)}
       ELSE 0 END) v FROM direct_spend WHERE created_at >= ? OR status = 'reserved'`, [startOfDay()]);
   return r4(r?.v || 0);
 }
@@ -62,11 +62,11 @@ export function orderBudget(estimateUsd: number, g = getSetting("directGuard")) 
  * 下单前：检查护栏并预留这一单的预算（同步事务，并发确认不会一起冲破每日上限）。
  * 同一个幂等键重复调用直接通过（结果未知时原样重放）
  */
-export function reserve(p: { redemptionId: string; codeId: string; accountKey: string | null; idemKey: string; plan: string; estimateUsd: number }): GuardResult {
+export async function reserve(p: { redemptionId: string; codeId: string; accountKey: string | null; idemKey: string; plan: string; estimateUsd: number }): Promise<GuardResult> {
   const g = getSetting("directGuard");
   let dailyHit = false;
-  const res = tx((): GuardResult => {
-    const exist = q.get<{ reserved_usd: string }>("SELECT reserved_usd FROM direct_spend WHERE idem_key = ?", [p.idemKey]);
+  const res = await tx(async (): Promise<GuardResult> => {
+    const exist = await q.get<{ reserved_usd: string }>("SELECT reserved_usd FROM direct_spend WHERE idem_key = ?", [p.idemKey]);
     if (exist) return { ok: true, maxUsd: exist.reserved_usd };
     if (g.paused) return { ok: false, rule: `直充已暂停：${g.pausedReason || "管理员手动暂停"}`, userMsg: HOLD_MSG };
     // 预估必须是有效的正数：异常值会让预算和每日额度失效
@@ -74,19 +74,19 @@ export function reserve(p: { redemptionId: string; codeId: string; accountKey: s
     const budget = orderBudget(p.estimateUsd, g);
     if (budget > g.perOrderMaxUsd) return { ok: false, rule: `单笔上限：本单预算 $${usdStr(budget)}（预估 $${usdStr(p.estimateUsd)}）超过上限 $${usdStr(g.perOrderMaxUsd)}`, userMsg: HOLD_MSG };
     // 同一张码失败后可以重兑，每次都会产生开卡费：限制每张码的直充次数（卡台没受理的不算）
-    const tries = q.get<{ n: number }>("SELECT COUNT(*) n FROM direct_spend WHERE code_id = ? AND status != 'cancelled'", [p.codeId])!.n;
+    const tries = (await q.get<{ n: number }>("SELECT COUNT(*) n FROM direct_spend WHERE code_id = ? AND status != 'cancelled'", [p.codeId]))!.n;
     if (g.maxPerCode && tries >= g.maxPerCode) return { ok: false, rule: `同一张码已直充 ${tries} 次（上限 ${g.maxPerCode}），请确认后再继续`, userMsg: HOLD_MSG };
-    const used = usedToday();
+    const used = await usedToday();
     if (used + budget > g.dailyMaxUsd) { dailyHit = true; return { ok: false, rule: `每日总额：今日已占用 $${usdStr(used)}，本单预算 $${usdStr(budget)}，上限 $${usdStr(g.dailyMaxUsd)}`, userMsg: HOLD_MSG }; }
-    q.run("INSERT INTO direct_spend(redemption_id, code_id, account_key, idem_key, plan, reserved_usd, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    await q.run("INSERT INTO direct_spend(redemption_id, code_id, account_key, idem_key, plan, reserved_usd, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [p.redemptionId, p.codeId, p.accountKey, p.idemKey, p.plan, usdStr(budget), "reserved", now()]);
     return { ok: true, maxUsd: usdStr(budget) };
   });
   if (dailyHit && g.dailyAlertDay !== startOfDay()) {
-    patchSetting("directGuard", { dailyAlertDay: startOfDay() });
+    await patchSetting("directGuard", { dailyAlertDay: startOfDay() });
     void alert(`⛔ <b>直充今日额度已用完</b>
 
-今日已占用 $${usdStr(usedToday())} / 上限 $${usdStr(g.dailyMaxUsd)}。之后的 GPT 直充兑换会转入待审核（兑换码不作废），调高额度后在「兑换记录」里通过即可继续。`);
+今日已占用 $${usdStr(await usedToday())} / 上限 $${usdStr(g.dailyMaxUsd)}。之后的 GPT 直充兑换会转入待审核（兑换码不作废），调高额度后在「兑换记录」里通过即可继续。`);
   }
   return res;
 }
@@ -95,49 +95,49 @@ export function reserve(p: { redemptionId: string; codeId: string; accountKey: s
  * 这张码有没有还没出结果的直充（预算仍是 reserved：进行中、结果未知、或需要卖家核对）。
  * 这种情况下钱可能已经付出去了，释放 / 拒绝 / 撤销 / 退款都会让同一张码再付一次钱，必须先拿到结果
  */
-export const pendingDirect = (codeId: string) => !!q.get("SELECT 1 FROM direct_spend WHERE code_id = ? AND status = 'reserved' LIMIT 1", [codeId]);
+export const pendingDirect = async (codeId: string) => !!await q.get("SELECT 1 FROM direct_spend WHERE code_id = ? AND status = 'reserved' LIMIT 1", [codeId]);
 export const PENDING_MSG = '这张码还有一笔直充没有结果（可能已经付款），请先在兑换详情里「人工核对结果」或等它结束';
 
-export const attachTask = (idemKey: string, taskId: string) => q.run("UPDATE direct_spend SET task_id = ? WHERE idem_key = ?", [taskId, idemKey]);
+export const attachTask = async (idemKey: string, taskId: string) => await q.run("UPDATE direct_spend SET task_id = ? WHERE idem_key = ?", [taskId, idemKey]);
 
 /** 结算一次下单。只处理还在 reserved 的记录，重复调用不会改两次 */
 /**
  * 结算一次下单。只处理还在 reserved 的记录，重复调用不会改两次。
  * verified：费用是否已按卡台明细核对；没核对的由后台对账任务继续跟进（期间按预算计入额度）
  */
-export function settle(idemKey: string, status: "spent" | "released" | "cancelled", actualUsd: number, o: { verified?: boolean; note?: string } = {}) {
+export async function settle(idemKey: string, status: "spent" | "released" | "cancelled", actualUsd: number, o: { verified?: boolean; note?: string } = {}) {
   const verified = status === "cancelled" || !!o.verified;
-  const changed = q.run("UPDATE direct_spend SET status = ?, actual_usd = ?, settled_at = ?, cost_verified = ?, cost_note = ? WHERE idem_key = ? AND status = 'reserved'",
-    [status, usdStr(actualUsd), now(), verified ? 1 : 0, o.note ?? null, idemKey]).changes;
-  if (changed && status === "released") checkFailTrip();
+  const changed = (await q.run("UPDATE direct_spend SET status = ?, actual_usd = ?, settled_at = ?, cost_verified = ?, cost_note = ? WHERE idem_key = ? AND status = 'reserved'",
+    [status, usdStr(actualUsd), now(), verified ? 1 : 0, o.note ?? null, idemKey])).changes;
+  if (changed && status === "released") await checkFailTrip();
   return !!changed;
 }
 /** 这条兑换还没结束的下单（人工核对时一起结算） */
-export const reservedOf = (redemptionId: string) =>
-  q.all<{ id: number; idem_key: string; task_id: string | null }>("SELECT id, idem_key, task_id FROM direct_spend WHERE redemption_id = ? AND status = 'reserved' ORDER BY id", [redemptionId]);
+export const reservedOf = async (redemptionId: string) =>
+  await q.all<{ id: number; idem_key: string; task_id: string | null }>("SELECT id, idem_key, task_id FROM direct_spend WHERE redemption_id = ? AND status = 'reserved' ORDER BY id", [redemptionId]);
 
 /**
  * 熔断：最近 failTrip 笔已结束的直充全是失败，而且涉及至少 tripAccounts 个不同账号 → 暂停。
  * 只看不同账号，避免一个人反复故意失败就让全站直充停摆
  */
-function checkFailTrip() {
+async function checkFailTrip() {
   const g = getSetting("directGuard");
   if (!g.failTrip || g.paused) return;
-  const last = q.all<{ status: string; account_key: string | null }>("SELECT status, account_key FROM direct_spend WHERE status IN ('spent','released') ORDER BY settled_at DESC, id DESC LIMIT ?", [g.failTrip]);
+  const last = await q.all<{ status: string; account_key: string | null }>("SELECT status, account_key FROM direct_spend WHERE status IN ('spent','released') ORDER BY settled_at DESC, id DESC LIMIT ?", [g.failTrip]);
   if (last.length < g.failTrip || last.some(r => r.status !== "released")) return;
   const accounts = new Set(last.map(r => r.account_key || "?")).size;
   if (accounts < Math.min(g.tripAccounts || 1, g.failTrip)) return;
-  pause(`最近 ${g.failTrip} 笔直充都失败（涉及 ${accounts} 个账号），自动熔断`);
+  await pause(`最近 ${g.failTrip} 笔直充都失败（涉及 ${accounts} 个账号），自动熔断`);
   void alert(`🚨 <b>直充已自动熔断</b>
 
 最近 ${g.failTrip} 笔 GPT 直充都失败，涉及 ${accounts} 个不同账号，已暂停全部直充。新的兑换会转入待审核（兑换码不作废）。
 请先排查卡台、卡片和钱包，再在后台手动恢复。`);
 }
 
-export function pause(reason: string) { patchSetting("directGuard", { paused: true, pausedReason: reason.slice(0, 120), pausedAt: now() }); }
-export function resume() { patchSetting("directGuard", { paused: false, pausedReason: "", pausedAt: "" }); }
+export async function pause(reason: string) { await patchSetting("directGuard", { paused: true, pausedReason: reason.slice(0, 120), pausedAt: now() }); }
+export async function resume() { await patchSetting("directGuard", { paused: false, pausedReason: "", pausedAt: "" }); }
 
-export function saveGuard(b: Partial<DirectGuard>) {
+export async function saveGuard(b: Partial<DirectGuard>) {
   const num = (v: unknown, name: string, min: number, max: number) => {
     const n = Number(v);
     if (!Number.isFinite(n) || n < min || n > max) throw bad(`${name}应在 ${min}–${max} 之间`);
@@ -147,7 +147,7 @@ export function saveGuard(b: Partial<DirectGuard>) {
   const perOrderMaxUsd = num(b.perOrderMaxUsd ?? cur.perOrderMaxUsd, "单笔上限", 1, 5000);
   const dailyMaxUsd = num(b.dailyMaxUsd ?? cur.dailyMaxUsd, "每日总额", 1, 1_000_000);
   if (dailyMaxUsd < perOrderMaxUsd) throw bad("每日总额不能小于单笔上限");
-  patchSetting("directGuard", {
+  await patchSetting("directGuard", {
     perOrderMaxUsd, dailyMaxUsd,
     bufferPct: num(b.bufferPct ?? cur.bufferPct, "预算余量", 0, 100),
     feeBufferUsd: num(b.feeBufferUsd ?? cur.feeBufferUsd, "换卡费用余量", 0, 50),
@@ -176,14 +176,14 @@ export async function walletBalance(maxAgeMs = 60e3) {
 /** 有直充策略时才检查余额（没在用直充不打扰） */
 export async function checkBalance() {
   const g = getSetting('directGuard');
-  if (!g.lowBalanceUsd || !directInUse()) return false;
+  if (!g.lowBalanceUsd || !await directInUse()) return false;
   const b = await walletBalance(0);
   if (b.available == null || b.available >= g.lowBalanceUsd || Date.now() - lowAlertAt < 6 * 3600e3) return false;
   lowAlertAt = Date.now();
   await alert(`💸 <b>卡台钱包余额不足</b>\n\n可用余额 $${usdStr(b.available)}，低于告警线 $${usdStr(g.lowBalanceUsd)}。余额不够时 GPT 直充会失败，请尽快充值。（6 小时内只提醒一次）`);
   return true;
 }
-const directInUse = () => !!q.get("SELECT 1 FROM strategies WHERE enabled = 1 AND json_extract(config, '$.delivery') = 'direct' AND json_extract(config, '$.mode') = 'own' LIMIT 1");
+const directInUse = async () => !!await q.get(`SELECT 1 FROM strategies WHERE enabled = 1 AND ${sql.json('config', 'delivery')} = 'direct' AND ${sql.json('config', 'mode')} = 'own' LIMIT 1`);
 
 /** 卡台以可用余额不足拒绝下单时立即告警（30 分钟内只发一次） */
 export async function alertInsufficient(msg: string) {
@@ -205,12 +205,12 @@ export function startDirectGuard() {
 export async function guardView() {
   const g = getSetting('directGuard');
   const b = await walletBalance();
-  const today = q.get<any>(`SELECT COUNT(*) n, SUM(status = 'spent') ok, SUM(status = 'released') bad, SUM(status = 'reserved') pending FROM direct_spend WHERE created_at >= ?`, [startOfDay()])!;
+  const today = (await q.get<any>(`SELECT COUNT(*) n, SUM(CASE WHEN status = 'spent' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status = 'released' THEN 1 ELSE 0 END) bad, SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) pending FROM direct_spend WHERE created_at >= ?`, [startOfDay()]))!;
   return {
-    ...g, usedToday: usedToday(), inUse: directInUse(),
+    ...g, usedToday: await usedToday(), inUse: await directInUse(),
     today: { orders: today.n || 0, ok: today.ok || 0, failed: today.bad || 0, pending: today.pending || 0 },
     // 已结束但费用还没按卡台明细核对的笔数（期间按预算计入额度）
-    unverified: q.get<{ n: number }>("SELECT COUNT(*) n FROM direct_spend WHERE status IN ('spent','released') AND cost_verified = 0")!.n,
+    unverified: (await q.get<{ n: number }>("SELECT COUNT(*) n FROM direct_spend WHERE status IN ('spent','released') AND cost_verified = 0"))!.n,
     // 余额是缓存值：附上取到的时间，刷新失败时页面要能看出它可能已经过期
     balance: { available: b.available, error: b.error || null, at: b.at ? new Date(b.at).toISOString() : null, fetchedAt: b.okAt ? new Date(b.okAt).toISOString() : null },
   };
@@ -273,20 +273,20 @@ export async function taskCost(t: GptAutoTask, quoteUsd: number): Promise<{ usd:
  * 超过 7 天还核对不了的不再自动跟进（仍按预算计入当天，后台面板会显示数量）
  */
 export async function reconcile() {
-  const rows = q.all<{ id: number; redemption_id: string; task_id: string; status: string; reserved_usd: string }>(
+  const rows = await q.all<{ id: number; redemption_id: string; task_id: string; status: string; reserved_usd: string }>(
     "SELECT id, redemption_id, task_id, status, reserved_usd FROM direct_spend WHERE status IN ('spent','released') AND cost_verified = 0 AND task_id IS NOT NULL AND settled_at > ? ORDER BY id LIMIT 10",
     [new Date(Date.now() - 7 * 86400e3).toISOString()]);
   let n = 0;
   for (const r of rows) {
     try {
-      const red = q.get<{ quote: string | null; status: string }>('SELECT quote, status FROM redemptions WHERE id = ?', [r.redemption_id]);
+      const red = await q.get<{ quote: string | null; status: string }>('SELECT quote, status FROM redemptions WHERE id = ?', [r.redemption_id]);
       const qt = (() => { try { return JSON.parse(red?.quote || '{}'); } catch { return {}; } })();
       const c = await taskCost(await avan.gptAutoTask(r.task_id), Number(qt.usd) || 0);
-      tx(() => {
-        q.run('UPDATE direct_spend SET actual_usd = ?, cost_verified = ?, cost_note = ? WHERE id = ? AND cost_verified = 0', [usdStr(c.usd), c.verified ? 1 : 0, c.note, r.id]);
+      await tx(async () => {
+        await q.run('UPDATE direct_spend SET actual_usd = ?, cost_verified = ?, cost_note = ? WHERE id = ? AND cost_verified = 0', [usdStr(c.usd), c.verified ? 1 : 0, c.note, r.id]);
         if (r.status === 'spent' && red?.status === 'completed') {
-          if (c.usd > 0) q.run('UPDATE redemptions SET cost_usd = ? WHERE id = ?', [c.usd.toFixed(4), r.redemption_id]);
-          if (c.willRenew !== null && qt.willRenew == null) q.run('UPDATE redemptions SET quote = ? WHERE id = ?', [JSON.stringify({ ...qt, willRenew: c.willRenew }), r.redemption_id]);
+          if (c.usd > 0) await q.run('UPDATE redemptions SET cost_usd = ? WHERE id = ?', [c.usd.toFixed(4), r.redemption_id]);
+          if (c.willRenew !== null && qt.willRenew == null) await q.run('UPDATE redemptions SET quote = ? WHERE id = ?', [JSON.stringify({ ...qt, willRenew: c.willRenew }), r.redemption_id]);
         }
       });
       if (c.verified) n++;

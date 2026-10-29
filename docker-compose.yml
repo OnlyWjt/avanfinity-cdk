@@ -1,0 +1,99 @@
+# CDK 兑换系统 · Docker Compose
+#
+# 默认只启动应用（SQLite，数据在 cdk-data 卷里）：
+#   cp .env.example .env    # 至少填 MASTER_KEY、PUBLIC_URL
+#   docker compose up -d
+#
+# 可选组件用 profile 打开（可以组合），对应的 .env 配置见 .env.example：
+#   --profile postgres   一起启动 PostgreSQL 17，DATABASE_URL 指向 postgres
+#   --profile mysql      一起启动 MySQL 8.4，DATABASE_URL 指向 mysql
+#   --profile caddy      一起启动 Caddy，自动申请 HTTPS 证书（需要 DOMAIN，且 80/443 端口可用）
+# 例如：docker compose --profile postgres --profile caddy up -d
+#
+# 需要 Docker Compose v2.20+（depends_on 的 required: false）
+# 详细说明：docs/deploy.md
+
+services:
+  app:
+    build: .
+    image: avanfinity-cdk:latest
+    restart: unless-stopped
+    env_file: .env
+    # 下面这几项固定为容器内的值，.env 里的同名配置（给直接运行用的）在 Docker 里不生效；
+    # 对外端口用 APP_PORT 改
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATA_DIR: /data
+      BACKUP_DIR: /backups
+    volumes:
+      - cdk-data:/data
+      - cdk-backups:/backups
+    ports:
+      # 默认只监听本机：前面用宿主机的 Nginx / Caddy 反代；用 caddy profile 时可以不暴露
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+      mysql: { condition: service_healthy, required: false }
+    # 只能跑 1 个副本：限流、兑换锁、事务互斥都在进程内存里
+    deploy:
+      replicas: 1
+    stop_grace_period: 15s
+
+  postgres:
+    image: postgres:17
+    profiles: [postgres]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cdk
+      POSTGRES_USER: cdk
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?在 .env 里设置 DB_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdk -d cdk"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    profiles: [mysql]
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin"]
+    environment:
+      MYSQL_DATABASE: cdk
+      MYSQL_USER: cdk
+      MYSQL_PASSWORD: ${DB_PASSWORD:?在 .env 里设置 DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?在 .env 里设置 DB_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u cdk -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  caddy:
+    image: caddy:2
+    profiles: [caddy]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?在 .env 里设置 DOMAIN（例如 cdk.example.com）}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+
+volumes:
+  cdk-data:
+  cdk-backups:
+  pg-data:
+  mysql-data:
+  caddy-data:
+  caddy-config:

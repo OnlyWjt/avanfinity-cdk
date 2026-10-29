@@ -20,8 +20,9 @@ export const forbidden = (msg = '没有权限执行此操作') => new HttpError(
 export function clientIp(c: Context): string {
   if (config.trustProxy) {
     // 只信任一种来源，客户端自己伪造的另一种头不起作用
-    if (config.proxyMode === 'cf') { const cf = c.req.header('cf-connecting-ip'); if (cf) return cf.trim(); }
-    else { const xff = c.req.header('x-forwarded-for'); if (xff) return xff.split(',').map(s => s.trim()).filter(Boolean).pop() || 'unknown'; }
+    // 截断到 IPv6 的最大长度：配置不对时这个头可能被伪造成任意内容，而它会写进数据库
+    if (config.proxyMode === 'cf') { const cf = c.req.header('cf-connecting-ip'); if (cf) return cf.trim().slice(0, 45); }
+    else { const xff = c.req.header('x-forwarded-for'); if (xff) return (xff.split(',').map(s => s.trim()).filter(Boolean).pop() || 'unknown').slice(0, 45); }
   }
   try { return getConnInfo(c).remote.address || 'unknown'; } catch { return 'unknown'; }
 }
@@ -41,9 +42,9 @@ export const requireRole = (min: Role): MiddlewareHandler<AppEnv> => async (c, n
   await next();
 };
 
-export function audit(c: Context<AppEnv> | null, action: string, target = '', detail: unknown = '') {
+export async function audit(c: Context<AppEnv> | null, action: string, target = '', detail: unknown = '') {
   const u = c?.get('user');
-  q.run('INSERT INTO audit(user_id, user_name, action, target, detail, ip, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+  await q.run('INSERT INTO audit(user_id, user_name, action, target, detail, ip, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
     u?.id ?? null, u?.name ?? 'system', action, target, typeof detail === 'string' ? detail : JSON.stringify(detail), c ? clientIp(c) : null, now(),
   ]);
 }

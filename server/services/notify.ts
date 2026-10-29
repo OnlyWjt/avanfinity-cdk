@@ -34,7 +34,7 @@ export async function scanAttention() {
   const n = getSetting('notify');
   if (!n.failAlert || !configured()) { lastScan = new Date().toISOString(); return 0; }
   const since = lastScan, until = new Date().toISOString();
-  const rows = q.all<any>(`SELECT r.id, r.product, r.plan, r.status, r.account, r.error_msg, c.display FROM redemptions r JOIN codes c ON c.id = r.code_id
+  const rows = await q.all<any>(`SELECT r.id, r.product, r.plan, r.status, r.account, r.error_msg, c.display FROM redemptions r JOIN codes c ON c.id = r.code_id
     WHERE r.status IN ('failed','manual_review','requires_action') AND r.updated_at > ? AND r.updated_at <= ? ORDER BY r.updated_at LIMIT 20`, [since, until]);
   lastScan = until;
   if (!rows.length) return 0;
@@ -52,10 +52,10 @@ export async function scanShop() {
   const since = lastShopScan, until = new Date().toISOString();
   lastShopScan = until;
   if (!n.shopAlert || !configured()) return 0;
-  const paid = q.all<any>("SELECT title, quantity, total, source FROM orders WHERE paid_at > ? AND paid_at <= ? AND kind != 'topup' ORDER BY paid_at LIMIT 30", [since, until]);
-  const failed = q.all<any>("SELECT no, deliver_error FROM orders WHERE status = 'paid' AND deliver_attempts = 1 AND next_deliver_at > ? LIMIT 10", [since]);
-  const apply = q.all<any>("SELECT shop_name, slug FROM agents WHERE created_at > ? AND created_at <= ?", [since, until]);
-  const wd = q.all<any>("SELECT w.amount, a.shop_name FROM withdrawals w JOIN agents a ON a.customer_id = w.agent_id WHERE w.created_at > ? AND w.created_at <= ?", [since, until]);
+  const paid = await q.all<any>("SELECT title, quantity, total, source FROM orders WHERE paid_at > ? AND paid_at <= ? AND kind != 'topup' ORDER BY paid_at LIMIT 30", [since, until]);
+  const failed = await q.all<any>("SELECT no, deliver_error FROM orders WHERE status = 'paid' AND deliver_attempts = 1 AND next_deliver_at > ? LIMIT 10", [since]);
+  const apply = await q.all<any>("SELECT shop_name, slug FROM agents WHERE created_at > ? AND created_at <= ?", [since, until]);
+  const wd = await q.all<any>("SELECT w.amount, a.shop_name FROM withdrawals w JOIN agents a ON a.customer_id = w.agent_id WHERE w.created_at > ? AND w.created_at <= ?", [since, until]);
   const parts: string[] = [];
   if (paid.length) parts.push(`💰 <b>${paid.length} 笔新成交 ${yuan(paid.reduce((a, o) => a + o.total, 0))}</b>\n` + paid.slice(0, 10).map(o => `• ${html(o.title)} × ${o.quantity} · ${yuan(o.total)} · ${SRC[o.source] || o.source}`).join('\n') + (paid.length > 10 ? `\n…还有 ${paid.length - 10} 笔` : ''));
   if (failed.length) parts.push(`⚠️ <b>${failed.length} 笔已付款订单发货失败</b>（会自动重试）\n` + failed.map(o => `• <code>${o.no}</code> ${html((o.deliver_error || '').slice(0, 80))}`).join('\n'));
@@ -83,18 +83,18 @@ export async function checkStock() {
 function dayStr(offsetDays = 0) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + offsetDays * 86400e3));
 }
-export function dailyReportText() {
+export async function dailyReportText() {
   const fx = getSetting('fx').usdCny, retail = getSetting('retail');
   const from = new Date(Date.now() - 86400e3).toISOString();
-  const t = q.get<any>("SELECT COUNT(*) n, SUM(status='completed') ok, SUM(status IN ('failed','expired')) bad, SUM(status='blocked') blk FROM redemptions WHERE created_at > ?", [from])!;
-  const done = q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at > ?", [from]);
+  const t = (await q.get<any>("SELECT COUNT(*) n, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok, SUM(CASE WHEN status IN ('failed','expired') THEN 1 ELSE 0 END) bad, SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) blk FROM redemptions WHERE created_at > ?", [from]))!;
+  const done = await q.all<any>("SELECT product, plan, cost_usd FROM redemptions WHERE status = 'completed' AND completed_at > ?", [from]);
   let sales = 0, cost = 0;
   for (const d of done) { cost += Number(d.cost_usd || 0) * fx; sales += retail[`${d.product}.${d.plan}`] || 0; }
-  const blocks = q.all<any>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at > ? GROUP BY stage", [from]);
+  const blocks = await q.all<any>("SELECT stage, COUNT(*) n FROM redemptions WHERE status = 'blocked' AND created_at > ? GROUP BY stage", [from]);
   const stageCN: Record<string, string> = { gate: '门槛', account: '账号', price: '价格', review: '人工拒绝' };
-  const unused = q.get<{ n: number }>("SELECT COUNT(*) n FROM codes WHERE status = 'unused'")!.n;
+  const unused = (await q.get<{ n: number }>("SELECT COUNT(*) n FROM codes WHERE status = 'unused'"))!.n;
   const rate = (t.ok || 0) + (t.bad || 0) ? Math.round((t.ok / (t.ok + t.bad)) * 100) + '%' : '—';
-  const shop = q.get<any>("SELECT COUNT(*) n, COALESCE(SUM(total),0) s, COALESCE(SUM(cost),0) c, COALESCE(SUM(agent_profit + commission),0) a FROM orders WHERE kind != 'topup' AND status IN ('paid','delivered') AND paid_at > ?", [from])!;
+  const shop = (await q.get<any>("SELECT COUNT(*) n, COALESCE(SUM(total),0) s, COALESCE(SUM(cost),0) c, COALESCE(SUM(agent_profit + commission),0) a FROM orders WHERE kind != 'topup' AND status IN ('paid','delivered') AND paid_at > ?", [from]))!;
   const shopLine = shop.n ? `
 商城成交 <b>${shop.n}</b> 单 · ¥${(shop.s / 100).toFixed(2)} · 毛利 <b>¥${((shop.s - shop.c - shop.a) / 100).toFixed(2)}</b>` : '';
   return `📊 <b>日报 ${dayStr(-1)}</b>（近 24 小时）\n\n兑换成功 <b>${t.ok || 0}</b> · 失败 ${t.bad || 0} · 成功率 ${rate}\n策略拦截 ${t.blk || 0}${blocks.length ? '（' + blocks.map(b => `${stageCN[b.stage] || b.stage} ${b.n}`).join('、') + '）' : ''}\n` +
@@ -106,8 +106,8 @@ export async function maybeDailyReport() {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: config.timezone, hour: '2-digit', hour12: false }).format(new Date()));
   const today = dayStr();
   if (hour < 9 || n.lastReportDay === today) return false;
-  patchSetting('notify', { lastReportDay: today });
-  await sendTelegram(dailyReportText());
+  await patchSetting('notify', { lastReportDay: today });
+  await sendTelegram(await dailyReportText());
   return true;
 }
 

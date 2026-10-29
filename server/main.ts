@@ -5,7 +5,7 @@ import { getCookie } from 'hono/cookie';
 import { relative, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { config, ROOT, publicUrlOk } from './config.ts';
-import { q } from './db.ts';
+import { q, initDb, closeDb, dialect, txBusyMs } from './db.ts';
 import { HttpError, type AppEnv } from './http.ts';
 import { AvanError } from './avan/client.ts';
 import { auth, SID } from './routes/auth.ts';
@@ -24,11 +24,14 @@ import { tickShop, markPaid } from './services/shop.ts';
 import { scanUsdt } from './services/pay/usdt.ts';
 import { allChannels } from './services/pay/index.ts';
 import { ensureDefaultLevel } from './services/agents.ts';
-import { getSetting } from './services/settings.ts';
+import { getSetting, loadSettings } from './services/settings.ts';
 import { readFile } from 'node:fs/promises';
 
-ensureDefaultStrategy();
-ensureDefaultLevel();
+// 先连上数据库、跑完迁移、读入设置，后面的模块才能用
+await initDb({ exclusive: true });
+await loadSettings();
+await ensureDefaultStrategy();
+await ensureDefaultLevel();
 
 const app = new Hono<AppEnv>();
 
@@ -44,13 +47,17 @@ app.post('/api/webhooks/avanfinity', async c => {
   const raw = await c.req.text();
   const v = verify(raw, { id: c.req.header('x-avanfinity-webhook-id'), ts: c.req.header('x-avanfinity-webhook-timestamp'), sig: c.req.header('x-avanfinity-signature') });
   if (!v.ok) return c.json({ error: v.reason }, v.status as any);
-  receive(c.req.header('x-avanfinity-webhook-id')!, raw);
+  await receive(c.req.header('x-avanfinity-webhook-id')!, raw);
   return c.json({ ok: true });
 });
 
 /* ---------- 健康检查：给 systemd / 负载均衡 / 监控用，只做一次数据库读 ---------- */
-app.get('/healthz', c => {
-  try { q.get('SELECT 1'); return c.json({ ok: true, uptime: Math.round(process.uptime()) }, 200, { 'Cache-Control': 'no-store' }); }
+// 事务排队执行：一个事务卡住会挡住所有写入（兑换、下单、退款），而简单的 SELECT 1 照样成功，所以单独检查
+const TX_STALL_MS = Number(process.env.DB_TX_STALL_MS) || 60_000;
+app.get('/healthz', async c => {
+  const busy = txBusyMs();
+  if (busy > TX_STALL_MS) return c.json({ ok: false, error: `数据库事务已经卡住 ${Math.round(busy / 1000)} 秒，所有写入都在排队` }, 503, { 'Cache-Control': 'no-store' });
+  try { await q.get('SELECT 1'); return c.json({ ok: true, uptime: Math.round(process.uptime()) }, 200, { 'Cache-Control': 'no-store' }); }
   catch (e) { return c.json({ ok: false, error: String((e as Error)?.message || e) }, 503); }
 });
 
@@ -61,7 +68,7 @@ app.route('/api/pay/notify', payNotify);
 
 /* ---------- 管理接口：登录 + 只接受 JSON，防跨站提交 ---------- */
 app.use('/api/admin/*', async (c, next) => {
-  const s = sessionUser(getCookie(c, SID));
+  const s = await sessionUser(getCookie(c, SID));
   if (!s) throw new HttpError(401, '请先登录', 'AUTH_REQUIRED');
   if (!['GET', 'HEAD'].includes(c.req.method) && !(c.req.header('content-type') || '').includes('application/json')) throw new HttpError(415, '只接受 JSON 请求');
   c.set('user', s.user); c.set('sid', s.sid);
@@ -77,13 +84,13 @@ const webRoot = relative(process.cwd(), resolve(ROOT, 'web')) || '.';
 app.use('/admin/*', async (c, next) => {
   const p = c.req.path;
   if (p.startsWith('/admin/login') || !p.endsWith('.html') && !p.endsWith('/')) return next();
-  if (!sessionUser(getCookie(c, SID))) return c.redirect('/admin/login.html');
+  if (!await sessionUser(getCookie(c, SID))) return c.redirect('/admin/login.html');
   await next();
 });
 app.get('/admin', c => c.redirect('/admin/'));
 // 首页：后台可切换为商城；兑换页始终可从 /redeem 进入
 const sendPage = async (c: any, file: string) => c.html(await readFile(resolve(ROOT, 'web', file), 'utf8'), 200, { 'Cache-Control': 'no-cache' });
-app.get('/', (c, next) => (getSetting('shop').enabled && getSetting('shop').homepage === 'shop' ? sendPage(c, 'shop/index.html') : next()));
+app.get('/', async (c, next) => (getSetting('shop').enabled && getSetting('shop').homepage === 'shop' ? await sendPage(c, 'shop/index.html') : next()));
 app.get('/redeem', c => sendPage(c, 'index.html'));
 app.get('/shop', c => c.redirect('/shop/'));
 app.get('/s/:slug', c => sendPage(c, 'shop/index.html'));
@@ -135,9 +142,25 @@ setInterval(() => { const u = getSetting('pay').usdt; if (u.enabled && u.address
 startNotifier();
 startDirectGuard();
 
-serve({ fetch: app.fetch, port: config.port, hostname: config.host }, info => {
-  console.log(`[cdk] 已启动 http://localhost:${info.port}`);
+// 看门狗：事务卡住太久（查询都有超时，这时多半是程序卡在事务里），退出交给 Docker / systemd 重启，
+// 数据库会回滚这个没提交的事务。Docker Compose 不会因为健康检查失败自动重启容器，所以由进程自己退出
+const TX_STALL_EXIT_MS = Number(process.env.DB_TX_STALL_EXIT_MS) || 300_000;
+setInterval(() => {
+  const busy = txBusyMs();
+  if (busy > TX_STALL_EXIT_MS) { console.error(`[cdk] 数据库事务卡住 ${Math.round(busy / 1000)} 秒，退出重启`); process.exit(1); }
+}, 10_000).unref();
+
+const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, info => {
+  console.log(`[cdk] 已启动 http://localhost:${info.port}（数据库 ${dialect}）`);
   console.log(`[cdk] 兑换页 ${config.publicUrl}/   后台 ${config.publicUrl}/admin/`);
   if (allChannels.some(c => c.enabled()) && !publicUrlOk())
     console.warn(`[cdk] ⚠ 已开启在线支付，但 PUBLIC_URL=${config.publicUrl} 不是外网 https 地址，支付平台的回调到不了，订单只能靠主动查单入账`);
+});
+
+// docker stop / systemctl stop 发 SIGTERM：停止接新请求，等进行中的事务结束再关数据库
+for (const sig of ['SIGTERM', 'SIGINT'] as const) process.once(sig, () => {
+  console.log(`[cdk] 收到 ${sig}，正在关闭…`);
+  server.close();
+  const force = setTimeout(() => process.exit(1), 10_000); force.unref();
+  closeDb().then(() => process.exit(0), e => { console.error('[cdk] 关闭数据库失败', e); process.exit(1); });
 });

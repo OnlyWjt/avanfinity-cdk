@@ -19,6 +19,29 @@ const APP = Number(process.env.TEST_APP_PORT) || await freePort(), MOCK = Number
 const DATA = process.env.TEST_DATA_DIR || `data-test/run-${new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14)}-${process.pid}`;
 rmSync(DATA, { recursive: true, force: true }); mkdirSync(DATA, { recursive: true });
 console.log(`测试端口 ${APP} / 模拟卡台 ${MOCK}，数据目录 ${DATA}`);
+
+/**
+ * 在 PostgreSQL / MySQL 上测试：TEST_DATABASE_URL=postgres://…/cdk_test npm test
+ * 开始前清空这个库（库名必须含 test，防止误清生产库）
+ */
+const DB_URL = process.env.TEST_DATABASE_URL || '';
+if (DB_URL) {
+  const name = decodeURIComponent(new URL(DB_URL).pathname.slice(1));
+  if (!/test/i.test(name)) { console.error(`✗ TEST_DATABASE_URL 的库名「${name}」不含 test，为防止误清数据，拒绝执行`); process.exit(1); }
+  if (/^postgres/i.test(DB_URL)) {
+    const pg = (await import('pg')).default;
+    const c = new pg.Client({ connectionString: DB_URL }); await c.connect();
+    await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;'); await c.end();
+  } else {
+    const mysql = (await import('mysql2/promise')).default;
+    const c = await mysql.createConnection({ uri: DB_URL.replace(/^mariadb:/i, 'mysql:') });
+    const [rows] = await c.query('SELECT table_name t FROM information_schema.tables WHERE table_schema = DATABASE()') as any;
+    await c.query('SET FOREIGN_KEY_CHECKS = 0');
+    for (const r of rows) await c.query(`DROP TABLE \`${r.t ?? r.T ?? r.TABLE_NAME}\``);
+    await c.query('SET FOREIGN_KEY_CHECKS = 1'); await c.end();
+  }
+  console.log(`数据库：${DB_URL.replace(/\/\/([^:/@]+):([^@]*)@/, '//$1:***@')}（已清空）`);
+}
 const env = { ...process.env, MAIL_OUTBOX: `${DATA}/mail`, E2E_BASE: `http://localhost:${APP}`, MOCK_BASE: `http://localhost:${MOCK}`, SHOTS_DIR: `${DATA}/shots` };
 const procs: ChildProcess[] = [];
 const start = (file: string, extra: Record<string, string>) => {
@@ -31,7 +54,7 @@ const stopAll = () => procs.forEach(p => p.kill());
 process.on('exit', stopAll);
 
 start('server/mock/avan-mock.ts', { MOCK_PORT: String(MOCK), MOCK_PUBLIC_URL: `http://localhost:${MOCK}`, MOCK_SPEED: '4', MOCK_WEBHOOK_URL: `http://localhost:${APP}/api/webhooks/avanfinity` });
-const app = start('server/main.ts', { PORT: String(APP), DATA_DIR: DATA, PUBLIC_URL: `http://localhost:${APP}`, TELEGRAM_API_BASE: `http://localhost:${MOCK}`, NOTIFY_SCAN_MS: '2000', TRUST_PROXY: '1', SHOP_TICK_MS: '1000', SHOP_QUERY_AFTER_MS: '1500', USDT_SCAN_MS: '1000', BALANCE_SCAN_MS: '1000', DIRECT_SLOW_POLL_MS: '1500', DIRECT_RECONCILE_MS: '1500' });
+const app = start('server/main.ts', { PORT: String(APP), DATA_DIR: DATA, ...(DB_URL && { DATABASE_URL: DB_URL }), PUBLIC_URL: `http://localhost:${APP}`, TELEGRAM_API_BASE: `http://localhost:${MOCK}`, NOTIFY_SCAN_MS: '2000', TRUST_PROXY: '1', SHOP_TICK_MS: '1000', SHOP_QUERY_AFTER_MS: '1500', USDT_SCAN_MS: '1000', BALANCE_SCAN_MS: '1000', DIRECT_SLOW_POLL_MS: '1500', DIRECT_RECONCILE_MS: '1500' });
 
 for (let i = 0; i < 50; i++) {
   try { if ((await fetch(`http://localhost:${APP}/api/public/config`)).ok && (await fetch(`http://localhost:${MOCK}/mock/telegram`)).ok) break; } catch { /* 还没启动 */ }

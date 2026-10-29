@@ -16,10 +16,10 @@ const cfg = () => { const c = getSetting('pay').usdt; return { ...c, apiKey: dec
 export const fmtUsdt = (micro: number) => (micro / MICRO).toFixed(4);
 
 /** 人民币（分）→ 唯一的 USDT 金额（1e-6 单位，精确到 0.0001） */
-export function uniqueAmount(cents: number): number {
+export async function uniqueAmount(cents: number): Promise<number> {
   const { rate } = cfg();
   const base = Math.ceil((cents / 100 / rate) * 100) * 10_000; // 先按 0.01 USDT 向上取整
-  const taken = new Set(q.all<{ crypto_amount: number }>("SELECT crypto_amount FROM payments WHERE method = 'usdt' AND status IN ('pending','closed') AND expires_at > ?", [new Date(Date.now() - GRACE).toISOString()]).map(r => r.crypto_amount));
+  const taken = new Set((await q.all<{ crypto_amount: number }>("SELECT crypto_amount FROM payments WHERE method = 'usdt' AND status IN ('pending','closed') AND expires_at > ?", [new Date(Date.now() - GRACE).toISOString()])).map(r => r.crypto_amount));
   for (let i = 0; i < 2000; i++) {
     const v = base + (1 + Math.floor(Math.random() * 999)) * 100; // +0.0001 ~ +0.0999
     if (!taken.has(v)) return v;
@@ -41,7 +41,7 @@ export const usdt: Channel = {
 /** 扫描链上入账，返回成功入账的支付单 */
 export async function scanUsdt(markPaid: (r: { paymentId: string; paid: boolean; tradeNo: string; cryptoAmount: number; raw: unknown }) => Promise<unknown>) {
   if (!usdt.enabled()) return 0;
-  const pend = q.all<PaymentRow>("SELECT * FROM payments WHERE method = 'usdt' AND status IN ('pending','closed') AND expires_at > ? ORDER BY created_at", [new Date(Date.now() - GRACE).toISOString()]);
+  const pend = await q.all<PaymentRow>("SELECT * FROM payments WHERE method = 'usdt' AND status IN ('pending','closed') AND expires_at > ? ORDER BY created_at", [new Date(Date.now() - GRACE).toISOString()]);
   if (!pend.length) return 0;
   const c = cfg();
   const since = Math.min(...pend.map(p => new Date(p.created_at).getTime())) - 60e3;
@@ -54,7 +54,7 @@ export async function scanUsdt(markPaid: (r: { paymentId: string; paid: boolean;
     if (t.to !== c.address || t.token_info?.address !== c.contract) continue;
     const dec = Number(t.token_info?.decimals ?? 6);
     const micro = Math.round(Number(t.value) * 10 ** (6 - dec));
-    if (q.get('SELECT 1 FROM payments WHERE trade_no = ?', ['tron:' + t.transaction_id])) continue;
+    if (await q.get('SELECT 1 FROM payments WHERE trade_no = ?', ['tron:' + t.transaction_id])) continue;
     // 允许到账时间在订单创建后、过期后 10 分钟内（链上确认有延迟）
     const p = pend.find(x => x.crypto_amount === micro && t.block_timestamp >= new Date(x.created_at).getTime() - 60e3 && t.block_timestamp <= new Date(x.expires_at).getTime() + GRACE);
     if (!p) { if (micro >= MICRO) console.warn(`[usdt] 未匹配的转账 ${fmtUsdt(micro)} USDT tx=${t.transaction_id}（金额对不上任何订单，请人工核对）`); continue; }

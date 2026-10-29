@@ -40,5 +40,5 @@ pub.get('/redeem/status', async c => c.json(await R.status(c.req.query('rid') ||
 pub.post('/receipt', async c => {
   const b = await body<any>(c);
   if (!rateLimit(`receipt:${clientIp(c)}`, 20, 3600e3)) throw new HttpError(429, '查询次数过多，请稍后再试', 'RATE_LIMITED');
-  return c.json(R.receipt(str(b.code, '兑换码', { max: 80 }), deviceOf(b.device)));
+  return c.json(await R.receipt(str(b.code, '兑换码', { max: 80 }), deviceOf(b.device)));
 });
