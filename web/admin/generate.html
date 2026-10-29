@@ -132,27 +132,37 @@ async function load() {
   render();
 }
 
+/** 当前选中的策略是否 GPT 直充：直充不消耗平台 CDK 库存，成本按直充目录估算，不支持 Pro 25x */
+const isDirect = () => { const st = strategies.find(s => s.id === S.strat); return S.p === 'gpt' && st?.mode === 'own' && st?.delivery === 'direct'; };
+const gptCost = p => (isDirect() ? p.directCost ?? p.cost : p.cost);
 function render() {
   $$('#prodChoice .opt').forEach(b => b.classList.toggle('on', b.dataset.v === S.p));
+  // 先确定策略：套餐能不能选、成本怎么算都取决于策略的交付方式
+  const avail0 = strategies.filter(s => s.prod.includes(S.p));
+  if (!avail0.find(s => s.id === S.strat)) S.strat = (avail0.find(s => s.mode === 'own') || avail0[0])?.id;
+  const dir = isDirect();
   const plans = cat[S.p];
-  const usable = p => S.p === 'gpt' ? p.enabled && p.cost != null : p.enabled !== false;
+  // 直充只看直充目录（不依赖平台 CDK 是否在售）
+  const usable = p => S.p === 'gpt' ? (dir ? p.direct && gptCost(p) != null : p.enabled && p.cost != null) : p.enabled !== false;
   if (!plans.find(p => p.key === S.plan && usable(p))) S.plan = (plans.find(p => p.key === 'plus' && usable(p)) || plans.find(usable))?.key;
   $('#planChoice').innerHTML = plans.map(p => {
     const dis = !usable(p);
     const name = esc(p.label.replace(/^(ChatGPT|X|Telegram) /, ''));
     // GPT：成本 + 平台库存条；X / TG：官方金额兑换时才确定，只显示服务费
     const body = S.p === 'gpt'
-      ? (dis ? '<div class="pc-cost">—</div><small>等待卡台报价</small>' : `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><div class="meter ${p.stock < 30 ? 'low' : ''}"><i style="width:${Math.min(100, (p.stock / 400) * 100)}%"></i></div><small>平台库存 ${p.stock}</small>`)
+      ? (dis ? `<div class="pc-cost">—</div><small>${dir && !p.direct ? '直充不支持' : '等待卡台报价'}</small>`
+        : dir ? `<div class="pc-cost">${money(gptCost(p))}<small>/ 张</small></div><small>${p.directCost != null ? '直充 · 预估成本' : 'CDK 售价参考 · 直充目录暂无美元报价'}</small>`
+        : `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><div class="meter ${p.stock < 30 ? 'low' : ''}"><i style="width:${Math.min(100, (p.stock / 400) * 100)}%"></i></div><small>平台库存 ${p.stock}</small>`)
       : (dis ? '<div class="pc-cost">—</div><small>暂未开放</small>' : `<div class="pc-cost">${money(p.serviceFee)}<small>服务费</small></div><small>官方金额兑换时确定</small>`);
     return `<button class="opt ${p.key === S.plan ? 'on' : ''}" data-k="${p.key}" ${dis ? 'disabled' : ''}><b>${name}</b>${body}</button>`;
   }).join('');
   $$('#planChoice .opt').forEach(b => b.onclick = () => { S.plan = b.dataset.k; dirtySocial = false; newKey(); render(); });
-  $('#planHint').textContent = S.p === 'gpt' ? '成本来自卡台实时售价，24 小时有效' : '官方金额在用户兑换时才确定';
+  $('#planHint').textContent = S.p !== 'gpt' ? '官方金额在用户兑换时才确定' : dir ? '直充：成本按卡台直充目录预估（官方金额 + 服务费），兑换时按实时报价扣款' : '成本来自卡台实时售价，24 小时有效';
   $('#quoteBadge').innerHTML = S.p === 'gpt' ? (cat.errors.length ? '<span class="badge warn">报价不可用</span>' : '<span class="badge ok">✓ 报价有效</span>') : '';
 
   const avail = strategies.filter(s => s.prod.includes(S.p));
   if (!avail.find(s => s.id === S.strat)) S.strat = (avail.find(s => s.mode === 'own') || avail[0])?.id;
-  $('#stratChoice').innerHTML = avail.map(s => `<button class="opt ${s.id === S.strat ? 'on' : ''}" data-s="${s.id}"><b>${esc(s.name)}</b><small>${s.mode === 'own' ? `自有码 · ${s.prefix}-` : '托管码（卡台码）'}</small></button>`).join('') || '<div class="xs c-warn">没有适用于这个产品的启用策略</div>';
+  $('#stratChoice').innerHTML = avail.map(s => `<button class="opt ${s.id === S.strat ? 'on' : ''}" data-s="${s.id}"><b>${esc(s.name)}</b><small>${s.mode === 'own' ? `自有码 · ${s.prefix}-${S.p === 'gpt' && s.delivery === 'direct' ? ' · 直充' : ''}` : '托管码（卡台码）'}</small></button>`).join('') || '<div class="xs c-warn">没有适用于这个产品的启用策略</div>';
   $$('#stratChoice .opt').forEach(b => b.onclick = () => { S.strat = b.dataset.s; dirtySocial = false; newKey(); render(); });
   const st = strategies.find(s => s.id === S.strat);
   $('#stratHelp').innerHTML = st ? `${esc(st.desc)} · 同账号 ${st.accDays} 天内限 ${st.accN} 次${st.freeOnly ? ' · 仅 Free 账号' : ''} · 价格保护 ${st.priceTol}% · 失败${st.mode === 'own' && st.failAct === 'retry' ? `自动重试 ${st.retryN} 次` : st.failAct === 'manual' ? '转人工' : '释放重兑'}` : '';
@@ -180,10 +190,11 @@ function summary() {
   $('#tkMark').textContent = { gpt: 'G', x: '𝕏', tg: '✈' }[S.p];
   $('#tkQty').textContent = '×' + q;
   $('#tkPlan').textContent = plan.label;
-  $('#tkMode').textContent = `${own ? '自有码' : '托管码（卡台码）'} · ${st.name}`;
+  $('#tkMode').textContent = `${own ? '自有码' : '托管码（卡台码）'}${isDirect() ? ' · 直充' : ''} · ${st.name}`;
   $('#tkCode').textContent = own ? `${st.prefix}-XXXX-XXXX-XXXX` : { gpt: 'AVF-…', x: 'XCDK-…', tg: 'TGCD-…' }[S.p];
   let cost, bad = '';
-  if (S.p === 'gpt') { cost = plan.cost; if (q > plan.stock) bad = '数量超过平台库存'; }
+  // 直充不消耗平台 CDK 库存，不做库存检查
+  if (S.p === 'gpt') { cost = gptCost(plan); if (!isDirect() && q > plan.stock) bad = '数量超过平台库存'; }
   else {
     const cap = parseFloat($('#cap').value), fund = parseFloat($('#fund').value);
     cost = cap;
@@ -191,10 +202,13 @@ function summary() {
     else if (fund >= cap) bad = '预付额必须小于成本上限（上限还要覆盖通道费和服务费）';
     else if (!cat.paymentConfigured && !own) bad = '还没有在设置里选择 X / TG 付款通道';
   }
-  $('#sum').innerHTML = `<div>生成费用<b>$0.00</b></div><div>${S.p === 'gpt' ? '单码成本' : '单码成本上限'}<b>${money(cost)}</b></div>
-    ${S.p === 'gpt' ? `<div>平台库存<b>${plan.stock ?? '—'} 张</b></div>` : ''}
+  // 直充目录没有美元报价时，成本是拿 CDK 售价顶替的参考值，标出来，免得当成直充实际成本
+  const costLabel = S.p !== 'gpt' ? '单码成本上限' : isDirect() && plan.directCost == null ? '单码成本（CDK 售价参考）' : '单码成本';
+  $('#sum').innerHTML = `<div>生成费用<b>$0.00</b></div><div>${costLabel}<b>${money(cost)}</b></div>
+    ${S.p === 'gpt' ? (isDirect() ? '<div>交付方式<b>直充（不占平台库存）</b></div>' : `<div>平台库存<b>${plan.stock ?? '—'} 张</b></div>`) : ''}
     <div class="tot">全部兑换${S.p === 'gpt' ? '预计' : '最多'}成本<b>${money(cost * q)}</b></div>`;
   $('#riskNote').innerHTML = bad ? `<span class="c-bad">✕ ${bad}</span>`
+    : isDirect() ? 'ⓘ 直充：用户兑换时由卡台自动选卡付款，不生成卡台码；每一单先过「直充资金护栏」。'
     : own ? 'ⓘ 自有码：卡台码在用户兑换时才生成，买家拿不到，策略不可绕过。之后可随时再导出。'
     : S.p === 'gpt' ? 'ⓘ 托管码：系统会加密保存完整码；但买家拿到的是卡台码，可以绕过本系统直接去卡台兑换。'
     : 'ⓘ 托管码：生成时立即在卡台发行，不扣款；兑换时按上限扣款。';

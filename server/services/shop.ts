@@ -14,10 +14,11 @@ import { bad, notFound, HttpError } from '../http.ts';
 import { getSetting } from './settings.ts';
 import { getStrategy } from './strategy.ts';
 import { generateBatch, revokeCodes } from './batches.ts';
-import { fullPlanLabel, planKeys } from './catalog.ts';
+import { fullPlanLabel, planKeys, GPT_DIRECT_PLAN_KEYS } from './catalog.ts';
 import { channel, channels, notifyUrl } from './pay/index.ts';
 import type { PayAction, PayResult, PaymentRow } from './pay/types.ts';
 import * as coupons from './coupons.ts';
+import { pendingDirect } from './direct.ts';
 import * as agents from './agents.ts';
 import * as customers from './customers.ts';
 import { sendMail, mailConfigured, layout, button, esc, siteUrl } from './mail.ts';
@@ -50,6 +51,7 @@ export function saveProduct(b: any, id?: string) {
   if (!(agentPrice > 0 && agentPrice <= price)) throw bad('代理进货价必须大于 0 且不高于零售价');
   const s = getStrategy(String(b.strategyId));
   if (!s.prod.includes(product as any)) throw bad(`策略「${s.name}」不适用于这个产品`);
+  if (product === 'gpt' && s.mode === 'own' && s.delivery === 'direct' && !GPT_DIRECT_PLAN_KEYS.includes(b.plan)) throw bad(`策略「${s.name}」是直充，不支持 ${fullPlanLabel(product, b.plan)}，买家付款后会发不出货；请选走卡台 CDK 的策略`);
   const stock = b.stockLimit === '' || b.stockLimit == null ? null : Math.max(0, Math.floor(Number(b.stockLimit)));
   const maxPer = Math.max(1, Math.min(50, Math.floor(Number(b.maxPerOrder) || 10)));
   const title = String(b.title || fullPlanLabel(product, b.plan)).trim().slice(0, 60);
@@ -198,13 +200,17 @@ export async function createOrder(i: CreateOrder) {
     if (couponId) coupons.hold(couponId, no, email);
   });
   let pay: PayAction;
-  try { pay = await startPayment(no, method, i.paySub, i.ip, i.mobile); }
+  try { pay = await startPayment(no, method, i.paySub, i.ip, i.mobile, cust?.id ?? null); }
   catch (e) { closeOrder(getOrder(no)!, '发起支付失败'); throw e; }  // 不留下占库存、占优惠券的孤儿订单
   return { no, token: getOrder(no)!.view_token, pay };
 }
 
-/** 为订单创建一次支付（也用于切换支付方式） */
-export async function startPayment(no: string, method: string, sub: string | undefined, ip: string, mobile: boolean): Promise<PayAction> {
+/**
+ * 为订单创建一次支付（也用于切换支付方式）
+ * payerId：当前登录的买家。订单链接（view_token）只能用来查看订单，不能授权动用账户余额，
+ * 所以余额支付必须是订单所属账户本人登录后发起
+ */
+export async function startPayment(no: string, method: string, sub: string | undefined, ip: string, mobile: boolean, payerId: number | null): Promise<PayAction> {
   const o = getOrder(no);
   if (!o) throw notFound('订单不存在');
   if (o.status !== 'pending') throw bad('订单不是待付款状态');
@@ -213,6 +219,8 @@ export async function startPayment(no: string, method: string, sub: string | und
   const exist = q.get<PaymentRow>("SELECT * FROM payments WHERE order_no = ? AND method = ? AND COALESCE(sub,'') = ? AND status = 'pending' AND expires_at > ?", [no, method, sub || '', now()]);
   if (exist) return actionOf(exist);
   if (method === 'balance') {
+    if (o.kind === 'topup') throw bad('充值不能用余额支付');
+    if (!o.customer_id || payerId !== o.customer_id) throw new HttpError(403, '余额支付需要登录下单的账户', 'BALANCE_FORBIDDEN');
     const pid = 'P' + hex(8).toUpperCase();
     // 扣余额和入账在同一个事务里：要么都成功，要么都没发生
     const res = tx(() => {
@@ -372,6 +380,8 @@ export async function refund(no: string, note: string, force = false) {
   if (!['paid', 'delivered'].includes(o.status)) throw bad('只有已付款的订单可以退款');
   if (refunding.has(no)) throw bad('这个订单正在退款，请稍候刷新');
   const codes = q.all<{ id: string; status: string; mode: string; product: string }>('SELECT c.id, c.status, c.mode, c.product FROM order_codes oc JOIN codes c ON c.id = oc.code_id WHERE oc.order_no = ?', [no]);
+  // 有直充还没出结果：钱可能已经付出去了，强制退款也不行，等结果确定或人工核对后再退
+  if (codes.some(c => pendingDirect(c.id))) throw new HttpError(409, '订单里有兑换码的直充还没有结果（可能已经付款），请先在兑换记录里核对结果，再退款', 'DIRECT_PENDING');
   const used = codes.filter(c => c.status === 'redeemed' || c.status === 'in_use').length;
   const hostedGpt = codes.filter(c => c.status === 'unused' && c.mode === 'hosted' && c.product === 'gpt').length;
   if ((used || hostedGpt) && !force) {

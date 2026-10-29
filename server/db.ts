@@ -379,6 +379,35 @@ const MIGRATIONS: string[] = [
   -- 兑换页旧的默认说明里提到「绑卡」，换成新文案（自己改过的不动）
   UPDATE settings SET value = replace(value, '整个过程你不需要付款，也不需要绑卡。', '整个过程不需要你付款，也不需要提供任何支付信息。') WHERE key = 'redeemPage';
   `,
+  /* 6 GPT 直充：卡台自动直充任务 + 资金护栏额度账本（金额为 USD 十进制字符串） */ `
+  ALTER TABLE redemptions ADD COLUMN direct_task_id TEXT;
+  CREATE TABLE direct_spend (
+    id INTEGER PRIMARY KEY,
+    redemption_id TEXT NOT NULL,
+    code_id TEXT NOT NULL,                        -- 每张码的直充次数上限按它算
+    account_key TEXT,                             -- 熔断要求失败涉及多个不同账号
+    idem_key TEXT NOT NULL UNIQUE,                -- 发给卡台的幂等键，一次下单一条
+    task_id TEXT,
+    plan TEXT NOT NULL,
+    reserved_usd TEXT NOT NULL,                   -- 下单时预留（= 单笔上限）
+    actual_usd TEXT,                              -- 结束后实际花费
+    status TEXT NOT NULL DEFAULT 'reserved',      -- reserved（进行中 / 结果未知）| spent 成功 | released 失败 | cancelled 卡台没受理
+    created_at TEXT NOT NULL, settled_at TEXT
+  );
+  CREATE INDEX direct_spend_day ON direct_spend(created_at);
+  CREATE INDEX direct_spend_red ON direct_spend(redemption_id);
+  CREATE INDEX direct_spend_code ON direct_spend(code_id);
+  CREATE INDEX red_direct_task ON redemptions(direct_task_id);
+  `,
+  /* 7 */ `
+  -- 进入「处理中」的时间：轮询退避按它算（updated_at 每次查询都会变，不能用）
+  ALTER TABLE redemptions ADD COLUMN poll_started_at TEXT;
+  -- 直充费用是否已按卡台费用明细核对：0 = 还没核对（按预算计入额度，后台继续对账），1 = 已核对
+  ALTER TABLE direct_spend ADD COLUMN cost_verified INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE direct_spend ADD COLUMN cost_note TEXT;
+  -- 重新设置两步验证时，新密钥先放在这里，确认后才替换现用的
+  ALTER TABLE users ADD COLUMN totp_pending_enc TEXT;
+  `,
 ];
 
 function migrate() {

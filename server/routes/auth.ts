@@ -49,6 +49,13 @@ auth.post('/password', async c => {
   deleteCookie(c, SID, { path: '/' });
   return c.json({ ok: true });
 });
-auth.post('/totp/setup', c => { const u = me(c); const secret = A.totpSetup(u.id); return c.json({ secret, uri: totpUri(secret, u.email) }); });
+auth.post('/totp/setup', async c => {
+  const u = me(c);
+  if (!rateLimit(`totp-setup:${u.id}`, 10, 15 * 60e3)) throw new HttpError(429, '尝试次数过多，请 15 分钟后再试', 'RATE_LIMITED');
+  const b = await c.req.json().catch(() => ({})) as any;
+  const secret = A.totpSetup(u.id, { password: typeof b.password === 'string' ? b.password : undefined, code: typeof b.code === 'string' ? b.code : undefined });
+  c.set('user', u); audit(c, 'auth.totp_setup');
+  return c.json({ secret, uri: totpUri(secret, u.email) });
+});
 auth.post('/totp/enable', async c => { const u = me(c); A.totpEnable(u.id, String((await body<any>(c)).code || '')); c.set('user', u); audit(c, 'auth.totp_enable'); return c.json({ ok: true }); });
 auth.post('/totp/disable', async c => { const u = me(c); A.totpDisable(u.id, String((await body<any>(c)).code || '')); c.set('user', u); audit(c, 'auth.totp_disable'); return c.json({ ok: true }); });

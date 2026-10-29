@@ -42,7 +42,7 @@ function render() {
   if (r.needs === 'resubmit') return resubmitView();
   if (r.status === 'completed') return doneView();
   if (r.status === 'manual_review') { show(3, `<div class="bigicon warn">⚑</div><h2 style="text-align:center">已提交，等待卖家确认</h2>
-      <p class="desc" style="text-align:center">${esc(r.message || '需要卖家确认后才能为你开通。')}通常几分钟内处理，你不需要做任何操作，可以停留在本页等待。</p>
+      <p class="desc" style="text-align:center">${esc(r.message || '需要卖家确认后才能为你开通。')}${r.stage === 'guard' ? '卖家确认后会自动继续，你可以关闭本页，稍后在同一设备上打开查看结果。' : '通常几分钟内处理，你不需要做任何操作，可以停留在本页等待。'}</p>
       <div class="kv mb16"><div><span>套餐</span><b>${esc(r.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(r.account || '')}</b></div><div><span>兑换码</span><b class="c-ok">已锁定，不会被他人使用</b></div></div>${contact()}`); return poll(5000); }
   if (WAITING.includes(r.status)) return progressView();
   if (r.status === 'blocked' && r.stage === 'gate') return codeView(r.message);
@@ -86,7 +86,10 @@ function loadCaptcha(siteKey) {
 
 function accountView(err = '') {
   if (R.product === 'gpt') {
-    show(2, `${member()}<h2>粘贴 ChatGPT 会话</h2><p class="desc">用来确认会员开通到哪个账号，只用于这一次开通，不会保存。</p>
+    // 上一次没开通成功：把原因放在最上面，不要让买家在表单底部才看到
+    const failNote = R.status === 'failed' && err ? `<div class="note bad mb12">✕ ${esc(err)}</div>` : '';
+    if (failNote) err = '';
+    show(2, `${member()}${failNote}<h2>粘贴 ChatGPT 会话</h2><p class="desc">用来确认会员开通到哪个账号，只用于这一次开通，不会保存。</p>
       <textarea class="field" id="sess" placeholder='{"user":{...},"accessToken":"..."}' spellcheck="false"></textarea>
       <div class="note mt8">① 在浏览器登录 <b>chatgpt.com</b><br>② 新标签页打开 <span class="mono">chatgpt.com/api/auth/session</span> <button class="link" id="cpUrl">复制地址</button><br>③ 全选复制页面上的全部内容，粘贴到这里</div>
       <div class="note warn mt8">⚠ Session 相当于登录凭证，只在本页面粘贴，不要发给任何人（包括客服）。</div>
@@ -115,7 +118,7 @@ function confirmView() {
     <div class="kv mb16"><div><span>套餐</span><b>${esc(R.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(R.account || '')}</b></div>
       ${q.currentPlan ? `<div><span>当前套餐</span><b>${esc(q.currentPlan)}</b></div>` : ''}<div><span>兑换码</span><b class="mono">${esc(R.code)}</b></div>
       <div><span>你需支付</span><b class="c-ok">¥0 · 由卖家支付</b></div></div>
-    <div class="note mb16">${R.product === 'gpt' ? 'ⓘ 开通后会自动关闭自动续费，到期不会扣你的钱。' : 'ⓘ 接下来会先做付款准备，准备好后需要你再点一次「确认付款」才会真正付款。'}</div>
+    <div class="note mb16">${R.product === 'gpt' ? (R.direct ? 'ⓘ 开通后会尝试为你关闭自动续费，结果以开通完成页为准；整个过程不会扣你的钱。' : 'ⓘ 开通后会自动关闭自动续费，到期不会扣你的钱。') : 'ⓘ 接下来会先做付款准备，准备好后需要你再点一次「确认付款」才会真正付款。'}</div>
     <div class="err" id="err"></div>
     <button class="btn primary block" id="next">确认开通</button><button class="backlink" id="back">← 返回修改账号</button>`);
   if (q.expiresAt) stopCd = countdown($('#cd'), (new Date(q.expiresAt) - Date.now()) / 1000, () => { toast('报价已过期，请重新检查账号', 'warn'); R.needs = R.product === 'gpt' ? 'session' : 'recipient'; render(); });
@@ -142,7 +145,8 @@ function resubmitView() {
 }
 function progressView() {
   const r = R;
-  const base = r.product === 'gpt' ? ['兑换码已确认', '账号与报价已确认', '正在付款', '正在开通会员'] : ['账号已确认', '准备付款', '向官方付款', r.product === 'x' ? '确认会员生效' : '核验赠送到账'];
+  // 买家不需要付款：直充的进度不出现「付款」字样
+  const base = r.product === 'gpt' ? ['兑换码已确认', '账号与报价已确认', r.direct ? '正在处理' : '正在付款', '正在开通会员'] : ['账号已确认', '准备付款', '向官方付款', r.product === 'x' ? '确认会员生效' : '核验赠送到账'];
   const k = r.product === 'gpt' ? (r.progress.length ? Math.min(3, r.progress.length) : 2) : r.status === 'funding' ? 1 : r.status === 'paid_pending_delivery' ? 3 : 2;
   const title = r.status === 'retrying' ? '遇到问题，正在自动重试' : r.status === 'funding' ? '正在准备' : r.status === 'paid_pending_delivery' ? '已付款，等待官方到账' : '正在为你开通';
   show(4, `<h2>${title}</h2><p class="desc">${r.status === 'retrying' ? esc(r.message || '') : r.status === 'funding' ? '正在做付款准备，还<b>没有</b>付款。' : '通常 30 秒内完成。可以关闭页面，稍后在同一设备上打开本页或「查询凭证」查看结果。'}</p>
@@ -154,7 +158,10 @@ function doneView() {
   show(5, `<div class="bigicon">✓</div><h2 style="text-align:center">开通成功</h2>
     <p class="desc" style="text-align:center">${esc(r.planLabel)} 已开通到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : r.product === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p>
     <div class="kv mb16"><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div><div><span>开通时间</span><b>${new Date(r.completedAt).toLocaleString('zh-CN')}</b></div>
-      ${r.product === 'gpt' ? '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>' : ''}
+      ${r.product !== 'gpt' ? ''
+        : r.willRenew === true ? '<div><span>自动续费</span><b class="c-warn">仍开启，如不需要请在 ChatGPT 设置里关闭</b></div>'
+        : r.willRenew === false || !r.direct ? '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>'
+        : '<div><span>自动续费</span><b class="c-warn">还在确认，请稍后在 ChatGPT 设置里检查</b></div>'}
       ${r.invoiceUrls.length ? `<div><span>官方账单</span><b><a class="link" href="${esc(r.invoiceUrls[0])}" target="_blank" rel="noopener">查看</a></b></div>` : ''}</div>
     <div class="row-flex"><button class="btn" style="flex:1" id="cp">复制凭证</button><button class="btn primary" style="flex:1" id="again">兑换另一个</button></div>`);
   $('#cp').onclick = () => copy(`订单 ${r.orderNo}\n${r.planLabel}\n${r.account}\n${new Date(r.completedAt).toLocaleString('zh-CN')}`, '凭证信息已复制');

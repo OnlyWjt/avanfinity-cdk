@@ -185,6 +185,11 @@ const before = (await u1('GET', '/api/shop/account/orders')).data.list.length;
 ok((await u1('POST', '/api/shop/orders', { productId: P.id, quantity: 1, payMethod: 'balance' })).data.code === 'INSUFFICIENT_BALANCE', '余额不足时拒绝');
 ok((await u1('GET', '/api/shop/account/orders')).data.list.length === before, '余额不足不会留下待付款的孤儿订单');
 ok((await guest()('POST', '/api/shop/orders', { productId: P.id, email: 'x@test.com', queryPassword: '1234', payMethod: 'balance' })).status === 400, '未登录不能用余额');
+// 订单链接（view token）只能用来查看订单，不能替下单账户动用余额
+const pend = await u1('POST', '/api/shop/orders', { productId: P.id, quantity: 1, payMethod: 'epay', paySub: 'alipay' });
+const steal = await guest()('POST', `/api/shop/orders/${pend.data.no}/pay`, { t: pend.data.token, payMethod: 'balance' });
+ok(steal.status === 403 && steal.data.code === 'BALANCE_FORBIDDEN', `拿到订单链接的其他人不能用下单账户的余额付款 → ${steal.status} ${steal.data.code}`);
+await u1('POST', `/api/shop/orders/${pend.data.no}/cancel`, { t: pend.data.token });
 ok((await u1('GET', '/api/shop/account/ledger')).data.list.map((l: any) => l.type).join(',') === 'spend,topup', '余额流水：充值、消费');
 await u1('POST', '/api/shop/account/logout', {});
 ok((await u1('GET', '/api/shop/account/me')).data.me === null, '退出登录');
@@ -350,6 +355,17 @@ ok(!pm2.includes('usdt') && !pm2.includes('wechat') && pm2.includes('epay'), `�
 ok((await order(guest(), { payMethod: 'usdt', paySub: undefined, email: 'off@test.com' })).status === 400, '已关闭的渠道不能用来下单');
 await admin('PUT', '/api/admin/shop/settings/pay/usdt', { enabled: true });
 await admin('PUT', '/api/admin/shop/settings/pay/wechat', { apiV3Key: keys.wechat.apiV3Key });
+
+/* ---------- 改成直充前检查未完成订单：订单下单时快照了策略，商品改绑也没用 ---------- */
+const swTag = Date.now() % 1000;
+const swS = (await admin('POST', '/api/admin/strategies', { name: '切换测试' + swTag, prod: ['gpt'], mode: 'own', prefix: 'SW' + swTag, ipH: 5000, devD: 1000, captcha: 1000 })).data;
+const P25 = (await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'pro_25x', title: 'Pro 25x 测试', price: '1500', agentPrice: '1400', strategyId: swS.id })).data;
+const po = await guest()('POST', '/api/shop/orders', { productId: P25.id, quantity: 1, email: 'onlyWjt.555@gmail.com', queryPassword: '1234', payMethod: 'epay', paySub: 'alipay' });
+await admin('PUT', '/api/admin/shop/products/' + P25.id, { ...P25, price: '1500', agentPrice: '1400', strategyId: gptStrat.id, enabled: false });
+const toD = await admin('PUT', `/api/admin/strategies/${swS.id}`, { ...swS, delivery: 'direct' });
+ok(toD.status === 400 && /未完成的订单/.test(toD.data.error), `商品改绑后，原策略仍有未完成的 Pro 25x 订单，不能改成直充 → ${toD.data.error}`);
+await guest()('POST', `/api/shop/orders/${po.data.no}/cancel`, { t: po.data.token });
+ok((await admin('PUT', `/api/admin/strategies/${swS.id}`, { ...swS, delivery: 'direct' })).status === 200, '订单关闭后可以改成直充');
 
 /* ---------- 主题：新增的外观维度、Logo 图片、自定义 CSS ---------- */
 const th0 = (await admin('GET', '/api/admin/theme')).data;
