@@ -1,0 +1,64 @@
+{
+  "args": [],
+  "entrypoint": "scripts/cuse.exe",
+  "files": {
+    "LICENSE": {
+      "sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6",
+      "size": 11558
+    },
+    "SKILL.md": {
+      "sha256": "2a4ecf94af46815ba881c77025c28958edf5afe895dc6f5ef17a803ab6bfd2e6",
+      "size": 4732
+    },
+    "THIRD_PARTY_NOTICES.md": {
+      "sha256": "73c6b6774b9d2f17613c02cd8de8dbadb1f2b9e33643beac81102b3c5aa5e23e",
+      "size": 2792
+    },
+    "references/background.md": {
+      "sha256": "b76c91d690bf550f8f014c398f9652f69d8f5a67c420fffdf1d785cf27296001",
+      "size": 9811
+    },
+    "references/batch.md": {
+      "sha256": "75777d645ea10ec9dcd7e0ff5e80529597eae1c832954cdb60ca753d473e1115",
+      "size": 7214
+    },
+    "references/input.md": {
+      "sha256": "f2eb78fff3b8546257290ad8e18921d2aac822302256b9535c52981d0d578480",
+      "size": 6754
+    },
+    "references/observation.md": {
+      "sha256": "460cee8c7f20b48fa980c97ee28c0dd29fc10698777c7d4369dd41b83a4f7e46",
+      "size": 5997
+    },
+    "references/session-details.md": {
+      "sha256": "95e7dc96c82b84a4093e7e0f8400a202ff3a79f95efb296eda66c6dc06bed3be",
+      "size": 18978
+    },
+    "references/sessions.md": {
+      "sha256": "24dc2792f49413323317e0556e6c77ab61613e42a9bd62cc60347bcdbca2c2e2",
+      "size": 8116
+    },
+    "references/setup.md": {
+      "sha256": "f7c7e7e53bf79885365d793f99425301bcbb89b5ad6185503fbad44fd5b3d897",
+      "size": 4689
+    },
+    "references/windows.md": {
+      "sha256": "32fd99f3317e222808289fa7f5422a107dcaecd2e2acf354661329473a0a53ce",
+      "size": 6797
+    },
+    "scripts/cuse.exe": {
+      "sha256": "c6a7da9e8ee333807ea559569acdf768c3544cb8295c1891c49b4869919421fc",
+      "size": 7504384
+    },
+    "scripts/cuse_client.py": {
+      "sha256": "a53ec47eb178fe3b2392a1ee7c6b49e36bf7b89960a958216105082311b673cf",
+      "size": 5723
+    }
+  },
+  "kind": "skill",
+  "name": "cuse",
+  "platform": "windows-x64",
+  "schema_version": 1,
+  "source_commit": "92115c15398723e37b1235cb32001684aa0a7367",
+  "version": "0.4.1"
+}

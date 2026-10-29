@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>售价与利润 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="pricing">
+<div id="page" data-title="售价与利润" data-crumb="CDK">
+  <div class="alert info glass">ⓘ<span>卡台价格是你的<b>成本</b>。「我的零售价」只保存在本系统，用来计算利润，不会提交到卡台。汇率 1 USD = <input class="field sm mono" id="fx" style="width:70px;display:inline-block"> CNY</span>
+    <button class="btn sm" id="refresh">↻ 刷新报价</button></div>
+  <div id="err"></div>
+
+  <section class="card glass p0 mb16">
+    <div class="head"><h3>ChatGPT <small>卡台 CDK 售价 · 动态报价 24h 有效</small></h3></div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>套餐</th><th>报价状态</th><th class="num">成本 <small class="faint">USD</small></th><th class="num">平台库存</th><th class="num">我的未兑换</th><th class="num">近 30 天兑换</th><th style="width:150px">我的零售价</th><th class="num">单张利润</th></tr></thead><tbody id="gpt"></tbody></table></div>
+  </section>
+  <div class="grid">
+    <section class="card glass p0 s6"><div class="head"><h3>X Premium</h3></div>
+      <table class="tbl"><thead><tr><th>套餐</th><th class="num">参考成本 <small class="faint">USD</small></th><th style="width:120px">零售价</th><th class="num">利润</th><th></th></tr></thead><tbody id="x"></tbody></table></section>
+    <section class="card glass p0 s6"><div class="head"><h3>Telegram Premium</h3></div>
+      <table class="tbl"><thead><tr><th>套餐</th><th class="num">参考成本 <small class="faint">USD</small></th><th style="width:120px">零售价</th><th class="num">利润</th><th></th></tr></thead><tbody id="tg"></tbody></table></section>
+  </div>
+  <p class="xs faint mt12">X / TG 的参考成本：有兑换记录时取近 30 天平均实际成本，否则按「默认预付额 + 服务费」估算。官方金额要在用户填写接收方后才能拿到。</p>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let data;
+ready(load);
+async function load() {
+  data = await GET('/api/admin/pricing');
+  $('#fx').value = data.fx; $('#fx').disabled = !can('admin');
+  $('#err').innerHTML = data.errors.length ? `<div class="alert warn glass">⚠<span>部分报价获取失败${data.stale ? '，显示的是上次结果' : ''}：${esc(data.errors[0])}</span></div>` : '';
+  const ed = can('admin');
+  const profit = (retail, costUsd) => { if (!retail || costUsd == null) return '<span class="faint">—</span>'; const p = retail - costUsd * data.fx; return `<span class="${p >= 0 ? 'c-ok' : 'c-bad'}">${p >= 0 ? '+' : ''}${cny(p)}</span><div class="xs faint">${(p / retail * 100).toFixed(0)}%</div>`; };
+  const inp = (key, val) => `<div class="inputgrp"><span>¥</span><input data-ret="${key}" value="${val ?? ''}" placeholder="未设置" ${ed ? '' : 'disabled'}></div>`;
+  $('#gpt').innerHTML = data.gpt.map(p => `<tr><td><b>${esc(p.label.replace('ChatGPT ', ''))}</b> <span class="tag">${p.key}</span></td>
+    <td>${p.status === 'READY' ? '<span class="badge ok">✓ 有效</span>' : p.status ? '<span class="badge warn">◷ 等待报价</span>' : '<span class="badge idle">未知</span>'}</td>
+    <td class="num">${money(p.cost)}</td><td class="num">${p.stock ?? '—'}${p.stock != null && p.stock < 20 ? ' <span class="c-warn">低</span>' : ''}</td><td class="num">${p.unused}</td><td class="num">${p.sold30}</td>
+    <td>${inp('gpt.' + p.key, p.retail)}</td><td class="num">${profit(p.retail, p.cost)}</td></tr>`).join('');
+  const social = (k) => data[k].map(p => `<tr><td><b>${esc(p.label.replace(/^(X|Telegram) /, ''))}</b>${p.enabled === false ? ' <span class="badge idle">未开放</span>' : ''}<div class="xs faint">服务费 ${money(p.serviceFee)} · 未兑换 ${p.unused}</div></td>
+    <td class="num">${p.costRef != null ? '≈ ' + money(p.costRef) : '—'}</td><td>${inp(k + '.' + p.key, p.retail)}</td><td class="num">${profit(p.retail, p.costRef)}</td>
+    <td class="acts">${ed ? `<button class="btn sm" data-def="${k}.${p.key}">默认参数</button>` : ''}</td></tr>`).join('');
+  $('#x').innerHTML = social('x'); $('#tg').innerHTML = social('tg');
+  $$('[data-ret]').forEach(i => i.onchange = async () => { try { await PUT('/api/admin/pricing/retail', { key: i.dataset.ret, price: i.value === '' ? null : Number(i.value) }); toast('零售价已保存'); load(); } catch (e) { toast(e.message, 'bad'); } });
+  $$('[data-def]').forEach(b => b.onclick = () => defaults(b.dataset.def));
+}
+function defaults(key) {
+  const [k, plan] = key.split('.'), p = data[k].find(x => x.key === plan), d = p.defaults || {};
+  const m = dialog({
+    title: `${esc(p.label)} · 默认生成参数`, sub: `生成 ${k === 'x' ? 'X' : 'TG'} 兑换码时的默认值，生成页面也可以单独修改。官方金额会以这个币种在用户兑换时报价，必须和卡台实际报价币种一致。`,
+    actions: [{ label: '取消' }, { label: '保存', kind: 'primary', onClick: async () => {
+      await PUT('/api/admin/pricing/social-defaults', { key, currency: $('#cur', m.el).value, maxOfficialAmountMinor: Number($('#max', m.el).value), fundingAmountUsd: $('#fund', m.el).value });
+      toast('已保存'); load();
+    } }],
+    body: `<div class="form"><div class="three">
+      <div class="f"><label>官方报价币种</label><input class="field mono" id="cur" maxlength="3" value="${esc((d.currency || 'usd').toUpperCase())}"></div>
+      <div class="f"><label>官方金额上限 <small>最小单位</small></label><input class="field mono" id="max" value="${d.maxOfficialAmountMinor || ''}"></div>
+      <div class="f"><label>单次预付额 <small>USD</small></label><input class="field mono" id="fund" value="${esc(d.fundingAmountUsd || '')}"></div>
+    </div></div>`,
+  });
+}
+$('#fx').onchange = async e => { try { await PUT('/api/admin/pricing/fx', { usdCny: Number(e.target.value) }); toast('汇率已保存'); load(); } catch (err) { toast(err.message, 'bad'); } };
+$('#refresh').onclick = e => run(e.currentTarget, '刷新中…', async () => { await POST('/api/admin/pricing/refresh'); await load(); toast('报价已更新'); });
+</script>
+</body></html>

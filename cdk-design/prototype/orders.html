@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>兑换与订单 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="orders">
+<div id="page" data-title="兑换记录" data-crumb="CDK">
+
+  <div class="grid mb16">
+    <div class="card glass s3 stat"><div class="lbl">今日兑换</div><div class="v">58</div><span class="trend up">完成 46 · 成功率 88%</span></div>
+    <div class="card glass s3 stat"><div class="lbl">处理中</div><div class="v c-run" id="kRun">—</div><span class="lbl">Webhook 实时更新</span></div>
+    <div class="card glass s3 stat"><div class="lbl">需要处理</div><div class="v c-warn" id="kAttn">—</div><span class="lbl">待审核 / 补交 Session / 平台审核</span></div>
+    <div class="card glass s3 stat"><div class="lbl">策略拦截</div><div class="v c-bad" id="kBlk">—</div><span class="lbl">未提交到卡台，不产生费用</span></div>
+  </div>
+
+  <section class="card glass p0">
+    <div class="toolbar">
+      <div class="seg" id="fSeg">
+        <button data-v="all" class="on">全部</button><button data-v="attention">需处理 <span class="n" id="nAttn"></span></button><button data-v="running">处理中</button><button data-v="completed">已完成</button><button data-v="blocked">策略拦截</button><button data-v="failed">失败/取消</button>
+      </div>
+      <select class="field sm" id="typeSel"><option value="">全部产品</option><option value="gpt">ChatGPT</option><option value="x">X</option><option value="tg">Telegram</option></select>
+      <select class="field sm" id="srcSel"></select>
+      <div class="fsearch">⌕<input id="q" placeholder="订单号 / 兑换码 / 账号"></div>
+      <div style="margin-left:auto" class="row-flex"><span class="xs faint"><span class="pulse" style="color:var(--ok)"></span> 实时</span></div>
+    </div>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>记录</th><th>套餐</th><th>策略</th><th>账号 / 接收方</th><th>状态</th><th>下一步</th><th class="num">成本</th><th>时间</th></tr></thead>
+      <tbody id="tbody"></tbody></table></div>
+    <div class="pager"><span id="pinfo"></span><div class="pgs"><button class="on">1</button><button>2</button><button>›</button></div></div>
+  </section>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+const NEXT = {
+  none: ['', '—'], wait: ['run', '等待'], submit_session: ['warn', '补交 Session'], refresh_session_and_reorder: ['warn', '刷新 Session 重下'],
+  resolve_account: ['warn', '处理账号'], released: ['idle', '已释放，可重兑'], approve: ['warn', '待你审核'], retry_preflight: ['warn', '重新预检'],
+  contact_support: ['bad', '联系平台'], reconcile_original_payment: ['bad', '对账原付款'],
+};
+const ATTN = o => !['none', 'wait', 'released'].includes(o.next);
+const stratOf = o => Strat.get(o.strat || 's_default');
+const SRC = o => { const s = stratOf(o); return `<span class="badge ${s.mode === 'own' ? 'acc' : 'idle'}">${esc(s.name)}</span>`; };
+let F = { f: qs('f') || 'all', type: '', src: '', q: '' };
+
+function render() {
+  $$('#fSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === F.f));
+  const rows = MOCK.orders.filter(o =>
+    (F.f === 'all' || (F.f === 'attention' && ATTN(o)) || (F.f === 'running' && ['running', 'processing', 'pending', 'queued', 'paid_pending_delivery'].includes(o.status)) ||
+      (F.f === 'completed' && o.status === 'completed') || (F.f === 'blocked' && o.status === 'blocked') || (F.f === 'failed' && ['declined', 'failed', 'cancelled', 'ineligible'].includes(o.status))) &&
+    (!F.type || o.type === F.type) && (!F.src || (o.strat || 's_default') === F.src) && (!F.q || (o.id + o.ref + o.who).toLowerCase().includes(F.q.toLowerCase())));
+  $('#tbody').innerHTML = rows.map(o => `
+    <tr class="click" data-id="${o.id}">
+      <td class="t"><div class="row-flex">${PICXS[o.type]}<div><b class="mono">${o.id}</b><p>${o.ref}-••••</p></div></div></td>
+      <td>${o.plan}</td><td>${SRC(o)}</td><td class="muted">${o.who}</td><td>${badge(o.status)}</td>
+      <td>${o.next === 'none' ? '<span class="faint">—</span>' : `<span class="badge ${NEXT[o.next][0]}">${NEXT[o.next][1]}</span>`}</td>
+      <td class="num">${o.amount ? money(o.amount + o.fee) : '—'}</td><td class="xs faint nowrap">${o.at}</td>
+    </tr>`).join('') || '<tr><td colspan="10"><div class="empty"><div class="ic">⇄</div>没有符合条件的订单</div></td></tr>';
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = () => openOrder(tr.dataset.id));
+  $('#pinfo').textContent = `共 ${rows.length} 条`;
+  $('#kRun').textContent = MOCK.orders.filter(o => ['running', 'processing', 'paid_pending_delivery'].includes(o.status)).length;
+  $('#kBlk').textContent = MOCK.orders.filter(o => o.status === 'blocked').length + 26;
+  $('#kAttn').textContent = $('#nAttn').textContent = MOCK.orders.filter(ATTN).length;
+}
+
+function events(o) {
+  const base = o.type === 'gpt'
+    ? [['订单创建', 'ready'], ['账号预检通过', 'preflight_ok'], ['策略检查通过', 'strategy_ok'], ['提交付款', 'payment_submitted'], ['付款成功', 'paid'], ['会员开通', 'entitled'], ['取消自动续费', 'renewal_cancelled']]
+    : [['订单创建', 'preparing'], ['接收方校验 · 取得官方报价', 'prepared'], ['准备付款', 'funded'], ['确认付款', 'confirmed'], ['官方付款', 'paid'], ['到账核验', 'delivered']];
+  const stopAt = { completed: base.length, running: 3, processing: 4, declined: 3, requires_action: 4, review_required: 1, paid_pending_delivery: 5, cancelled: 1 }[o.status] ?? 2;
+  const fail = { declined: 3, requires_action: 4, review_required: 1, cancelled: 1 }[o.status];
+  return base.map(([t, code], i) => {
+    const cls = i === fail ? (o.status === 'declined' ? 'fail' : 'cur') : i < stopAt ? 'done' : i === stopAt && ['running', 'processing', 'paid_pending_delivery'].includes(o.status) ? 'cur' : 'wait';
+    const msg = cls === 'fail' ? (o.reason || '失败') : cls === 'cur' ? ({ requires_action: 'Session 过期，需补交', review_required: '账号需人工审核', cancelled: '已取消' }[o.status] || '处理中…') : cls === 'done' ? code : '';
+    return `<div class="it ${cls}"><div class="dot">${cls === 'done' ? '✓' : cls === 'fail' ? '✕' : cls === 'cur' ? '' : i + 1}</div><div><b>${t}</b><p class="mono">${msg}</p></div><span class="tm">${cls === 'done' ? '14:' + String(10 + i * 2).padStart(2, '0') + ':0' + i : ''}</span></div>`;
+  }).join('');
+}
+
+function openOrder(id) {
+  const o = MOCK.orders.find(x => x.id === id);
+  const actions = [];
+  if (o.next === 'submit_session') actions.push('<button class="btn primary" id="aSession">补交 Session 继续原订单</button>');
+  if (o.next === 'approve') actions.push('<button class="btn primary" id="aApprove">通过，提交卡台</button><button class="btn danger" id="aReject">拒绝</button>');
+  if (o.next === 'released' && stratOf(o).mode === 'own') actions.push('<button class="btn primary" id="aRetry">再试一次</button>');
+  if (o.next === 'contact_support') actions.push('<button class="btn" id="aSupport">复制工单信息</button>');
+  if (['ready', 'queued'].includes(o.status) || (o.type !== 'gpt' && ['prepared', 'review_required'].includes(o.status))) actions.push('<button class="btn danger" id="aCancel">取消订单</button>');
+  if (o.type === 'gpt' && o.status === 'completed' && o.willRenew) actions.push('<button class="btn" id="aRenew">取消自动续费</button>');
+  const d = drawer(`
+    <div class="dh"><h2><span class="row-flex">${PIC[o.type]}<span class="mono">${o.id}</span></span><button class="iconbtn" data-close>×</button></h2><p>${o.plan} · ${o.ref}-•••• · ${esc(stratOf(o).name)}</p></div>
+    <div class="db">
+      <div class="sec">${badge(o.status)}
+        ${o.next !== 'none' && o.next !== 'wait' ? `<div class="note warn mt8">→ 下一步：<b>${NEXT[o.next][1]}</b><br>${{
+          submit_session: '用户 Session 已过期。补交同一账号的完整 Session 后，会继续原订单和原账单，不会重复付款。',
+          approve: '命中价格保护，暂未提交卡台。通过后按当前实时报价兑换；拒绝则提示用户稍后再试，兑换码保持可用。',
+          contact_support: '接收方账号需要平台人工审核，付款尚未派发。可以取消报价，或联系平台处理。',
+        }[o.next] || ''}</div>` : ''}
+        ${o.status === 'blocked' ? `<div class="note bad mt8">⛔ 被策略「${esc(stratOf(o).name)}」拦截：${o.rule}<br>没有提交到卡台，不产生任何费用。</div>` : ''}
+        ${o.next === 'released' ? `<div class="note mt8">↺ ${o.reason}。${o.retried ? `已按策略自动重试 ${o.retried} 次仍失败，` : ''}兑换码已释放，用户可重新兑换。</div>` : ''}
+        ${o.status === 'paid_pending_delivery' ? '<div class="note mt8">◷ 已有付款成功证据，等待官方交付。<b>不要</b>新建订单重付。</div>' : ''}
+      </div>
+      <div class="sec"><h4>订单信息</h4><div class="kv">
+        <div><span>${o.type === 'gpt' ? '账号邮箱' : '接收方'}</span><b>${o.who}</b></div>
+        <div><span>套餐</span><b>${o.plan}</b></div>
+        <div><span>兑换策略</span><b><a class="link" href="strategy.html?id=${stratOf(o).id}">${esc(stratOf(o).name)}</a></b></div>
+        <div><span>成本</span><b>${o.amount ? money(o.amount + o.fee) : '—'}${o.status === 'blocked' || o.status === 'declined' ? ' <span class="faint xs">未扣费</span>' : ''}</b></div>
+        ${o.rule && o.status !== 'blocked' ? `<div><span>命中规则</span><b class="c-warn">${o.rule}</b></div>` : ''}
+        ${o.type === 'gpt' ? `<div><span>自动续费</span><b>${o.status !== 'completed' ? '—' : o.willRenew ? '<span class="c-warn">仍会续费</span>' : '<span class="c-ok">已自动取消</span>'}</b></div>` : ''}
+        <div><span>Client Request ID</span><b class="mono xs">${uuid().slice(0, 23)}…</b></div>
+        <div><span>创建</span><b>2026-${o.at}</b></div>
+      </div></div>
+      ${o.status === 'completed' ? `<div class="sec"><h4>官方账单 <small class="c-warn">含访问凭据，勿分享</small></h4>
+        <div class="copyline">invoice.stripe.com/i/acct_…/live_YWNjd…<button onclick="toast('已在新窗口打开（演示）','info')">打开</button></div></div>` : ''}
+      <div class="sec"><h4>进度事件 <small>事件可能重复或延迟，以订单状态为准</small></h4><div class="tl">${events(o)}</div></div>
+    </div>
+    <div class="df">${actions.join('') || '<span class="xs faint">此订单无可执行操作</span>'}<button class="btn" style="margin-left:auto" onclick="copy('${o.id}')">复制订单号</button></div>`);
+
+  const s = $('#aSession', d.el); if (s) s.onclick = () => {
+    const m = modal(`<h2>补交 Session <button class="iconbtn" data-close>×</button></h2>
+      <div class="sub">必须是原账号 <b>${o.who}</b> 的完整 Session JSON。验证同账号后继续原订单与原支付 checkpoint。</div>
+      <textarea class="field" placeholder='{"user":{...},"accessToken":"...","sessionToken":"..."}'></textarea>
+      <div class="note mt12">ⓘ 202 只表示已受理，快照可能稍后才同步；重复提交可能返回 409，请先刷新订单。</div>
+      <div class="foot"><button class="btn" data-close>取消</button><button class="btn primary" id="sub">提交</button></div>`);
+    $('#sub', m.el).onclick = e => busy(e.currentTarget, '提交中…', 900, () => { o.status = 'running'; o.next = 'wait'; m.close(); d.close(); render(); toast('已受理，订单继续处理'); });
+  };
+  const ap = $('#aApprove', d.el); if (ap) ap.onclick = e => busy(e.currentTarget, '提交中…', 800, () => { o.status = 'running'; o.next = 'wait'; d.close(); render(); toast('已通过，正在兑换'); });
+  const rj = $('#aReject', d.el); if (rj) rj.onclick = async () => { if (await confirmBox({ title: '拒绝这笔兑换？', body: '用户会看到「暂时无法兑换，请稍后再试」，兑换码保持可用。', ok: '拒绝', danger: true })) { o.status = 'blocked'; o.next = 'none'; o.rule = '管理员拒绝（价格保护）'; d.close(); render(); toast('已拒绝'); } };
+  const rt = $('#aRetry', d.el); if (rt) rt.onclick = e => busy(e.currentTarget, '重试中…', 900, () => { o.status = 'running'; o.next = 'wait'; d.close(); render(); toast('已重新提交'); });
+  const c = $('#aCancel', d.el); if (c) c.onclick = async () => {
+    if (await confirmBox({ title: '取消这笔订单？', body: '只能取消尚未开始付款的订单，已提交的付款无法撤回。', ok: '取消订单', danger: true })) { o.status = 'cancelled'; o.next = 'none'; d.close(); render(); toast('已提交取消'); }
+  };
+  const r = $('#aRenew', d.el); if (r) r.onclick = () => {
+    const m = modal(`<h2>取消自动续费 <button class="iconbtn" data-close>×</button></h2>
+      <div class="sub">需要提交 <b>${o.who}</b> 当前有效的 ChatGPT Session，用于关闭下个账单日的自动续费。</div>
+      <textarea class="field" placeholder="ChatGPT session JSON"></textarea>
+      <div class="foot"><button class="btn" data-close>取消</button><button class="btn primary" id="sub">关闭续费</button></div>`);
+    $('#sub', m.el).onclick = e => busy(e.currentTarget, '处理中…', 900, () => { o.willRenew = false; m.close(); d.close(); toast('自动续费已关闭'); });
+  };
+  const sp = $('#aSupport', d.el); if (sp) sp.onclick = () => copy(`订单 ${o.id}\n套餐 ${o.plan}\n接收方 ${o.who}\n状态 ${o.status}`, '工单信息已复制');
+}
+
+segInit($('#fSeg'), v => { F.f = v; render(); });
+$('#typeSel').onchange = e => { F.type = e.target.value; render(); };
+$('#srcSel').onchange = e => { F.src = e.target.value; render(); };
+$('#q').oninput = e => { F.q = e.target.value; render(); };
+$('#srcSel').innerHTML = '<option value="">全部策略</option>' + Strat.all().map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+render();
+if (qs('id')) setTimeout(() => openOrder(qs('id')), 50);
+</script>
+</body></html>

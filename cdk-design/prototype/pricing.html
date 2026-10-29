@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>库存与售价 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="pricing">
+<div id="page" data-title="售价与利润" data-crumb="CDK">
+
+  <div class="alert info glass">ⓘ<span>平台价格是你的<b>成本</b>。右侧「我的零售价」只保存在你的系统里，用于计算利润和对外展示，不会提交到卡台。</span>
+    <button class="btn sm" id="refresh">↻ 刷新报价</button></div>
+
+  <section class="card glass p0 mb16">
+    <div class="head"><h3>ChatGPT CDK <small>GET /gpt-direct/cdk-offers · 动态报价 24h 有效 · 参考汇率 6h 有效</small></h3><span class="xs faint">更新于 <span id="upd">14:02:11</span></span></div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>套餐</th><th>报价状态</th><th class="num">平台售价（成本）</th><th class="num">直充服务费</th><th class="num">平台库存</th><th class="num">我的未兑换</th><th style="width:150px">我的零售价</th><th class="num">单张利润</th><th></th></tr></thead>
+      <tbody id="gptBody"></tbody></table></div>
+  </section>
+
+  <div class="grid">
+    <section class="card glass p0 s6">
+      <div class="head"><h3>X Premium <small>GET /x-direct/plans</small></h3><span class="badge idle">配置版本 v14</span></div>
+      <table class="tbl"><thead><tr><th>套餐</th><th class="num">官方参考</th><th class="num">服务费</th><th style="width:120px">零售价</th><th class="num">利润</th></tr></thead><tbody id="xBody"></tbody></table>
+      <div class="note" style="margin:12px 16px">ⓘ 官方扣卡金额要在接收方预检后才能拿到，这里的参考价按最近报价和汇率估算。</div>
+    </section>
+    <section class="card glass p0 s6">
+      <div class="head"><h3>Telegram Premium <small>GET /tg-direct/plans</small></h3><span class="badge idle">配置版本 v6</span></div>
+      <table class="tbl"><thead><tr><th>套餐</th><th class="num">官方参考</th><th class="num">服务费</th><th style="width:120px">零售价</th><th class="num">利润</th></tr></thead><tbody id="tgBody"></tbody></table>
+    </section>
+
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+const RET = JSON.parse(localStorage.getItem('cdk-retail') || '{}');
+const saveRet = () => localStorage.setItem('cdk-retail', JSON.stringify(RET));
+const unusedOf = k => MOCK.gptCdks.filter(c => c.plan === k && c.status === 'unused').length;
+const profit = (ret, cost) => { if (!ret || cost == null) return '<span class="faint">—</span>'; const p = ret - cost; return `<span class="${p >= 0 ? 'c-ok' : 'c-bad'}">${p >= 0 ? '+' : ''}${money(p)}</span><div class="xs faint">${(p / ret * 100).toFixed(0)}%</div>`; };
+function retInput(id, def) { return `<div class="inputgrp"><span>¥</span><input data-ret="${id}" value="${RET[id] ?? def}"></div>`; }
+const FX = 7.1; // 演示：人民币零售价 → USD 利润
+
+function render() {
+  $('#gptBody').innerHTML = MOCK.gptPlans.map(p => {
+    const id = 'gpt.' + p.key, ret = RET[id] ?? Math.ceil((p.sale || 0) * 1.3 * FX);
+    return `<tr><td><b>${p.label.replace('ChatGPT ', '')}</b> <span class="tag">${p.key}</span></td>
+      <td>${p.status === 'READY' ? '<span class="badge ok">✓ READY</span>' : '<span class="badge warn">◷ WAITING_QUOTE</span>'}</td>
+      <td class="num">${p.sale == null ? '<span class="faint">暂无</span>' : money(p.sale)}</td><td class="num">${money(p.fee)}</td>
+      <td class="num">${p.stock}${p.stock < 20 && p.stock > 0 ? ' <span class="c-warn">低</span>' : ''}</td><td class="num">${unusedOf(p.key)}</td>
+      <td>${retInput(id, ret)}</td><td class="num">${profit((RET[id] ?? ret) / FX, p.sale)}</td>
+      <td class="acts"><a class="btn sm" href="generate.html?p=gpt" ${p.status !== 'READY' ? 'style="pointer-events:none;opacity:.4"' : ''}>生成</a></td></tr>`;
+  }).join('');
+  const soc = (list, pre) => list.map(p => {
+    const id = pre + '.' + p.key, cost = p.est + p.fee, ret = RET[id] ?? Math.ceil(cost * 1.25 * FX);
+    return `<tr><td><b>${p.label}</b>${p.enabled === false ? ' <span class="badge idle">未开放</span>' : ''}</td><td class="num">≈ ${money(p.est)}</td><td class="num">${money(p.fee)}</td>
+      <td>${retInput(id, ret)}</td><td class="num">${profit((RET[id] ?? ret) / FX, cost)}</td></tr>`;
+  }).join('');
+  $('#xBody').innerHTML = soc(MOCK.xPlans, 'x');
+  $('#tgBody').innerHTML = soc(MOCK.tgPlans, 'tg');
+  $$('[data-ret]').forEach(i => i.onchange = () => { RET[i.dataset.ret] = parseFloat(i.value) || 0; saveRet(); render(); toast('零售价已保存'); });
+}
+$('#refresh').onclick = e => busy(e.currentTarget, '刷新中…', 700, () => { $('#upd').textContent = new Date().toTimeString().slice(0, 8); toast('报价已更新'); });
+render();
+</script>
+</body></html>

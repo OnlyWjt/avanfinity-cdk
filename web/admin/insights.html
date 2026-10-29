@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>成功率分析 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+.hbar{display:grid;grid-template-columns:150px 1fr 64px;gap:10px;align-items:center;padding:7px 0;font-size:12.5px}
+.hbar .tr{height:10px;border-radius:6px;background:var(--inset);overflow:hidden}
+.hbar .tr u{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--a1),var(--a2))}
+.hbar .tr u.lo{background:var(--bad)}.hbar .tr u.mid{background:var(--warn)}
+.chart{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px;border-bottom:1px solid var(--border)}
+.chart div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;height:100%}
+.chart i{display:block;border-radius:4px 4px 0 0;min-height:0}
+.chart .ok{background:linear-gradient(var(--a2),var(--a1))}.chart .bad{background:color-mix(in srgb,var(--bad) 70%,transparent);border-radius:0}
+.xl{display:flex;gap:6px;font-size:10.5px;color:var(--faint);margin-top:4px}.xl span{flex:1;text-align:center;overflow:hidden}
+</style></head>
+<body data-page="insights">
+<div id="page" data-title="成功率分析" data-crumb="数据">
+  <div class="row-flex mb16"><div class="seg" id="win"><button data-v="1">24 小时</button><button class="on" data-v="7">7 天</button><button data-v="30">30 天</button></div>
+    <span class="xs faint" style="margin-left:auto">成功率 = 已完成 /（已完成 + 失败）；被策略拦截的请求不计入</span></div>
+  <div class="grid">
+    <div class="card glass s3 stat"><div class="lbl">兑换成功率</div><div class="v c-ok" id="kRate">—</div><span class="lbl" id="kRateSub"></span></div>
+    <div class="card glass s3 stat"><div class="lbl">失败</div><div class="v" id="kFail">—</div><span class="lbl">码已按策略释放或重试</span></div>
+    <div class="card glass s3 stat"><div class="lbl">策略拦截率</div><div class="v" id="kBlock">—</div><span class="lbl" id="kBlockSub"></span></div>
+    <div class="card glass s3 stat"><div class="lbl">兑换请求</div><div class="v" id="kN">—</div><span class="lbl">含拦截、超时</span></div>
+    <section class="card glass s8"><h3>每日兑换 <small>成功 / 失败</small></h3><div class="chart" id="chart"></div><div class="xl" id="xl"></div></section>
+    <section class="card glass s4"><h3>按套餐</h3><div id="byPlan"></div></section>
+    <section class="card glass s6"><h3>按兑换策略 <small>成功率 · 拦截率</small></h3><div id="byStrat"></div></section>
+    <section class="card glass s6"><h3>失败原因</h3><table class="tbl"><thead><tr><th>错误码</th><th>说明</th><th class="num">次数</th></tr></thead><tbody id="reasons"></tbody></table>
+      <h3 class="mt20">拦截原因</h3><div class="kv" id="blocks"></div></section>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const STAGE_CN = { gate: '兑换门槛（频率 / 时段 / 地区 / 有效期）', account: '账号规则', price: '价格保护', review: '管理员拒绝' };
+const bar = (label, pct) => `<div class="hbar"><span>${label}</span><div class="tr"><u class="${pct == null ? '' : pct < 70 ? 'lo' : pct < 85 ? 'mid' : ''}" style="width:${pct ?? 0}%"></u></div><b class="right">${pct == null ? '—' : pct + '%'}</b></div>`;
+let DAYS = 7;
+async function load(days = DAYS) {
+  DAYS = days;
+  const r = await GET('/api/admin/insights?days=' + days);
+  const t = r.totals, rate = t.ok + t.failed ? Math.round(t.ok / (t.ok + t.failed) * 1000) / 10 : null;
+  $('#kRate').textContent = rate == null ? '—' : rate + '%'; $('#kRateSub').textContent = `${t.ok} / ${t.ok + t.failed} 次`;
+  $('#kFail').textContent = t.failed; $('#kN').textContent = t.n;
+  $('#kBlock').textContent = t.n ? (t.blocked / t.n * 100).toFixed(1) + '%' : '—'; $('#kBlockSub').textContent = `拦截 ${t.blocked} 次，不产生费用`;
+  const max = Math.max(1, ...r.series.map(d => d.ok + d.bad));
+  $('#chart').innerHTML = r.series.map(d => `<div title="${d.day} 成功 ${d.ok} / 失败 ${d.bad}"><i class="bad" style="height:${d.bad / max * 100}%"></i><i class="ok" style="height:${d.ok / max * 100}%"></i></div>`).join('');
+  $('#xl').innerHTML = r.series.map((d, i) => `<span>${r.series.length > 10 && i % 3 ? '' : d.day}</span>`).join('');
+  $('#byPlan').innerHTML = r.byPlan.map(p => bar(esc(p.label) + ` <span class="faint xs">${p.ok + p.bad}</span>`, p.rate)).join('') || '<div class="empty">暂无数据</div>';
+  $('#byStrat').innerHTML = r.byStrategy.map(s => bar(esc(s.name) + ` <span class="faint xs">拦截 ${s.blockRate}%</span>`, s.rate)).join('') || '<div class="empty">暂无数据</div>';
+  $('#reasons').innerHTML = r.reasons.map(x => `<tr><td class="mono xs">${esc(x.code)}</td><td class="xs muted">${esc(x.msg || '')}</td><td class="num">${x.n}</td></tr>`).join('') || '<tr><td colspan="3"><div class="empty" style="padding:20px">没有失败</div></td></tr>';
+  $('#blocks').innerHTML = r.blockReasons.map(b => `<div><span>${STAGE_CN[b.stage] || b.stage || '其他'}</span><b>${b.n} 次</b></div>`).join('') || '<div><span>没有拦截</span><b></b></div>';
+}
+ready(() => load(7));
+segInit($('#win'), v => load(+v));
+</script>
+</body></html>

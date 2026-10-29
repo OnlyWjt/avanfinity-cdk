@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>兑换会员</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body>
+<header class="pub-top">
+  <a class="brand" href="redeem.html" style="padding:0"><div class="logo" data-bind="logo">C</div><span data-bind="name">CDK</span></a>
+  <nav><a class="on" href="redeem.html">兑换</a><a href="receipt.html">查询凭证</a><a href="#" id="helpBtn">帮助</a><button class="btn ghost sm" onclick="Theme.toggleMode()"><span data-bind="mode-icon">☾</span></button></nav>
+</header>
+
+<div class="pub">
+  <div class="hero">
+    <h1><span class="grad-text" data-bind="slogan">一码开通你的会员</span></h1>
+    <p class="lead">输入你拿到的兑换码，我们会先核对账号和套餐，确认无误后自动开通。整个过程你不需要付款，也不需要绑卡。</p>
+    <div class="chips">
+      <span class="glass"><span class="pic gpt">G</span>ChatGPT</span><span class="glass"><span class="pic x">𝕏</span>X Premium</span><span class="glass"><span class="pic tg">✈</span>Telegram Premium</span>
+    </div>
+    <div class="trust"><div><b>30 秒</b>平均开通</div><div><b>12,000+</b>已兑换</div><div><b>失败可重兑</b>兑换码不作废</div></div>
+  </div>
+
+  <div class="pcard glass" id="card">
+    <div class="steps-top" id="steps"></div>
+    <div id="view"></div>
+    <div class="demo-states">演示：
+      <button data-demo="GPTD-7K2Q-F9WM-3TXA">GPT 正常</button><button data-demo="GPTD-FAIL-0000-0001">GPT 支付失败</button>
+      <button data-demo="XCDK-M91A-77QE-K2LM">X 正常</button><button data-demo="TGCD-HH4T-P0LX-9WQE">TG 正常</button>
+      <button data-demo="TB-7K2Q-F9WM">自有码 正常</button><button data-demo="TB-DUPE-0001">策略：账号重复</button><button data-demo="TB-PRCE-0002">策略：价格审核</button>
+      <button data-demo="GPTD-USED-0000-0002">已使用</button><button data-demo="XCDK-RVKD-0000-0003">已撤销</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+const DEVICE = localStorage.getItem('cdk-device') || (localStorage.setItem('cdk-device', uuid()), localStorage.getItem('cdk-device'));
+const PRE = { GPTD: { p: 'gpt', plan: 'ChatGPT Plus · 1 个月' }, XCDK: { p: 'x', plan: 'X Premium+ · 12 个月' }, TGCD: { p: 'tg', plan: 'Telegram Premium · 6 个月' } };
+// 自有码前缀 → 策略
+const OWN = Object.fromEntries(Strat.all().filter(s => s.mode === 'own' && s.prefix).map(s => [s.prefix, s]));
+let R = { step: 1, code: '', p: null, plan: '', acc: '', stop: null };
+const STEP_NAMES = { gpt: ['兑换码', '账号', '确认', '开通'], x: ['兑换码', '接收方', '确认', '开通'], tg: ['兑换码', '接收方', '确认', '开通'] };
+
+function steps() {
+  const names = STEP_NAMES[R.p || 'gpt'];
+  $('#steps').innerHTML = names.map((n, i) => `<div class="${i + 1 < R.step ? 'done' : i + 1 === R.step ? 'cur' : ''}"><u></u><span>${n}</span></div>`).join('');
+}
+function show(html) { $('#view').innerHTML = html; steps(); }
+function memberCard() { return `<div class="member"><small>兑换码有效</small><b>${R.plan}</b><div class="r"><span class="mono">${R.code.split('-').slice(0, 2).join('-')}-••••</span><span>由发行方支付</span></div></div>`; }
+
+/* ---------- 1 输入兑换码 ---------- */
+function s1(err = '') {
+  R.step = 1; R.p = null; R.stop && R.stop();
+  show(`<h2>输入兑换码</h2><p class="desc">不区分大小写，可以直接粘贴。</p>
+    <input class="code-in" id="code" placeholder="XXXX-XXXX-XXXX" maxlength="24" autocomplete="off" value="${R.code}">
+    <div class="err" id="err">${err}</div>
+    <button class="btn primary block" id="next">下一步</button>
+    <a class="backlink" href="receipt.html">已经兑换过？查询兑换凭证 →</a>`);
+  const inp = $('#code'); inp.focus();
+  inp.oninput = () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').replace(/-+/g, '-'); $('#err').textContent = ''; };
+  inp.onkeydown = e => e.key === 'Enter' && $('#next').click();
+  $('#next').onclick = e => {
+    const v = inp.value; R.code = v;
+    if (!/^[A-Z0-9]{2,4}(-[A-Z0-9]{4}){2,3}$/.test(v)) { $('#err').textContent = '兑换码格式不对，请检查是否完整'; return; }
+    busy(e.currentTarget, '校验中…', 600, () => {
+      if (v.includes('USED')) return s1('这个兑换码已经使用过。如果是你本人兑换的，可以去「查询凭证」查看结果。');
+      if (v.includes('RVKD')) return s1('这个兑换码已被发行方撤销，请联系卖家。');
+      const own = OWN[v.split('-')[0]];
+      R.strat = own || null;
+      const m = own ? { p: own.prod[0], plan: 'ChatGPT Plus · 1 个月' } : PRE[v.slice(0, 4)];
+      if (!m) return s1('兑换码无效，请检查是否输错（容易混淆的字符：0/O、1/I）');
+      R.p = m.p; R.plan = m.plan; s2();
+    });
+  };
+}
+
+/* ---------- 2 账号 / 接收方 ---------- */
+function s2() {
+  R.step = 2;
+  if (R.p === 'gpt') {
+    show(`${memberCard()}<h2>粘贴 ChatGPT 会话</h2><p class="desc">用来确认会员要开通到哪个账号，只用于这一次开通，不会保存。</p>
+      <textarea class="field" id="sess" placeholder='{"user":{...},"accessToken":"..."}'></textarea>
+      <div class="note mt8">ⓘ<span>① 在浏览器登录 <b>chatgpt.com</b><br>② 新标签页打开 <span class="mono">chatgpt.com/api/auth/session</span><br>③ 全选复制页面上的全部内容，粘贴到这里 <button class="link" id="howto">看图示</button></span></div>
+      <div class="err" id="err"></div>
+      <button class="btn primary block mt8" id="next">检查账号</button><button class="backlink" id="back">← 换一个兑换码</button>`);
+    $('#howto').onclick = () => modal(`<h2>如何获取 Session <button class="iconbtn" data-close>×</button></h2><div class="sub">登录 ChatGPT 后访问下面的地址，页面会显示一段以 <span class="mono">{"user":</span> 开头的文字，全部复制即可。</div><div class="copyline">https://chatgpt.com/api/auth/session<button onclick="copy('https://chatgpt.com/api/auth/session')">复制</button></div><div class="note warn mt12">⚠ Session 相当于登录凭证，只在本页面粘贴，不要发给任何人（包括客服）。</div><div class="foot"><button class="btn primary" data-close>知道了</button></div>`);
+  } else {
+    show(`${memberCard()}<h2>填写${R.p === 'x' ? ' X ' : ' Telegram '}用户名</h2><p class="desc">会员会以官方赠送的方式开通到这个账号，不需要你的密码。</p>
+      <div class="inputgrp"><span>@</span><input id="rec" placeholder="${R.p === 'x' ? 'elonmusk' : 'durov'}"></div>
+      <div class="note mt8">ⓘ 请仔细核对拼写，开通后无法转移到其他账号。</div>
+      <div class="err" id="err"></div>
+      <button class="btn primary block mt8" id="next">检查账号</button><button class="backlink" id="back">← 换一个兑换码</button>`);
+    $('#rec').focus();
+  }
+  $('#back').onclick = () => s1();
+  $('#next').onclick = e => {
+    if (R.p === 'gpt') { const v = $('#sess').value.trim(); if (v.length < 20) { $('#err').textContent = '请粘贴完整的 Session 内容'; return; } R.acc = 'm***@gmail.com'; }
+    else { const v = $('#rec').value.trim().replace(/^@/, ''); if (!v) { $('#err').textContent = '请填写用户名'; return; } if (/prem/i.test(v)) { $('#err').textContent = `@${v} 已经是 Premium 会员，无法赠送。可以更换其他账号。`; return; } R.acc = '@' + v; }
+    busy(e.currentTarget, '正在检查账号与报价…', 1100, () => {
+      // 我方策略检查（自有码）
+      if (R.code.includes('DUPE')) { $('#err').innerHTML = `这个账号已经兑换过本渠道的会员（每个账号限 ${R.strat?.accN ?? 1} 次）。<br>请更换其他账号，兑换码仍然有效。`; return; }
+      if (R.code.includes('PRCE')) return review();
+      s3();
+    });
+  };
+}
+
+/* ---------- 人工审核（价格保护） ---------- */
+function review() {
+  R.step = 3;
+  show(`<div class="bigicon warn">⚑</div><h2 style="text-align:center">已提交，等待确认</h2>
+    <p class="desc" style="text-align:center">当前官方价格有波动，卖家需要确认后才能为你开通。通常几分钟内处理，<b>不需要</b>你再做任何操作。</p>
+    <div class="kv mb16"><div><span>套餐</span><b>${R.plan}</b></div><div><span>开通到</span><b class="mono">${R.acc}</b></div><div><span>兑换码状态</span><b class="c-ok">已锁定，不会被他人使用</b></div></div>
+    <a class="btn block" href="receipt.html">稍后查询结果</a>`);
+}
+
+/* ---------- 3 确认 ---------- */
+function s3() {
+  R.step = 3;
+  show(`<h2>确认开通信息</h2><p class="desc">账号检查通过，报价已锁定，请在 <b class="mono c-warn" id="cd">--:--</b> 内确认。</p>
+    <div class="kv mb16">
+      <div><span>套餐</span><b>${R.plan}</b></div>
+      <div><span>开通到</span><b class="mono">${R.acc}</b></div>
+      ${R.p === 'gpt' ? '<div><span>当前套餐</span><b>Free</b></div>' : ''}
+      <div><span>兑换码</span><b class="mono">${R.code.split('-').slice(0, 2).join('-')}-••••</b></div>
+      <div><span>你需支付</span><b class="c-ok">¥0 · 由发行方支付</b></div>
+    </div>
+    ${R.p === 'gpt' ? '<div class="note mb16">ⓘ 开通后会自动关闭自动续费，到期不会扣你的钱。</div>' : '<div class="note mb16">ⓘ 接下来会先准备付款，然后需要你再点一次「确认付款」才会真正付款。</div>'}
+    <button class="btn primary block" id="next">确认开通</button><button class="backlink" id="back">← 返回修改</button>`);
+  R.stop = countdown($('#cd'), R.p === 'gpt' ? 599 : 1799, () => { toast('报价已过期，请重新检查账号', 'warn'); s2(); });
+  $('#back').onclick = () => { R.stop(); s2(); };
+  $('#next').onclick = () => { R.stop(); R.p === 'gpt' ? s4gpt() : s4soc(); };
+}
+
+/* ---------- 4 开通（GPT：单阶段） ---------- */
+function tl(list, k, failAt) {
+  return `<div class="tl">${list.map((t, i) => { const cls = i === failAt ? 'fail' : i < k ? 'done' : i === k ? 'cur' : 'wait';
+    return `<div class="it ${cls}"><div class="dot">${cls === 'done' ? '✓' : cls === 'fail' ? '✕' : cls === 'cur' ? '' : i + 1}</div><div><b>${t}</b><p>${cls === 'done' ? '已完成' : cls === 'cur' ? '处理中…' : cls === 'fail' ? '失败' : '等待中'}</p></div></div>`; }).join('')}</div>`;
+}
+function s4gpt() {
+  R.step = 4;
+  const fail = R.code.includes('FAIL');
+  const L = ['兑换码已确认', '账号与报价已确认', '正在付款', '正在开通会员', '取消自动续费'];
+  let k = 2;
+  const draw = () => show(`<h2>正在为你开通</h2><p class="desc">通常 30 秒内完成。你可以关闭页面，稍后用兑换码查询结果。</p>${tl(L, k, fail && k > 2 ? 2 : -1)}<div class="xs faint">设备 ${DEVICE.slice(0, 8)}… · 请在同一设备上查询</div>`);
+  draw();
+  const t = setInterval(() => {
+    k++;
+    if (fail && k === 3) { clearInterval(t); draw(); setTimeout(() => done('fail'), 700); return; }
+    draw(); if (k >= L.length) { clearInterval(t); setTimeout(() => done('ok'), 500); }
+  }, 1000);
+}
+/* ---------- 4 开通（X / TG：两阶段） ---------- */
+function s4soc() {
+  R.step = 4;
+  const L = ['校验接收方', '准备付款'];
+  let k = 0;
+  const draw = () => show(`<h2>正在准备</h2><p class="desc">发行方正在为这次开通准备付款，还<b>没有</b>付款。</p>${tl(L, k)}`);
+  draw();
+  const t = setInterval(() => { k++; draw(); if (k >= L.length) { clearInterval(t); setTimeout(funded, 400); } }, 1000);
+}
+function funded() {
+  show(`<div class="bigicon" style="background:var(--a2)">◉</div><h2 style="text-align:center">准备就绪，确认付款？</h2>
+    <p class="desc" style="text-align:center">已准备好。点击下面的按钮后才会真正向${R.p === 'x' ? ' X ' : ' Telegram '}付款，付款后无法撤销。</p>
+    <div class="kv mb16"><div><span>套餐</span><b>${R.plan}</b></div><div><span>开通到</span><b class="mono">${R.acc}</b></div><div><span>你需支付</span><b class="c-ok">¥0</b></div></div>
+    <button class="btn primary block" id="pay">确认付款并开通</button>
+    <div class="xs faint mt8" style="text-align:center">如果暂时不想继续，可以直接关闭页面，之后在同一设备上继续。</div>`);
+  $('#pay').onclick = () => {
+    const L = ['准备付款', '向官方付款', R.p === 'x' ? '确认会员生效' : '核验赠送到账'];
+    let k = 1;
+    const draw = () => show(`<h2>正在付款</h2><p class="desc">请不要重复点击，付款完成后会自动显示结果。</p>${tl(L, k)}`);
+    draw(); const t = setInterval(() => { k++; draw(); if (k >= L.length) { clearInterval(t); setTimeout(() => done('ok'), 500); } }, 1100);
+  };
+}
+
+/* ---------- 结果 ---------- */
+function done(kind) {
+  R.step = 5;
+  if (kind === 'fail') {
+    show(`<div class="bigicon bad">✕</div><h2 style="text-align:center">这次没有开通成功</h2>
+      <p class="desc" style="text-align:center">这次付款没有成功，<b>你的兑换码已经释放</b>，没有被消耗，可以稍后重新兑换。</p>
+      <div class="kv mb16"><div><span>错误码</span><b class="mono">card_declined</b></div><div><span>兑换码状态</span><b class="c-ok">可再次使用</b></div></div>
+      <button class="btn primary block" id="retry">重新兑换</button><a class="backlink" href="#" id="contact">联系卖家</a>`);
+    $('#retry').onclick = () => { R.code = R.code.replace('FAIL-0000-0001', '7K2Q-F9WM-3TXA'); s1(); };
+    $('#contact').onclick = e => { e.preventDefault(); toast('客服：Telegram @cdk_support', 'info'); };
+    return;
+  }
+  const oid = 'CDK-' + rnd4() + rnd4();
+  show(`<div class="bigicon">✓</div><h2 style="text-align:center">开通成功</h2>
+    <p class="desc" style="text-align:center">${R.plan} 已开通到 <b>${R.acc}</b>。${R.p === 'gpt' ? '刷新 ChatGPT 即可使用。' : R.p === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p>
+    <div class="kv mb16"><div><span>订单号</span><b class="mono">${oid}</b></div><div><span>开通时间</span><b>${new Date().toLocaleString('zh-CN')}</b></div>
+      ${R.p === 'gpt' ? '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>' : ''}${R.p === 'tg' ? '<div><span>到账天数</span><b>182 天</b></div>' : ''}${R.p === 'x' ? '<div><span>官方账单</span><b><button class="link" onclick="toast(\'演示：打开官方收据\',\'info\')">查看</button></b></div>' : ''}</div>
+    <div class="row-flex"><button class="btn" style="flex:1" id="save">保存凭证截图</button><button class="btn primary" style="flex:1" id="again">兑换另一个</button></div>`);
+  $('#save').onclick = () => copy(`订单 ${oid}\n${R.plan}\n${R.acc}`, '凭证信息已复制');
+  $('#again').onclick = () => { R.code = ''; s1(); };
+}
+
+$$('[data-demo]').forEach(b => b.onclick = () => { R.code = b.dataset.demo; s1(); });
+$('#helpBtn').onclick = e => { e.preventDefault(); modal(`<h2>常见问题 <button class="iconbtn" data-close>×</button></h2>
+  <div class="kv"><div><span>需要付钱吗？</span><b>不需要，费用由卖家（发行方）支付。</b></div><div><span>开通失败怎么办？</span><b>兑换码会自动释放，可以重新兑换。</b></div>
+  <div><span>会自动续费吗？</span><b>ChatGPT 开通后会自动关闭续费。</b></div><div><span>Session 安全吗？</span><b>只用于本次开通，不会保存。</b></div><div><span>联系客服</span><b>Telegram @cdk_support</b></div></div>
+  <div class="foot"><button class="btn primary" data-close>知道了</button></div>`); };
+s1();
+</script>
+</body></html>

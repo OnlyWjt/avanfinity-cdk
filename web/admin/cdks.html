@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CDK 管理 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="cdks">
+<div id="page" data-title="CDK 管理" data-crumb="CDK">
+  <div class="grid mb16" id="kpis"></div>
+  <section class="card glass p0">
+    <div class="toolbar">
+      <div class="seg" id="prodSeg"><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button></div>
+      <div class="fsearch">⌕<input id="q" placeholder="前缀 / 完整码 / 账号 / 批次 / 备注"></div>
+      <select class="field sm" id="stSel"><option value="">全部状态</option><option value="unused">未使用</option><option value="in_use">兑换中</option><option value="redeemed">已兑换</option><option value="revoked">已撤销</option></select>
+      <select class="field sm" id="planSel"></select>
+      <select class="field sm" id="stratSel"></select>
+      <div style="margin-left:auto" class="row-flex">
+        <button class="btn" id="batchesBtn">批次</button>
+        <a class="btn primary" id="genLink" href="generate.html" data-role="operator">＋ 生成 CDK</a>
+      </div>
+    </div>
+    <div class="bulkbar hidden" id="bulk">已选 <b id="selN">0</b> 张
+      <button class="btn sm" id="bExport" data-role="operator">导出完整兑换码</button>
+      <button class="btn sm danger" id="bRevoke" data-role="operator">撤销</button>
+      <button class="btn sm ghost" id="bClear">取消选择</button></div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th style="width:34px"><input type="checkbox" id="selAll"></th><th>兑换码</th><th>套餐</th><th>策略</th><th>状态</th><th>兑换账号</th><th>批次 / 备注</th><th class="num">单码成本 <small class="faint">USD</small></th><th>时间</th><th></th></tr></thead>
+      <tbody id="tbody"></tbody></table></div>
+    <div class="pager" id="pager"></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let S = { p: qs('p') || 'gpt', q: '', status: '', plan: '', strategy: '', page: 1, sel: new Set(), rows: [] };
+let strategies = [], catalog = null;
+const modeBadge = s => `<a class="badge ${s.mode === 'own' ? 'acc' : 'idle'}" href="strategy.html?id=${s.id}" onclick="event.stopPropagation()" style="text-decoration:none" title="${s.mode === 'own' ? '自有码' : '托管码（卡台码）'}">${esc(s.name)}</a>`;
+
+ready(async () => {
+  [strategies, catalog] = await Promise.all([GET('/api/admin/strategies').then(r => r.list), GET('/api/admin/catalog')]);
+  $('#stratSel').innerHTML = '<option value="">全部策略</option>' + strategies.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  segSet($('#prodSeg'), S.p);
+  load();
+  if (qs('id')) openDetail(qs('id'));
+});
+async function kpis() {
+  const st = await GET('/api/admin/codes/stats');
+  const k = (p, l) => { const s = st[p] || {}; return `<div class="card glass s3 stat"><div class="lbl">${l} · 未使用</div><div class="v">${s.unused || 0}</div><span class="lbl">已兑换 ${s.redeemed || 0} · 兑换中 ${s.in_use || 0}</span></div>`; };
+  const revoked = ['gpt', 'x', 'tg'].reduce((a, p) => a + ((st[p] || {}).revoked || 0), 0);
+  $('#kpis').innerHTML = k('gpt', 'ChatGPT') + k('x', 'X') + k('tg', 'Telegram') + `<div class="card glass s3 stat"><div class="lbl">已撤销</div><div class="v">${revoked}</div><span class="lbl">所有产品</span></div>`;
+}
+async function load() {
+  kpis();
+  $('#genLink').href = 'generate.html?p=' + S.p;
+  $('#planSel').innerHTML = '<option value="">全部套餐</option>' + catalog[S.p].map(p => `<option value="${p.key}" ${p.key === S.plan ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+  const params = new URLSearchParams({ product: S.p, page: S.page, size: 30, ...(S.q && { q: S.q }), ...(S.status && { status: S.status }), ...(S.plan && { plan: S.plan }), ...(S.strategy && { strategy: S.strategy }) });
+  const r = await GET('/api/admin/codes?' + params);
+  S.rows = r.list;
+  $('#tbody').innerHTML = r.list.map(c => `
+    <tr class="click ${S.sel.has(c.id) ? 'sel' : ''}" data-id="${c.id}">
+      <td><input type="checkbox" data-sel="${c.id}" ${S.sel.has(c.id) ? 'checked' : ''}></td>
+      <td class="t"><b class="mono">${esc(c.display)}</b><p>${c.mode === 'own' ? '自有码' : '卡台码'}${c.hasCode ? '' : ' · 本地无完整码'}</p></td>
+      <td>${esc(c.planLabel)}</td><td>${modeBadge(c.strategy)}</td>
+      <td>${badge(c.status)}${c.status !== 'redeemed' && c.redemptionStatus && ['blocked', 'failed', 'manual_review'].includes(c.redemptionStatus) ? `<div class="xs faint mt8">最近：${(ST[c.redemptionStatus] || ['', c.redemptionStatus])[1].replace('<i></i>', '')}</div>` : ''}</td>
+      <td class="muted">${esc(c.account || '—')}</td>
+      <td class="xs"><span class="mono muted">${c.batchId}</span>${c.memo ? `<div class="faint">${esc(c.memo)}</div>` : ''}</td>
+      <td class="num">${money(c.cost)}</td>
+      <td class="xs faint nowrap">${fmtTime(c.redeemedAt || c.createdAt)}</td>
+      <td class="acts"><button class="iconbtn">›</button></td>
+    </tr>`).join('') || `<tr><td colspan="10"><div class="empty"><div class="ic">✦</div>没有符合条件的 CDK<br><a class="link" href="generate.html?p=${S.p}">去生成一批 →</a></div></td></tr>`;
+  pager($('#pager'), r.total, S.page, 30, p => { S.page = p; load(); });
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.matches('input,a')) return; openDetail(tr.dataset.id); });
+  $$('[data-sel]').forEach(cb => cb.onchange = () => { cb.checked ? S.sel.add(cb.dataset.sel) : S.sel.delete(cb.dataset.sel); cb.closest('tr').classList.toggle('sel', cb.checked); updBulk(); });
+  $('#selAll').checked = r.list.length > 0 && r.list.every(c => S.sel.has(c.id));
+  updBulk();
+}
+function updBulk() { $('#bulk').classList.toggle('hidden', !S.sel.size); $('#selN').textContent = S.sel.size; }
+
+async function openDetail(id) {
+  const c = await GET('/api/admin/codes/' + id);
+  const canRevoke = !["redeemed", "revoked"].includes(c.status) && can("operator");
+  const d = sheet({
+    icon: PIC[c.product].replace("pic", "pic lg"), title: `<span class="mono">${esc(c.display)}</span>`, sub: `${esc(c.planLabel)} · ${c.id}`,
+    body: `
+      <div class="sec">${badge(c.status)}
+        ${c.mode === "hosted" && c.product === "gpt" ? '<div class="note warn mt8">⚠ 这是卡台原始码（托管码）。买家也可以绕过本系统直接去卡台兑换，策略规则对这种情况无效。</div>' : ""}
+        ${c.redemptionStatus === "blocked" && c.status === "unused" ? `<div class="note mt8">最近一次兑换被策略拦截：${esc(c.redemptionError || "")}</div>` : ""}
+      </div>
+      <div class="sec"><h4>基本信息</h4><div class="kv">
+        <div><span>套餐</span><b>${esc(c.planLabel)}</b></div>
+        <div><span>兑换策略</span><b>${modeBadge(c.strategy)}</b></div>
+        <div><span>码类型</span><b>${c.mode === "own" ? "自有码（卡台码兑换时才生成）" : "卡台码（托管）"}</b></div>
+        <div><span>批次</span><b class="mono">${c.batchId}${c.memo ? " · " + esc(c.memo) : ""}</b></div>
+        <div><span>单码成本</span><b>${c.product === "gpt" ? money(c.cost) : "上限 " + money(c.cost)}</b></div>
+        ${c.params.social ? `<div><span>官方金额上限</span><b>${(c.params.social.maxOfficialAmountMinor / 100).toFixed(2)} ${c.params.social.currency.toUpperCase()}</b></div>` : ""}
+        ${c.params.forceNewCard !== undefined ? `<div><span>支付方式</span><b>${c.params.forceNewCard ? "每码独立" : "共享"}</b></div>` : ""}
+        <div><span>有效期</span><b>${c.expiresAt ? fmtTime(c.expiresAt) : "不过期"}</b></div>
+        <div><span>创建</span><b>${fmtTime(c.createdAt)}</b></div>
+        ${c.redeemedAt ? `<div><span>兑换</span><b>${fmtTime(c.redeemedAt)} · ${esc(c.account || "")}</b></div>` : ""}
+      </div></div>
+      <div class="sec"><h4>兑换尝试 <small>${c.redemptions.length} 次</small></h4>
+        ${c.redemptions.map(r => `<a class="lrow" style="grid-template-columns:1fr auto;text-decoration:none" href="orders.html?id=${r.id}"><div class="t"><b>${esc(r.account || "未填账号")}</b><p>${fmtTime(r.created_at)}${r.attempts > 1 ? ` · 重试 ${r.attempts - 1} 次` : ""}${r.rule ? " · " + esc(r.rule) : ""}</p></div>${badge(r.status)}</a>`).join("") || '<div class="xs faint">还没有人兑换</div>'}
+      </div>
+      ${c.upstream.length ? `<div class="sec"><h4>临时生成的卡台码 <small>自有码每次兑换尝试一张</small></h4><div class="kv">${c.upstream.map(u => `<div><span class="mono xs">${u.id.slice(0, 13)}…</span><b class="sm">${u.status} · ${fmtTime(u.created_at)}</b></div>`).join("")}</div></div>` : ""}`,
+    actions: [
+      ...(can("operator") ? [{ label: "⤓ 导出完整码", onClick: async () => { await exportCodes([c.id]); return false; } }] : []),
+      ...(canRevoke ? [{ label: "撤销", kind: "danger", onClick: async () => { await revoke([c.id]); return false; } }] : []),
+    ],
+  });
+  return d;
+}
+async function exportCodes(ids) {
+  const r = await POST("/api/admin/codes/export", { ids });
+  const ok = r.list.filter(x => x.code);
+  codesDialog({
+    title: "导出完整兑换码", tone: "warn", sub: `共 ${ok.length} 张${r.list.length > ok.length ? `，${r.list.length - ok.length} 张无法导出` : ""} · 本次导出已写入审计日志`,
+    note: "⚠ 这是可以直接兑换的凭证，请勿发到公开渠道。", items: r.list,
+    csv: { name: `cdk-${S.p}-${Date.now()}`, header: "code,product,plan,status", rows: ok.map(x => [x.code, x.product, x.plan, x.status].map(csvCell).join(",")) },
+  });
+}
+async function revoke(ids) {
+  if (!await confirmBox({ title: `撤销 ${ids.length} 张兑换码？`, body: '撤销后无法兑换，也无法恢复。正在付款的兑换不能撤销。', ok: '撤销', danger: true })) return;
+  try {
+    const r = await POST('/api/admin/codes/revoke', { ids });
+    const okN = r.results.filter(x => x.ok).length, warn = r.results.find(x => x.ok && /仍可能/.test(x.msg)), bad = r.results.filter(x => !x.ok);
+    toast(bad.length ? `撤销 ${okN} 张，${bad.length} 张失败：${bad[0].msg}` : warn ? warn.msg : `已撤销 ${okN} 张`, bad.length ? 'warn' : 'ok');
+    S.sel.clear(); $$('.sheet.show [data-close]').forEach(x => x.click()); load();
+  } catch (e) { toast(e.message, 'bad'); }
+}
+async function batches() {
+  const r = await GET("/api/admin/batches");
+  const d = dialog({
+    title: "生成批次", sub: "最近 100 批", size: "lg",
+    body: `<div class="tblwrap"><table class="tbl"><thead><tr><th>批次</th><th>套餐</th><th>策略</th><th class="num">兑换 / 数量</th><th>创建</th><th></th></tr></thead><tbody>
+    ${r.list.map(b => `<tr><td class="t"><b class="mono">${b.id}</b><p>${esc(b.memo || "")}</p></td><td>${esc(b.label)}</td><td class="xs">${esc(b.strategy)}<div class="faint">${b.mode === "own" ? "自有码" : "卡台码"}</div></td><td class="num">${b.redeemed} / ${b.quantity}</td><td class="xs faint">${fmtTime(b.createdAt)}<div>${esc(b.creator || "")}</div></td>
+      <td class="acts">${can("operator") ? `<button class="btn sm" data-b="${b.id}">导出</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="6"><div class="empty">还没有批次</div></td></tr>'}
+    </tbody></table></div>`,
+    actions: [{ label: "关闭", kind: "primary", onClick: () => {} }],
+  });
+  $$("[data-b]", d.el).forEach(b => b.onclick = () => run(b, "…", async () => {
+    const x = await POST(`/api/admin/batches/${b.dataset.b}/export`);
+    download(`${b.dataset.b}.csv`, 'code,product,plan,status,note\n' + x.list.map(c => [c.code || '', c.product, c.plan, c.status, c.note || ''].map(csvCell).join(',')).join('\n'), 'text/csv');
+  }));
+}
+
+segInit($('#prodSeg'), v => { S = { ...S, p: v, plan: '', page: 1, sel: new Set() }; history.replaceState(null, '', '?p=' + v); load(); });
+let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.q = e.target.value.trim(); S.page = 1; load(); }, 250); };
+$('#stSel').onchange = e => { S.status = e.target.value; S.page = 1; load(); };
+$('#planSel').onchange = e => { S.plan = e.target.value; S.page = 1; load(); };
+$('#stratSel').onchange = e => { S.strategy = e.target.value; S.page = 1; load(); };
+$('#selAll').onchange = e => { S.rows.forEach(c => e.target.checked ? S.sel.add(c.id) : S.sel.delete(c.id)); load(); };
+$('#bClear').onclick = () => { S.sel.clear(); load(); };
+$('#bExport').onclick = e => run(e.currentTarget, '导出中…', () => exportCodes([...S.sel]));
+$('#bRevoke').onclick = () => revoke([...S.sel]);
+$('#batchesBtn').onclick = batches;
+</script>
+</body></html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 B · Paper Ledger</title>
+<style>
+  :root{
+    --paper:#f4efe6; --card:#fbf8f2; --ink:#1c1a17; --soft:#6f675c; --rule:#d9d0c1;
+    --red:#d2462b; --green:#2f6b4f; --blue:#2b4c7e; --gold:#b7862c;
+    --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",Georgia,serif;
+    --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",-apple-system,sans-serif;
+    --mono:"IBM Plex Mono","SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;padding:32px;display:flex;gap:30px;align-items:flex-start;min-width:1580px}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--soft);letter-spacing:.08em;margin-bottom:10px}
+  .admin{width:1130px;background:var(--card);border:1px solid var(--rule);box-shadow:0 1px 0 var(--rule),0 18px 40px -24px rgba(60,40,10,.25)}
+  header{display:flex;align-items:flex-end;justify-content:space-between;padding:24px 32px 16px;border-bottom:2px solid var(--ink)}
+  .mast{font-family:var(--serif);font-size:30px;font-weight:700;letter-spacing:-.01em}
+  .mast em{font-style:normal;color:var(--red)}
+  .mnav{display:flex;gap:24px;font-size:13px;color:var(--soft)}
+  .mnav a{color:inherit;text-decoration:none;padding-bottom:4px}
+  .mnav a.on{color:var(--ink);border-bottom:2px solid var(--red)}
+  .dateline{display:flex;justify-content:space-between;padding:8px 32px;font-family:var(--mono);font-size:11px;color:var(--soft);border-bottom:1px solid var(--rule)}
+  .body{padding:26px 32px;display:grid;grid-template-columns:1fr 340px;gap:30px}
+  .lead{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);margin-bottom:26px}
+  .lead div{padding:14px 16px 16px;border-right:1px solid var(--rule)}
+  .lead div:first-child{padding-left:0}
+  .lead div:last-child{border-right:0}
+  .lead small{font-size:11.5px;color:var(--soft)}
+  .lead b{display:block;font-family:var(--serif);font-size:32px;font-weight:700;margin-top:4px;letter-spacing:-.02em}
+  .lead i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--green)}
+  .lead i.r{color:var(--red)}
+  h2{font-family:var(--serif);font-size:19px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline}
+  h2 span{font-family:var(--sans);font-size:12px;color:var(--soft);font-weight:400}
+  .stock{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
+  .sk{border:1px solid var(--rule);padding:14px;background:#fff}
+  .sk .h{display:flex;justify-content:space-between;font-weight:600}
+  .sk .h i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--soft);font-weight:400}
+  .bar{height:6px;background:#efe8db;margin:10px 0 6px}
+  .bar u{display:block;height:100%;background:var(--ink)}
+  .sk .f{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--soft)}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:var(--soft);font-weight:500;padding:8px 6px;border-bottom:1px solid var(--ink)}
+  td{padding:10px 6px;border-bottom:1px solid var(--rule)}
+  td.m{font-family:var(--mono);font-size:12px}
+  .stamp{display:inline-block;font-size:11px;padding:2px 8px;border:1.5px solid currentColor;border-radius:2px;font-weight:600;transform:rotate(-2deg)}
+  .g{color:var(--green)} .r{color:var(--red)} .b{color:var(--blue)} .y{color:var(--gold)} .s{color:var(--soft)}
+  /* ticket */
+  .ticket{background:#fff;border:1px solid var(--rule);position:relative}
+  .ticket .top{padding:18px 20px;border-bottom:2px dashed var(--rule);position:relative}
+  .ticket .top:before,.ticket .top:after{content:"";position:absolute;bottom:-10px;width:18px;height:18px;border-radius:50%;background:var(--card);border:1px solid var(--rule)}
+  .ticket .top:before{left:-10px}.ticket .top:after{right:-10px}
+  .ticket h3{font-family:var(--serif);font-size:18px;margin-bottom:14px}
+  .lbl{font-size:11px;color:var(--soft);margin:12px 0 6px}
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pills span{padding:6px 11px;border:1px solid var(--rule);font-size:12px;border-radius:999px}
+  .pills span.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .qty{display:flex;align-items:center;border:1px solid var(--rule)}
+  .qty span{padding:8px 14px;color:var(--soft)}
+  .qty b{flex:1;text-align:center;font-family:var(--serif);font-size:20px}
+  .ticket .bot{padding:16px 20px}
+  .ln{display:flex;justify-content:space-between;padding:4px 0;color:var(--soft)}
+  .ln b{color:var(--ink);font-family:var(--mono);font-weight:500}
+  .ln.t{border-top:1px solid var(--ink);margin-top:6px;padding-top:9px;color:var(--ink);font-weight:600}
+  .ln.t b{font-family:var(--serif);font-size:22px}
+  .go{display:block;width:100%;margin-top:14px;padding:13px;background:var(--red);color:#fff;border:0;font-size:14px;font-weight:600;letter-spacing:.1em}
+  .note{font-size:11px;color:var(--soft);margin-top:10px;line-height:1.6}
+  /* redeem */
+  .redeem{width:400px;background:var(--card);border:1px solid var(--rule);padding:30px 28px;box-shadow:0 18px 40px -24px rgba(60,40,10,.25)}
+  .redeem .mast{font-size:22px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:22px}
+  .redeem h1{font-family:var(--serif);font-size:28px;line-height:1.25}
+  .redeem p.sub{color:var(--soft);margin:8px 0 22px;line-height:1.6}
+  .codebox{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .codebox span{background:#fff;border:1px solid var(--rule);border-bottom:2px solid var(--ink);text-align:center;padding:12px 0;font-family:var(--mono);font-size:16px;letter-spacing:.1em}
+  .stub{margin-top:20px;background:#fff;border:1px solid var(--rule);padding:16px 18px;position:relative}
+  .stub .seal{position:absolute;right:14px;top:12px;width:62px;height:62px;border:2px solid var(--red);border-radius:50%;color:var(--red);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-weight:700;font-size:13px;transform:rotate(-12deg);opacity:.85}
+  .stub small{color:var(--soft);font-size:11px}
+  .stub b{display:block;font-family:var(--serif);font-size:20px;margin:2px 0 10px}
+  .prog{display:flex;margin-top:22px;gap:6px}
+  .prog div{flex:1}
+  .prog u{display:block;height:3px;background:var(--rule)}
+  .prog .d u{background:var(--ink)} .prog .n u{background:var(--red)}
+  .prog span{display:block;font-size:11px;color:var(--soft);margin-top:6px}
+  .prog .d span,.prog .n span{color:var(--ink)}
+</style>
+</head>
+<body>
+<div>
+  <div class="tag">B · Paper Ledger — 管理后台</div>
+  <div class="admin">
+    <header>
+      <div class="mast">兑换<em>·</em>账簿</div>
+      <nav class="mnav"><a class="on" href="#">总览</a><a href="#">发行</a><a href="#">兑换</a><a href="#">库存</a><a href="#">钱包</a><a href="#">卡片</a><a href="#">设置</a></nav>
+    </header>
+    <div class="dateline"><span>2026 年 10 月 25 日 · 星期日</span><span>卡台连接正常 · 白名单 IP 203.0.113.8</span></div>
+    <div class="body">
+      <div>
+        <div class="lead">
+          <div><small>钱包余额</small><b>$12,480.36</b><i>本周 +$2,140.00</i></div>
+          <div><small>本月发行</small><b>1,284</b><i>+18.2%</i></div>
+          <div><small>已兑换</small><b>1,051</b><i>81.9%</i></div>
+          <div><small>失败待处理</small><b>7</b><i class="r">需关注</i></div>
+        </div>
+        <h2>库存与售价 <span>报价 24h 有效 · 下次刷新 06:12</span></h2>
+        <div class="stock">
+          <div class="sk"><div class="h">ChatGPT <i>go · plus · pro</i></div><div class="bar"><u style="width:72%"></u></div><div class="f"><span>库存 412</span><span>Plus $19.80</span></div></div>
+          <div class="sk"><div class="h">X Premium <i>1M · 12M</i></div><div class="bar"><u style="width:46%"></u></div><div class="f"><span>授权上限 $1,800</span><span>+$1.20 服务费</span></div></div>
+          <div class="sk"><div class="h">Telegram <i>3 · 6 · 12M</i></div><div class="bar"><u style="width:28%"></u></div><div class="f"><span>授权上限 $900</span><span>+$0.80 服务费</span></div></div>
+        </div>
+        <h2>最近兑换 <span>查看全部 →</span></h2>
+        <table>
+          <tr><th>兑换码</th><th>产品</th><th>接收方</th><th>金额</th><th>状态</th><th>时间</th></tr>
+          <tr><td class="m">GPTD-7K2Q-…</td><td>ChatGPT Plus</td><td>m***@gmail.com</td><td class="m">$19.80</td><td><span class="stamp g">已开通</span></td><td class="m s">14:20</td></tr>
+          <tr><td class="m">XCDK-M91A-…</td><td>X Premium+ 12M</td><td>@elonfan</td><td class="m">$229.00</td><td><span class="stamp b">付款中</span></td><td class="m s">14:16</td></tr>
+          <tr><td class="m">GPTD-Z3RE-…</td><td>ChatGPT Pro 20x</td><td>z***@qq.com</td><td class="m">$200.00</td><td><span class="stamp r">失败</span></td><td class="m s">13:51</td></tr>
+          <tr><td class="m">TGCD-HH4T-…</td><td>Telegram 12 月</td><td>@neko_dev</td><td class="m">$35.99</td><td><span class="stamp g">已到账</span></td><td class="m s">11:08</td></tr>
+          <tr><td class="m">XCDK-Q2NV-…</td><td>X Premium 1M</td><td>—</td><td class="m">—</td><td><span class="stamp y">已撤销</span></td><td class="m s">10:44</td></tr>
+        </table>
+      </div>
+      <div class="ticket">
+        <div class="top">
+          <h3>开具新兑换码</h3>
+          <div class="lbl">产品</div><div class="pills"><span class="on">ChatGPT</span><span>X Premium</span><span>Telegram</span></div>
+          <div class="lbl">套餐</div><div class="pills"><span>Go</span><span class="on">Plus</span><span>Pro 5x</span><span>Pro 20x</span><span>Pro 25x</span></div>
+          <div class="lbl">数量（1–50）</div><div class="qty"><span>−</span><b>20</b><span>＋</span></div>
+          <div class="lbl">兑换方式</div><div class="pills"><span class="on">每码新开卡</span><span>自动选卡</span></div>
+        </div>
+        <div class="bot">
+          <div class="ln">单价 <b>$19.80</b></div>
+          <div class="ln">开卡费 <b>$0.50 × 20</b></div>
+          <div class="ln t">合计 <b>$406.00</b></div>
+          <button class="go">开 具</button>
+          <p class="note">生成时不扣套餐费，兑换时由钱包支付。完整兑换码仅在本次生成后显示一次，请及时导出。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="tag">B · 用户兑换页</div>
+  <div class="redeem">
+    <div class="mast">兑换<em>·</em>账簿</div>
+    <h1>凭码兑换<br>会员即刻到账</h1>
+    <p class="sub">输入你收到的 16 位兑换码。我们会先核对账号和价格，确认后才会付款。</p>
+    <div class="codebox"><span>GPTD</span><span>7K2Q</span><span>F9WM</span><span>3TXA</span></div>
+    <div class="stub">
+      <div class="seal">已核验</div>
+      <small>套餐</small><b>ChatGPT Plus · 一个月</b>
+      <small>到账账号</small><b style="font-size:15px;font-family:var(--mono)">m***@gmail.com</b>
+    </div>
+    <div class="prog">
+      <div class="d"><u></u><span>核验</span></div>
+      <div class="d"><u></u><span>预检</span></div>
+      <div class="n"><u></u><span>付款中…</span></div>
+      <div><u></u><span>完成</span></div>
+    </div>
+    <button class="go" style="margin-top:24px">确认兑换</button>
+    <p class="note">本页面会自动刷新进度，请勿关闭。如遇问题，凭兑换码可随时查询凭证。</p>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>商城订单 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="shop-orders">
+<div id="page" data-title="商城订单" data-crumb="商城">
+  <div class="grid mb16" id="kpis"></div>
+  <section class="card glass p0">
+    <div class="toolbar">
+      <div class="seg" id="stSeg"><button class="on" data-v="">全部</button><button data-v="pending">待付款</button><button data-v="paid">待发货</button><button data-v="delivered">已完成</button><button data-v="closed">已关闭</button><button data-v="refunded">已退款</button></div>
+      <div class="fsearch">⌕<input id="q" placeholder="订单号 / 邮箱 / 联系方式 / 支付流水号"></div>
+      <select class="field sm" id="kind"><option value="">全部类型</option><option value="buy">购买</option><option value="wholesale">代理批发</option><option value="topup">余额充值</option></select>
+      <select class="field sm" id="src"><option value="">全部来源</option><option value="site">主站</option><option value="store">代理分站</option><option value="ref">推广链接</option></select>
+      <select class="field sm" id="agent"><option value="">全部代理</option></select>
+      <select class="field sm" id="range"><option value="">全部时间</option><option value="0">今天</option><option value="1">昨天</option><option value="7">近 7 天</option><option value="30">近 30 天</option></select>
+      <button class="btn sm" id="export" data-role="operator" style="margin-left:auto">导出 CSV</button>
+    </div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th>订单</th><th>商品</th><th>买家</th><th>来源</th><th class="num">实付</th><th>支付</th><th>状态</th><th>时间</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="9"><div class="empty"><span class="spin"></span></div></td></tr></tbody></table></div>
+    <div class="pager" id="pager"></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const yuan = c => (Number(c) < 0 ? '-¥' : '¥') + (Math.abs(Number(c || 0)) / 100).toFixed(2);
+const OST = { pending: ['warn', '待付款'], paid: ['run', '<i></i>待发货'], delivered: ['ok', '✓ 已完成'], closed: ['idle', '已关闭'], refunded: ['idle', '↺ 已退款'] };
+const ob = s => { const [k, t] = OST[s] || ['idle', esc(s)]; return `<span class="badge ${k}">${t}</span>`; };
+const KIND = { buy: '购买', wholesale: '批发', topup: '充值' }, SRC = { site: '主站', store: '分站', ref: '推广', wholesale: '批发', topup: '充值' };
+const PAY = { epay: '易支付', alipay: '支付宝', wechat: '微信支付', usdt: 'USDT', balance: '余额', manual: '人工确认' };
+const SUB = { alipay: '支付宝', wxpay: '微信', qqpay: 'QQ', bank: '网银', usdt: 'USDT' };
+const payName = o => (PAY[o.payMethod] || o.payMethod || '—') + (o.paySub ? ` · ${SUB[o.paySub] || o.paySub}` : '');
+let S = { status: qs('status') || '', q: qs('q') || '', kind: '', source: '', agent: qs('agent') || '', range: '', page: 1 }, t;
+const params = extra => new URLSearchParams({ ...extra, ...(S.status && { status: S.status }), ...(S.q && { q: S.q }), ...(S.kind && { kind: S.kind }), ...(S.source && { source: S.source }), ...(S.agent && { agent: S.agent }), ...rangeOf(S.range) });
+
+ready(() => {
+  segSet($('#stSeg'), S.status);
+  segInit($('#stSeg'), v => { S.status = v; S.page = 1; load(); });
+  $('#q').value = S.q;
+  $('#q').oninput = () => { clearTimeout(t); t = setTimeout(() => { S.q = $('#q').value.trim(); S.page = 1; load(); }, 250); };
+  $('#kind').onchange = e => { S.kind = e.target.value; S.page = 1; load(); };
+  $('#src').onchange = e => { S.source = e.target.value; S.page = 1; load(); };
+  $('#agent').onchange = e => { S.agent = e.target.value; S.page = 1; load(); };
+  $('#range').onchange = e => { S.range = e.target.value; S.page = 1; load(); };
+  $('#export').onclick = () => { location.href = '/api/admin/shop/orders/export?' + params({}); };
+  GET('/api/admin/shop/agents?status=active&size=200').then(r => { $('#agent').innerHTML = '<option value="">全部代理</option>' + r.list.map(a => `<option value="${a.customer_id}" ${String(a.customer_id) === S.agent ? 'selected' : ''}>${esc(a.shop_name)}</option>`).join(''); }).catch(() => {});
+  load();
+  if (qs('no')) detail(qs('no'));
+});
+async function load() {
+  const p = params({ page: S.page, size: 30 });
+  const [r, st] = await Promise.all([GET('/api/admin/shop/orders?' + p), GET('/api/admin/shop/stats')]);
+  $('#kpis').innerHTML = `
+    <div class="card glass s3 stat"><div class="lbl">今日成交（不含充值）</div><div class="v">${r.today.count}<small class="muted" style="font-size:14px"> 单</small></div><span class="lbl">${yuan(r.today.amount)}</span></div>
+    <div class="card glass s3 stat"><div class="lbl">今日销售额（不含充值）</div><div class="v">${yuan(st.sales)}</div><span class="lbl">成本 ${yuan(st.cost)} · 代理分成 ${yuan(st.agentShare)}</span></div>
+    <div class="card glass s3 stat"><div class="lbl">今日毛利</div><div class="v ${st.profit >= 0 ? 'c-ok' : 'c-bad'}">${yuan(st.profit)}</div><span class="lbl">销售 − 卡台成本 − 代理分成</span></div>
+    <div class="card glass s3 stat"><div class="lbl">待处理</div><div class="v ${r.attention || r.overpaid ? 'c-warn' : ''}">${r.attention + r.overpaid}</div><span class="lbl">${r.attention || r.overpaid ? [r.attention && `${r.attention} 笔待发货（自动重试中）`, r.overpaid && `${r.overpaid} 笔重复付款需退款`].filter(Boolean).join(' · ') : '没有积压'}</span></div>`;
+  $('#tbody').innerHTML = r.list.map(o => `
+    <tr class="click" data-no="${o.no}">
+      <td class="t"><b class="mono" style="font-size:12.5px">${esc(o.no)}</b><p>${KIND[o.kind]}</p></td>
+      <td>${esc(o.title)}${o.kind === 'topup' ? '' : ` × ${o.quantity}`}</td>
+      <td class="xs">${esc(o.email)}${o.contact ? `<div class="faint">${esc(o.contact)}</div>` : ''}</td>
+      <td class="xs">${SRC[o.source] || o.source}${o.agent ? `<div class="faint">${esc(o.agent.name)}</div>` : ''}</td>
+      <td class="num"><b>${yuan(o.total)}</b>${o.discount ? `<div class="xs c-ok">券 −${yuan(o.discount)}</div>` : ''}</td>
+      <td class="xs">${o.status === 'pending' || o.status === 'closed' ? '<span class="faint">' + payName(o) + '</span>' : payName(o)}</td>
+      <td>${ob(o.status)}${o.status === 'paid' && o.deliverError ? `<div class="xs c-bad mt8" title="${esc(o.deliverError)}">发货失败 ${o.deliverAttempts} 次</div>` : ''}</td>
+      <td class="xs faint nowrap">${fmtTime(o.paidAt || o.createdAt)}</td><td class="acts"><button class="iconbtn">›</button></td></tr>`).join('') || '<tr><td colspan="9"><div class="empty"><div class="ic">¥</div>没有订单</div></td></tr>';
+  pager($('#pager'), r.total, S.page, 30, n => { S.page = n; load(); });
+  $$('#tbody tr[data-no]').forEach(tr => tr.onclick = () => detail(tr.dataset.no));
+}
+async function detail(no) {
+  const o = await GET('/api/admin/shop/orders/' + encodeURIComponent(no));
+  const act = (a, body) => POST(`/api/admin/shop/orders/${o.no}/${a}`, body || {});
+  const d = sheet({
+    title: `${esc(o.title)}${o.kind === 'topup' ? '' : ` × ${o.quantity}`}`, sub: `<span class="mono">${esc(o.no)}</span> · ${ob(o.status)}`,
+    body: `
+      ${o.status === 'paid' && o.deliverError ? `<div class="note bad mb12">发货失败（${o.deliverAttempts} 次）：${esc(o.deliverError)}<br>系统会自动重试，也可以点下面「立即重新发货」。</div>` : ''}
+      <div class="sec"><h4>订单</h4><div class="kv">
+        <div><span>类型 / 来源</span><b>${KIND[o.kind]} · ${SRC[o.source] || o.source}${o.agent ? ` · <a class="link" href="agents.html?id=${o.agent.id}">${esc(o.agent.name)}</a>` : ''}</b></div>
+        <div><span>买家邮箱</span><b>${esc(o.email)}${o.customerId ? ` <a class="link" href="customers.html?q=${encodeURIComponent(o.email)}">注册用户</a>` : ''}</b></div>
+        ${o.contact ? `<div><span>联系方式</span><b>${esc(o.contact)}</b></div>` : ''}
+        <div><span>金额</span><b>${yuan(o.total)}${o.discount ? ` <span class="xs c-ok">（优惠 ${yuan(o.discount)}${o.coupon ? ' · ' + esc(o.coupon.code) : ''}）</span>` : ''}</b></div>
+        ${o.cost ? `<div><span>卡台成本（估）</span><b>${yuan(o.cost)}</b></div>` : ''}
+        ${o.agentProfit || o.commission ? `<div><span>代理${o.agentProfit ? '利润' : '佣金'}</span><b>${yuan(o.agentProfit || o.commission)}</b></div>` : ''}
+        <div><span>下单 IP</span><b class="mono">${esc(o.ip || '—')}</b></div>
+        <div><span>创建 / 付款 / 发货</span><b class="xs">${fmtTime(o.createdAt)} / ${fmtTime(o.paidAt)} / ${fmtTime(o.deliveredAt)}</b></div>
+        ${o.mailStatus ? `<div><span>邮件</span><b class="${o.mailStatus === 'sent' ? 'c-ok' : 'c-bad'} xs">${o.mailStatus === 'sent' ? '已发送' : esc(o.mailStatus)}</b></div>` : ''}
+        ${o.refundNote ? `<div><span>退款说明</span><b>${esc(o.refundNote)}</b></div>` : ''}
+      </div></div>
+      <div class="sec"><h4>支付记录</h4><div class="kv">${o.payments.map(p => `<div><span class="xs">${PAY[p.method] || p.method}${p.sub ? ' · ' + (SUB[p.sub] || p.sub) : ''}<br><span class="faint mono">${esc(p.id)}</span></span><b class="xs">${p.method === 'usdt' && p.crypto_amount ? (p.crypto_amount / 1e6).toFixed(4) + ' USDT' : yuan(p.amount)} · ${p.status === 'paid' ? '<span class="c-ok">已付</span>' : p.status === 'overpaid' ? '<span class="c-bad" title="订单已经用别的方式付过，这笔需要在支付平台退给买家">重复付款 · 需退款</span>' : p.status === 'pending' ? '待付' : '已关闭'}${p.trade_no ? `<br><span class="faint mono">${esc(p.trade_no)}</span>` : ''}</b></div>`).join('') || '<div><span>还没有发起支付</span><b></b></div>'}</div></div>
+      ${o.codes.length ? `<div class="sec"><h4>兑换码 <a class="link" href="${o.viewLink}" target="_blank">买家订单页 ↗</a></h4><div class="codes">${o.codes.map(c => `<div><a class="link mono" href="cdks.html?p=${c.product}&id=${c.id}">${esc(c.display)}</a>${badge(c.status)}</div>`).join('')}</div></div>` : `<div class="sec"><h4>买家订单页</h4><div class="copyline">${esc(location.origin + o.viewLink)}<button data-copy="${esc(location.origin + o.viewLink)}" data-msg="链接已复制">复制</button></div></div>`}`,
+    actions: !can('operator') ? [{ label: '关闭', kind: 'ghost' }] : [
+      ...(o.status === 'paid' ? [{ label: '立即重新发货', kind: 'primary', onClick: async () => { await act('deliver'); toast('已触发发货'); load(); setTimeout(() => detail(o.no), 1200); } }] : []),
+      ...(o.status === 'delivered' && o.kind !== 'topup' ? [{ label: '补发邮件', onClick: async () => { await act('mail'); toast('邮件已发送'); return false; } }] : []),
+      ...(['pending', 'closed'].includes(o.status) ? [{ label: '确认已收款', onClick: async () => {
+        const note = await confirmBox({ title: '确认已收到这笔款？', body: `确认后会按 ${yuan(o.total)} 入账并自动发货。只在你核对过平台到账记录后使用。`, ok: '确认收款', input: '备注（例如平台流水号）' });
+        if (note === false) return false; await act('paid', { note }); toast('已确认收款'); load(); setTimeout(() => detail(o.no), 1200);
+      } }] : []),
+      ...(['paid', 'delivered'].includes(o.status) ? [{ label: '退款', kind: 'ghost', onClick: async () => {
+        const note = await confirmBox({ title: '退款这个订单？', body: `会作废这个订单的兑换码${o.payMethod === 'balance' ? '，并把 ' + yuan(o.total) + ' 退回买家余额' : '。<b>钱需要你在支付平台手动退给买家</b>'}；代理收益会冲回。已经兑换开通的码无法撤回。`, ok: '确认退款', danger: true, input: '退款说明' });
+        if (note === false) return false; if (!note) throw new Error('请填写退款说明');
+        let r;
+        try { r = await act('refund', { note }); }
+        catch (e) {
+          // 有码已兑换 / 卡台 GPT 码无法真正撤销：说明清楚后再确认一次
+          if (e.data?.code !== 'REFUND_CONFIRM') throw e;
+          if (!(await confirmBox({ title: '仍要退款吗？', body: esc(e.message), ok: '仍然退款', danger: true }))) return false;
+          r = await act('refund', { note, force: true });
+        }
+        toast(r.manualRefund ? '已退款：请记得在支付平台把钱退给买家' : '已退款，金额已退回买家余额', r.manualRefund ? 'warn' : 'ok'); load();
+      } }] : []),
+      { label: '关闭', kind: 'ghost' },
+    ],
+  });
+  applyRoles();
+}
+</script>
+</body></html>

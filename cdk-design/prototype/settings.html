@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置与密钥 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="settings">
+<div id="page" data-title="设置" data-crumb="系统">
+  <div class="seg mb16" id="tab"><button class="on" data-v="api">卡台 API</button><button data-v="redeem">兑换页设置</button><button data-v="team">管理员</button><button data-v="security">安全</button></div>
+
+  <div data-t="api" class="grid">
+    <section class="card glass s7">
+      <h3>卡台连接 <span class="badge ok">● 已连接 · 86ms</span></h3>
+      <div class="form">
+        <div class="f"><label>API 地址</label><input class="field mono" value="https://api.avanfinity.com/api/v1"></div>
+        <div class="two"><div class="f"><label>App-Id</label><input class="field mono" value="app_7f3a91c2"></div>
+          <div class="f"><label>App-Secret <small>加密存储，仅在服务端使用</small></label><div class="copyline"><span class="secret" id="sec">sk_live_Q8mZ2r…Vt41</span><button id="showSec">显示</button></div></div></div>
+        <div class="row-flex"><button class="btn primary" id="testConn">测试连接</button><button class="btn" onclick="toast('已保存')">保存</button></div>
+      </div>
+    </section>
+    <section class="card glass s5">
+      <h3>当前 Key 权限 <small>由卡台控制台分配</small></h3>
+      <div class="row-flex wrap" id="scopes"></div>
+      <div class="note mt12">ⓘ 写接口要求来源 IP 在卡台白名单中，否则返回 403。</div>
+      <h3 class="mt20">服务器出口 IP</h3>
+      <div class="copyline">203.0.113.8<button onclick="copy('203.0.113.8')">复制</button></div>
+      <div class="fhelp">请把这个 IP 加到卡台控制台的白名单里。</div>
+    </section>
+    <section class="card glass s12">
+      <h3>直充默认行为</h3>
+      <div class="choice c2">
+        <div class="toggle"><div>完成后自动取消续费<p>ChatGPT 直充 / CDK 订单完成后自动关闭自动续费（API Key 级设置）</p></div><button class="sw on"></button></div>
+        <div class="toggle"><div>策略拦截日报<p>每天汇总各策略拦截原因发给我</p></div><button class="sw"></button></div>
+        <div class="toggle"><div>CDK 兑换失败通知我<p>通过邮件 / Telegram Bot 推送</p></div><button class="sw on"></button></div>
+        <div class="toggle"><div>平台库存不足提醒<p>任一套餐库存 &lt; 20 时提醒</p></div><button class="sw on"></button></div>
+      </div>
+    </section>
+  </div>
+
+  <div data-t="redeem" class="grid hidden">
+    <section class="card glass s7">
+      <h3>兑换页 <a class="link" href="redeem.html" target="_blank">打开预览 ↗</a></h3>
+      <div class="form">
+        <div class="f"><label>兑换页域名</label><div class="inputgrp"><span>https://</span><input value="redeem.example.com"></div></div>
+        <div class="f"><label>标语</label><input class="field" id="slogan"></div>
+        <div class="f"><label>页面说明</label><textarea class="field" style="font-family:var(--sans);font-size:13px;min-height:70px">输入你拿到的兑换码，我们会先核对账号和套餐，确认无误后自动开通。整个过程你不需要付款，也不需要绑卡。</textarea></div>
+        <div class="f"><label>开放的产品</label><div class="row-flex"><label class="row-flex"><input type="checkbox" checked> ChatGPT</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" checked> X Premium</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" checked> Telegram</label></div></div>
+        <div class="f"><label>客服联系方式</label><input class="field" value="Telegram @cdk_support"></div>
+        <div class="toggle"><div>维护模式<p>开启后兑换页显示维护提示，暂停新兑换</p></div><button class="sw"></button></div>
+        <div class="row-flex"><button class="btn primary" id="saveR">保存</button></div>
+      </div>
+    </section>
+    <section class="card glass s5"><h3>防滥用</h3>
+      <div class="form">
+        <div class="f"><label>同一 IP 每小时最多尝试</label><div class="inputgrp"><input value="20"><span>次</span></div></div>
+        <div class="f"><label>输错几次后要求人机验证</label><div class="inputgrp"><input value="3"><span>次</span></div></div>
+        <div class="toggle"><div>启用 Cloudflare Turnstile<p>无感人机验证</p></div><button class="sw on"></button></div>
+      </div></section>
+  </div>
+
+  <div data-t="team" class="grid hidden">
+    <section class="card glass p0 s12">
+      <div class="head"><h3>管理员</h3><button class="btn sm primary" id="invite">＋ 邀请</button></div>
+      <table class="tbl"><thead><tr><th>成员</th><th>角色</th><th>权限</th><th>最近登录</th><th></th></tr></thead><tbody id="team"></tbody></table>
+    </section>
+  </div>
+
+  <div data-t="security" class="grid hidden">
+    <section class="card glass s6"><h3>登录安全</h3>
+      <div class="form"><div class="toggle"><div>两步验证（TOTP）<p>已绑定 Google Authenticator</p></div><button class="sw on"></button></div>
+        <div class="toggle"><div>修改兑换策略需二次验证</div><button class="sw on"></button></div>
+        <div class="toggle"><div>导出完整兑换码需二次验证</div><button class="sw on"></button></div>
+        <button class="btn" onclick="toast('密码修改邮件已发送')">修改密码</button></div></section>
+    <section class="card glass s6"><h3>审计日志</h3>
+      <div class="kv">
+        <div><span>10-25 14:21</span><b class="sm">onlyWjt 修改策略「淘宝渠道 · 严格」</b></div>
+        <div><span>10-25 09:12</span><b class="sm">onlyWjt 生成 GPT CDK × 20</b></div>
+        <div><span>10-24 20:01</span><b class="sm">ops 导出 X CDK × 6</b></div>
+        <div><span>10-24 19:20</span><b class="sm">ops 通过价格保护审核 rq_0911</b></div>
+        <div><span>10-24 08:41</span><b class="sm">onlyWjt 登录 · 203.0.113.8</b></div>
+      </div></section>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+$('#scopes').innerHTML = ['products:read', 'gpt-direct:write', 'cdk:read', 'cdk:purchase', 'x-direct:write', 'tg-direct:write'].map(s => `<span class="tag">${s}</span>`).join('');
+segInit($('#tab'), v => $$('[data-t]').forEach(s => s.classList.toggle('hidden', s.dataset.t !== v)));
+$$('.sw').forEach(s => swInit(s, on => toast(on ? '已开启' : '已关闭')));
+$('#showSec').onclick = () => $('#sec').classList.toggle('on');
+$('#testConn').onclick = e => busy(e.currentTarget, '连接中…', 800, () => toast('连接成功 · 权限正常'));
+$('#slogan').value = Theme.get().slogan;
+$('#saveR').onclick = () => { const t = Theme.get(); t.slogan = $('#slogan').value; Theme.save(t); toast('兑换页设置已保存'); };
+const TEAM = [['Michael Chen', 'admin@yourshop.com', '超级管理员', '全部', '刚刚'], ['运营小王', 'ops@example.com', '运营', 'CDK 生成/导出 · 订单处理', '昨天 20:01'], ['客服 Amy', 'amy@example.com', '客服', '只读 · 订单查询', '10-22']];
+const renderTeam = () => $('#team').innerHTML = TEAM.map((m, i) => `<tr><td class="row-flex"><span class="avatar" style="width:28px;height:28px;font-size:11px">${m[0][0]}</span><div><b>${m[0]}</b><div class="xs faint">${m[1]}</div></div></td><td><span class="badge ${i ? 'idle' : 'acc'}">${m[2]}</span></td><td class="sm muted">${m[3]}</td><td class="xs faint">${m[4]}</td><td class="acts">${i ? '<button class="btn sm" data-rm="' + i + '">移除</button>' : ''}</td></tr>`).join('');
+renderTeam();
+$('#team').onclick = async e => { const i = e.target.dataset.rm; if (i && await confirmBox({ title: '移除 ' + TEAM[i][0] + '？', ok: '移除', danger: true })) { TEAM.splice(i, 1); renderTeam(); toast('已移除'); } };
+$('#invite').onclick = () => {
+  const m = modal(`<h2>邀请管理员 <button class="iconbtn" data-close>×</button></h2><div class="form mt12"><div class="f"><label>邮箱</label><input class="field" id="em" placeholder="name@example.com"></div>
+    <div class="f"><label>角色</label><div class="choice c3"><button class="opt on"><b>运营</b><small>生成/导出 CDK，处理订单</small></button><button class="opt"><b>策略管理员</b><small>编辑兑换策略、审核拦截</small></button><button class="opt"><b>客服</b><small>只读，查询订单</small></button></div></div></div>
+    <div class="foot"><button class="btn" data-close>取消</button><button class="btn primary" id="go">发送邀请</button></div>`);
+  $$('.opt', m.el).forEach(b => b.onclick = () => $$('.opt', m.el).forEach(x => x.classList.toggle('on', x === b)));
+  $('#go', m.el).onclick = () => { m.close(); toast('邀请已发送'); };
+};
+</script>
+</body></html>

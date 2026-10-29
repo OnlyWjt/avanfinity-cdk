@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>支付流水 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="transactions">
+<div id="page" data-title="支付流水 <small>每笔兑换在官方产生的扣款记录</small>" data-crumb="数据">
+  <div class="note mb16">ⓘ 流水来自卡台同步，可能有几分钟延迟。每条流水都关联到对应的兑换码和兑换记录。</div>
+  <section class="card glass p0">
+    <div class="toolbar">
+      <select class="field sm" id="card"><option value="">全部产品</option><option value="GPTD">ChatGPT</option><option value="XCDK">X</option><option value="TGCD">Telegram</option></select>
+      <select class="field sm" id="type"><option value="">全部类型</option><option>AUTH</option><option>SETTLEMENT</option><option>REVERSAL</option><option>REFUND</option></select>
+      <select class="field sm" id="status"><option value="">全部状态</option><option>APPROVED</option><option>DECLINED</option><option>SETTLED</option><option>REVERSED</option></select>
+      <div class="fsearch">⌕<input id="q" placeholder="商户 / 交易 ID / 兑换码"></div>
+      <button class="btn sm" style="margin-left:auto" onclick="toast('已导出（演示）')">⤓ 导出 CSV</button>
+    </div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>时间</th><th>兑换码</th><th>商户</th><th>类型</th><th>状态</th><th class="num">金额</th><th>原币</th><th>国家</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+    <div class="pager"><span id="info"></span><div class="pgs"><button class="on">1</button><button>2</button><button>›</button></div></div>
+  </section>
+</div>
+<script src="assets/app.js"></script>
+<script>
+const F = { card: qs('card') || '', type: '', status: '', q: '' };
+function render() {
+  const rows = MOCK.txs.filter(t => (!F.card || t.ref.startsWith(F.card)) && (!F.type || t.type === F.type) && (!F.status || t.status === F.status) && (!F.q || (t.merchant + t.id + t.ref).toLowerCase().includes(F.q.toLowerCase())));
+  $('#tb').innerHTML = rows.map(t => `<tr class="click" data-id="${t.id}"><td class="xs faint nowrap">${t.at}</td><td class="mono">${t.ref}-••••</td>
+    <td class="t"><b>${t.merchant}</b>${t.reason ? `<p class="c-bad">${t.reason}</p>` : ''}</td><td><span class="tag">${t.type}</span></td><td>${badge(t.status)}</td>
+    <td class="num">${money(t.amt)}</td><td class="xs muted">${t.merchantAmt || t.cur}</td><td>${t.country}</td><td class="acts"><button class="iconbtn">›</button></td></tr>`).join('') || '<tr><td colspan="9"><div class="empty">没有交易</div></td></tr>';
+  $('#info').textContent = `共 ${rows.length} 条`;
+  $$('#tb tr[data-id]').forEach(tr => tr.onclick = () => {
+    const t = MOCK.txs.find(x => x.id == tr.dataset.id);
+    modal(`<h2>交易 ${t.id} <button class="iconbtn" data-close>×</button></h2><div class="sub">${badge(t.status)} <span class="tag">${t.type}</span></div>
+      <div class="kv"><div><span>商户</span><b>${t.merchant}</b></div><div><span>商户国家</span><b>${t.country}</b></div><div><span>授权金额</span><b>${money(t.amt)} ${t.cur}</b></div>
+      <div><span>商户原币金额</span><b>${t.merchantAmt || '—'}</b></div><div><span>兑换码</span><b class="mono">${t.ref}-••••</b></div><div><span>兑换记录</span><b><a class="link" href="orders.html?id=${t.order}">${t.order} →</a></b></div>
+      <div><span>授权 ID</span><b class="mono">auth_${t.id}x9</b></div><div><span>失败原因</span><b class="${t.reason ? 'c-bad' : ''}">${t.reason || '—'}</b></div><div><span>授权时间</span><b>2026-${t.at}</b></div></div>
+      ${t.status === 'DECLINED' ? '<div class="note warn mt12">⚠ 这笔扣款失败，对应的兑换码已按策略释放或重试。</div>' : ''}
+      <div class="foot"><button class="btn primary" data-close>关闭</button></div>`);
+  });
+}
+['card', 'type', 'status'].forEach(k => $('#' + k).onchange = e => { F[k] = e.target.value; render(); });
+$('#q').oninput = e => { F.q = e.target.value; render(); };
+render();
+</script>
+</body></html>

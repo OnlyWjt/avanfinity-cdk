@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>兑换策略 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.slist .it{display:block;padding:12px 14px;border-radius:calc(var(--r)*.6);border:1px solid var(--border);margin-bottom:8px;cursor:pointer;background:var(--inset);transition:.15s}
+.slist .it:hover{border-color:color-mix(in srgb,var(--a1) 50%,var(--border))}
+.slist .it.on{border-color:var(--a1);background:color-mix(in srgb,var(--a1) 12%,transparent)}
+.slist .it .between b{font-size:13.5px}
+.grp{border-top:1px solid var(--border);padding:16px 0}
+.grp:first-of-type{border-top:0;padding-top:4px}
+.grp>h4{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.grp>h4 small{font-weight:400;color:var(--faint);font-size:12px;margin-left:auto}
+.rule{display:grid;grid-template-columns:1fr 200px;gap:14px;align-items:center;padding:9px 0}
+.rule .t b{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.rule .t p{font-size:11.5px;color:var(--faint);margin-top:2px}
+.rule .ctl{display:flex;justify-content:flex-end}
+.rule .ctl .inputgrp{width:100%}
+.rule .ctl .inputgrp input{text-align:right}
+.mx td,.mx th{font-size:12.5px}
+.mx td:first-child{font-weight:600}
+.sim .row-ok{color:var(--ok)}.sim .row-bad{color:var(--bad)}.sim .row-warn{color:var(--warn)}
+.arch{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.arch>div{padding:14px;border-radius:calc(var(--r)*.6);background:var(--inset);border:1px solid var(--border)}
+.arch b{display:block;margin-bottom:6px}
+.flow{font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.9}
+.flow i{font-style:normal;color:var(--a2)}
+</style></head>
+<body data-page="strategy">
+<div id="page" data-title="兑换策略 <small>控制谁能兑、怎么兑、失败了怎么办</small>" data-crumb="CDK">
+
+  <!-- 覆盖说明 -->
+  <section class="card glass mb16">
+    <div class="between"><h3 style="margin:0">能覆盖卡台的兑换策略吗？</h3><button class="btn sm" id="toggleMx">展开对照表 ▾</button></div>
+    <p class="sm muted mt8" style="line-height:1.8">
+      <b style="color:var(--text)">大部分可以。</b>做法是用户<b>不直接</b>去卡台兑换，而是先经过我们的兑换页和后端；后端检查完规则，再替用户去调卡台的接口。
+      每条规则都标了在哪一层执行：
+      ${LAYER_OWN} 我们自己的后端执行，随时可改；
+      ${LAYER_GEN} 生成兑换码时写进卡台，这批码之后就不能再改；
+      ${LAYER_PLAT} 卡台强制执行，我们改不了，只能在它之上再加严。
+    </p>
+    <div id="mx" class="hidden mt12">
+      <div class="arch mb16">
+        <div><b>托管码 <span class="badge idle">简单</span></b>
+          <div class="flow">给用户的是卡台原始码 <i>GPTD-XXXX…</i><br>用户 → <i>我们的兑换页</i> → 后端检查规则 → 卡台公开兑换接口</div>
+          <div class="note warn mt8">⚠ 卡台码本身就能兑换。用户如果直接去卡台官方兑换页兑，就<b>绕过了</b>我们的规则，所以只算「软控制」。</div></div>
+        <div><b>自有码 <span class="badge ok">推荐</span></b>
+          <div class="flow">给用户的是我们自己生成的码 <i>TB-XXXX…</i><br>用户 → 我们的兑换页 → 后端检查规则 → <i>当场</i>向卡台生成 1 张码 → 后端替用户兑换</div>
+          <div class="note ok mt8">✓ 卡台码从来不会给到用户，规则<b>不能绕过</b>；还能做「失败自动重试」「人工审核后再兑」这类卡台没有的功能。</div></div>
+      </div>
+      <table class="tbl mx"><thead><tr><th>能力</th><th>卡台自带</th><th>我们能做到</th><th>执行层</th></tr></thead><tbody>
+        <tr><td>IP / 设备频率限制</td><td>只有按 IP 的全局限流</td><td>每个策略单独设置次数、时间窗、人机验证</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>有效期 / 兑换时段 / 地区</td><td>无</td><td>码的有效期、每天可兑时段、按国家拦截</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>同一账号兑换次数</td><td>无</td><td>预检会返回账号邮箱 / 用户名，按账号计数</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>只允许 Free 账号 / 邮箱域名黑白名单</td><td>无</td><td>根据预检结果判断</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>价格保护</td><td>报价超过上限时直接失败</td><td>实时报价比售价高多少就拦截 / 转人工 / 放行</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>失败后自动重试</td><td>失败后码被释放，要用户自己再兑</td><td>自有码模式下由后端自动重试 N 次</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>人工审核</td><td>无</td><td>命中规则先挂起，管理员通过后再提交卡台</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>每码独立支付 / 资金上限</td><td>有</td><td>生成时选择，写进这批码</td><td>${LAYER_GEN}</td></tr>
+        <tr><td>报价有效期（GPT 24h、X/TG 30 分钟）</td><td>有</td><td>只能更严，不能延长</td><td>${LAYER_PLAT}</td></tr>
+        <tr><td>每分钟最多 5 个新报价、一次性令牌、设备绑定</td><td>有</td><td>无法改变</td><td>${LAYER_PLAT}</td></tr>
+        <tr><td>卡台风控、账号资格判定（如已是会员）</td><td>有</td><td>无法放行卡台拒绝的请求</td><td>${LAYER_PLAT}</td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <div class="grid">
+    <!-- 策略列表 -->
+    <aside class="s3" style="align-self:start">
+      <div class="card glass">
+        <h3>策略 <button class="btn sm primary" id="add">＋ 新建</button></h3>
+        <div class="slist" id="slist"></div>
+        <div class="xs faint mt8">兑换码按「码前缀 → 批次 → 默认」匹配策略；同时命中多个时，优先级数字小的生效。</div>
+      </div>
+      <div class="card glass mt16 sim">
+        <h3>规则测试</h3>
+        <div class="form">
+          <div class="f"><label>兑换码</label><input class="field mono" id="tCode" value="TB-7K2Q-F9WM"></div>
+          <div class="f"><label>账号</label><input class="field" id="tAcc" value="m***@gmail.com"></div>
+          <div class="form"><div class="f"><label>账号当前套餐</label><select class="field" id="tPlan"><option>Free</option><option>Plus</option></select></div>
+            <div class="f"><label>实时报价</label><div class="inputgrp"><span>$</span><input id="tQuote" value="21.00"></div></div></div>
+          <button class="btn primary" id="runTest">运行测试</button>
+        </div>
+        <div id="tRes" class="mt12"></div>
+      </div>
+    </aside>
+
+    <!-- 编辑器 -->
+    <section class="card glass s9" id="editor"></section>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+$('#page').innerHTML = $('#page').innerHTML.replaceAll('${LAYER_OWN}', LAYER.own).replaceAll('${LAYER_GEN}', LAYER.gen).replaceAll('${LAYER_PLAT}', LAYER.platform);
+let list = Strat.all();
+let cur = (qs('id') && list.find(s => s.id === qs('id'))) || list[0];
+let dirty = false;
+
+function renderList() {
+  $('#slist').innerHTML = list.slice().sort((a, b) => a.prio - b.prio).map(s => `<div class="it ${s.id === cur.id ? 'on' : ''}" data-id="${s.id}">
+    <div class="between"><b>${esc(s.name)}</b>${s.on ? '<span class="badge ok">启用</span>' : '<span class="badge idle">停用</span>'}</div>
+    <div class="xs faint mt8">${s.mode === 'own' ? '自有码' : '托管码'}${s.prefix ? ` · 前缀 <span class="mono">${s.prefix}-</span>` : ''} · 优先级 ${s.prio} · 今日拦截 ${s.hits}</div>
+    <div class="row-flex mt8">${s.prod.map(p => PICXS[p]).join('')}</div></div>`).join('');
+  $$('#slist .it').forEach(el => el.onclick = async () => {
+    if (dirty && !await confirmBox({ title: '放弃未保存的修改？', ok: '放弃' })) return;
+    cur = list.find(s => s.id === el.dataset.id); dirty = false; render();
+  });
+}
+
+const num = (k, unit, hint) => `<div class="inputgrp"><input data-k="${k}" value="${cur[k]}"><span>${unit}</span></div>`;
+const sw = k => `<button class="sw ${cur[k] ? 'on' : ''}" data-sw="${k}"></button>`;
+const rule = (title, desc, layer, ctl) => `<div class="rule"><div class="t"><b>${title} ${LAYER[layer]}</b><p>${desc}</p></div><div class="ctl">${ctl}</div></div>`;
+const sel = (k, opts) => `<select class="field" data-k="${k}">${opts.map(([v, l]) => `<option value="${v}" ${cur[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+
+function renderEditor() {
+  const s = cur, own = s.mode === 'own';
+  $('#editor').innerHTML = `
+    <div class="between mb16">
+      <div style="flex:1"><input class="field" data-k="name" value="${esc(s.name)}" style="font-size:17px;font-weight:700;background:none;border-color:transparent;padding-left:0"><input class="field sm" data-k="desc" value="${esc(s.desc)}" style="width:100%;background:none;border-color:transparent;padding-left:0;color:var(--muted)"></div>
+      <div class="row-flex"><span class="sm muted">启用</span>${sw('on')}</div>
+    </div>
+
+    <div class="grp"><h4>① 适用范围 <small>决定哪些兑换码走这条策略</small></h4>
+      ${rule('兑换码模式', '自有码：用户拿到的是我们的码，规则不可绕过（推荐）。托管码：直接发卡台码，用户可能绕到卡台兑换。', 'own',
+        `<div class="seg full" id="modeSeg"><button data-v="own" class="${own ? 'on' : ''}">自有码</button><button data-v="hosted" class="${own ? '' : 'on'}">托管码</button></div>`)}
+      ${own ? rule('码前缀', '生成的自有码会带这个前缀，例如 TB-7K2Q-F9WM', 'own', `<div class="inputgrp"><input data-k="prefix" value="${s.prefix}" style="text-transform:uppercase"><span>-XXXX</span></div>`) : ''}
+      ${rule('适用产品', '', 'own', `<div class="row-flex">${['gpt', 'x', 'tg'].map(p => `<label class="row-flex sm" style="margin-left:8px"><input type="checkbox" data-prod="${p}" ${s.prod.includes(p) ? 'checked' : ''}>${{ gpt: 'GPT', x: 'X', tg: 'TG' }[p]}</label>`).join('')}</div>`)}
+      ${rule('优先级', '数字越小越优先', 'own', num('prio', '级'))}
+    </div>
+
+    <div class="grp"><h4>② 兑换门槛 <small>用户输码时检查，还没调用卡台</small></h4>
+      ${rule('同一 IP 每小时最多尝试', '包括输错的码；超出后暂时拒绝', 'own', num('ipH', '次'))}
+      ${rule('同一设备每天最多兑换', '按浏览器设备 ID 计数', 'own', num('devD', '次'))}
+      ${rule('输错几次后要求人机验证', '', 'own', num('captcha', '次'))}
+      ${rule('兑换码有效期', '从生成开始计算，0 表示不过期', 'own', num('expire', '天'))}
+      ${rule('限定兑换时段', `只在 ${s.from}–${s.to} 之间允许兑换，其他时间提示稍后再来`, 'own', `<div class="row-flex">${s.timeOn ? `<input class="field sm mono" data-k="from" value="${s.from}" style="width:70px">–<input class="field sm mono" data-k="to" value="${s.to}" style="width:70px">` : ''}${sw('timeOn')}</div>`)}
+      ${rule('拦截地区', '按访问 IP 的国家代码，逗号分隔，例如 CN, RU', 'own', `<input class="field" data-k="geo" value="${s.geo}" placeholder="不限制">`)}
+    </div>
+
+    <div class="grp"><h4>③ 账号规则 <small>预检后拿到账号信息再判断</small></h4>
+      ${rule('同一账号最多兑换', `在 ${s.accDays} 天内，同一个邮箱 / 用户名最多兑换几次，防止倒卖`, 'own', `<div class="row-flex" style="width:100%"><div class="inputgrp"><input data-k="accN" value="${s.accN}"><span>次</span></div><div class="inputgrp"><input data-k="accDays" value="${s.accDays}"><span>天</span></div></div>`)}
+      ${rule('只允许 Free 账号兑换', '已经是付费会员的账号会被拒绝，避免叠加或被盗号兑换', 'own', sw('freeOnly'))}
+      ${rule('邮箱域名黑名单', '临时邮箱、一次性邮箱', 'own', `<input class="field" data-k="mailBlock" value="${s.mailBlock}" placeholder="tempmail.com, …">`)}
+      ${rule('邮箱域名白名单', '填写后只允许这些域名，留空不限制', 'own', `<input class="field" data-k="mailAllow" value="${s.mailAllow}" placeholder="不限制">`)}
+      ${rule('账号资格', '账号是否能开通由卡台判断（例如已是 Premium 的 X 账号）', 'platform', '<span class="xs faint">不可修改</span>')}
+    </div>
+
+    <div class="grp"><h4>④ 价格保护 <small>防止实时报价上涨导致亏本</small></h4>
+      ${rule('报价比售价高出', '预检拿到的实时报价超过你的成本价多少就触发', 'own', num('priceTol', '%'))}
+      ${rule('触发后', '', 'own', sel('priceAct', [['block', '拦截，提示稍后再试'], ['manual', '转人工审核'], ['pass', '放行，只记录']]))}
+      ${rule('单码成本上限', 'X / TG 生成时写进卡台的资金上限；超过直接失败', 'gen', num('costCap', 'USD'))}
+      ${rule('报价有效期', 'GPT 24 小时，X / TG 30 分钟', 'platform', '<span class="xs faint">不可修改</span>')}
+    </div>
+
+    <div class="grp"><h4>⑤ 失败处理</h4>
+      ${rule('支付失败后', own ? '自有码模式下，可以由后端自动换一张新的卡台码重试' : '托管码模式下卡台会释放这张码，只能让用户自己重新兑换', own ? 'own' : 'platform',
+        own ? sel('failAct', [['retry', '自动重试'], ['release', '释放码，让用户重兑'], ['manual', '转人工处理']]) : '<span class="xs faint">释放码，用户重兑</span>')}
+      ${own && s.failAct === 'retry' ? rule('最多自动重试', '超过次数后释放码并通知你', 'own', num('retryN', '次')) : ''}
+      ${rule('每码独立支付', '每次兑换都单独开支付通道，失败不复用，成功率更稳但成本略高', 'gen', `<div class="seg full" id="payMode"><button data-v="shared" class="${s.payMode === 'shared' ? 'on' : ''}">共享</button><button data-v="own" class="${s.payMode === 'own' ? 'on' : ''}">独立</button></div>`)}
+    </div>
+
+    <div class="between mt16"><span class="xs ${dirty ? 'c-warn' : 'faint'}">${dirty ? '● 有未保存的修改' : '「生成时写入」的规则只影响之后生成的码'}</span>
+      <div class="row-flex">${s.id !== 's_default' ? '<button class="btn danger" id="del">删除</button>' : ''}<button class="btn" id="dup">复制一份</button><button class="btn primary" id="save">保存</button></div></div>`;
+
+  const mark = () => { dirty = true; $('#save').textContent = '保存 ●'; };
+  $$('#editor [data-k]').forEach(i => i.oninput = i.onchange = () => { cur[i.dataset.k] = ['name', 'desc', 'geo', 'mailBlock', 'mailAllow', 'from', 'to', 'priceAct', 'failAct'].includes(i.dataset.k) ? i.value : i.dataset.k === 'prefix' ? i.value.toUpperCase() : (parseFloat(i.value) || 0); mark(); if (i.tagName === 'SELECT') renderEditor(); });
+  $$('#editor [data-sw]').forEach(b => b.onclick = () => { cur[b.dataset.sw] = !cur[b.dataset.sw]; mark(); renderEditor(); });
+  $$('#editor [data-prod]').forEach(c => c.onchange = () => { cur.prod = $$('#editor [data-prod]').filter(x => x.checked).map(x => x.dataset.prod); mark(); });
+  $$('#modeSeg button').forEach(b => b.onclick = () => { cur.mode = b.dataset.v; mark(); renderEditor(); });
+  $$('#payMode button').forEach(b => b.onclick = () => { cur.payMode = b.dataset.v; mark(); renderEditor(); });
+  $('#save').onclick = () => { Strat.save(list); dirty = false; renderList(); renderEditor(); toast('策略已保存'); };
+  $('#dup').onclick = () => { const c = { ...structuredClone(cur), id: 's_' + rnd4().toLowerCase(), name: cur.name + ' 副本', on: false, hits: 0, prio: list.length + 1 }; list.push(c); cur = c; Strat.save(list); render(); toast('已复制'); };
+  const d = $('#del'); if (d) d.onclick = async () => { if (await confirmBox({ title: `删除「${cur.name}」？`, body: '使用这条策略的兑换码会改为走默认策略。', ok: '删除', danger: true })) { list = list.filter(x => x !== cur); cur = list[0]; Strat.save(list); render(); toast('已删除'); } };
+  if (dirty) $('#save').textContent = '保存 ●';
+}
+function render() { renderList(); renderEditor(); }
+
+$('#add').onclick = () => { const c = { ...structuredClone(STRAT_DEFAULT[0]), id: 's_' + rnd4().toLowerCase(), name: '新策略', desc: '', on: false, hits: 0, prio: list.length + 1, prefix: 'NEW', mode: 'own' }; list.push(c); cur = c; dirty = true; render(); };
+$('#toggleMx').onclick = () => { const h = $('#mx').classList.toggle('hidden'); $('#toggleMx').textContent = h ? '展开对照表 ▾' : '收起 ▴'; };
+
+$('#runTest').onclick = e => busy(e.currentTarget, '检查中…', 500, () => {
+  const code = $('#tCode').value.toUpperCase(), acc = $('#tAcc').value, plan = $('#tPlan').value, q = parseFloat($('#tQuote').value) || 0;
+  const s = list.filter(x => x.on).sort((a, b) => a.prio - b.prio).find(x => x.prefix && code.startsWith(x.prefix + '-')) || list.find(x => x.id === 's_default');
+  const cost = 19.80, over = (q - cost) / cost * 100;
+  const domain = acc.split('@')[1] || '';
+  const used = acc.startsWith('m***') ? 1 : 0;
+  const checks = [
+    ['匹配策略', 'ok', s.name],
+    ['IP 频率', 'ok', `本小时 2 / ${s.ipH} 次`],
+    ['兑换时段', !s.timeOn || '14:30' >= s.from ? 'ok' : 'bad', s.timeOn ? `${s.from}–${s.to}` : '不限'],
+    ['账号兑换次数', used >= s.accN ? 'bad' : 'ok', `${s.accDays} 天内已兑 ${used} / ${s.accN} 次`],
+    ['只允许 Free', s.freeOnly && plan !== 'Free' ? 'bad' : 'ok', s.freeOnly ? `当前 ${plan}` : '未开启'],
+    ['邮箱域名', s.mailBlock.includes(domain) && domain ? 'bad' : 'ok', domain || '—'],
+    ['价格保护', over > s.priceTol ? (s.priceAct === 'block' ? 'bad' : s.priceAct === 'manual' ? 'warn' : 'ok') : 'ok', `高出 ${over.toFixed(1)}% / 阈值 ${s.priceTol}%`],
+  ];
+  const fail = checks.find(c => c[1] === 'bad'), warn = checks.find(c => c[1] === 'warn');
+  $('#tRes').innerHTML = `<div class="kv">${checks.map(c => `<div><span>${c[0]}</span><b class="row-${c[1]} sm">${c[1] === 'ok' ? '✓' : c[1] === 'bad' ? '✕' : '⚑'} ${c[2]}</b></div>`).join('')}</div>
+    <div class="note ${fail ? 'bad' : warn ? 'warn' : 'ok'} mt8">${fail ? `⛔ 会被拦截：${fail[0]}` : warn ? '⚑ 会转人工审核' : '✓ 通过，会提交到卡台兑换'}</div>`;
+});
+render();
+</script>
+</body></html>

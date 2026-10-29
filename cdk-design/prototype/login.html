@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body>
+<div style="min-height:100vh;display:grid;place-items:center;padding:20px">
+  <div class="pcard glass" style="width:min(400px,94vw)" id="box">
+    <div class="brand" style="padding:0 0 22px;justify-content:center"><div class="logo" data-bind="logo">C</div><span data-bind="name">CDK Console</span></div>
+    <div id="s1">
+      <h2 style="text-align:center">管理后台登录</h2><p class="desc" style="text-align:center">仅限管理员</p>
+      <div class="form">
+        <div class="f"><label>邮箱</label><input class="field" id="em" value="admin@yourshop.com"></div>
+        <div class="f"><label>密码 <a class="link" href="#" onclick="toast('重置邮件已发送','info');return false">忘记密码</a></label><input class="field" type="password" id="pw" value="••••••••"></div>
+        <button class="btn primary block" id="go">登录</button>
+      </div>
+    </div>
+    <div id="s2" class="hidden">
+      <h2 style="text-align:center">两步验证</h2><p class="desc" style="text-align:center">输入验证器 App 中的 6 位数字</p>
+      <input class="code-in" id="otp" maxlength="6" placeholder="000000" style="text-align:center;letter-spacing:.5em" inputmode="numeric">
+      <div class="err" id="err"></div>
+      <button class="btn primary block" id="verify">验证</button>
+      <button class="backlink" id="back">← 返回</button>
+    </div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+$('#go').onclick = e => busy(e.currentTarget, '登录中…', 700, () => { $('#s1').classList.add('hidden'); $('#s2').classList.remove('hidden'); $('#otp').focus(); });
+$('#back').onclick = () => { $('#s2').classList.add('hidden'); $('#s1').classList.remove('hidden'); };
+$('#otp').oninput = e => { e.target.value = e.target.value.replace(/\D/g, ''); $('#err').textContent = ''; if (e.target.value.length === 6) $('#verify').click(); };
+$('#verify').onclick = e => { if ($('#otp').value.length < 6) { $('#err').textContent = '请输入 6 位验证码（演示随便输）'; return; } busy(e.currentTarget, '验证中…', 600, () => location.href = 'index.html'); };
+</script>
+</body></html>

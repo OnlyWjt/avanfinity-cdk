@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>生成 CDK · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="generate">
+<style>
+.gen{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+.gen-step{padding:20px 22px}
+.gen-step+.gen-step{margin-top:14px}
+.gen-h{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.gen-h .no{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;font-weight:800;color:var(--on-a);background:linear-gradient(135deg,var(--a1),var(--a2));flex:none;align-self:center}
+.gen-h h3{margin:0;font-size:15px}
+.gen-h small{color:var(--faint);font-size:11.5px;margin-left:auto}
+/* 产品线：和商城同一套通行证材质 */
+#prodChoice{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+#prodChoice .opt{position:relative;color:#fff;border:0;padding:16px 16px 14px;min-height:104px;display:flex;flex-direction:column;justify-content:space-between;border-radius:calc(var(--r)*.8);overflow:hidden;opacity:.55;filter:saturate(.7);transition:opacity .2s,filter .2s,transform .2s,box-shadow .2s}
+#prodChoice .opt:hover{opacity:.85}
+#prodChoice .opt.on{opacity:1;filter:none;transform:translateY(-2px);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--a1),0 18px 30px -18px rgba(0,0,0,.6)}
+#prodChoice .opt b{font-size:17px;font-weight:800;display:block}
+#prodChoice .opt small{color:rgba(255,255,255,.78);font-size:12px}
+#prodChoice .pp-mark{width:30px;height:30px}
+/* 套餐 */
+#planChoice{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+#planChoice .opt{padding:13px 14px}
+#planChoice .opt .pc-cost{font-family:var(--display);font-size:20px;font-weight:800;margin:6px 0 8px;letter-spacing:-.01em}
+#planChoice .opt .pc-cost small{font-size:11.5px;font-weight:500;color:var(--muted);margin-left:2px}
+.meter{height:4px;border-radius:4px;background:var(--inset);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--a1),var(--a2))}
+.meter.low i{background:var(--warn)}
+/* 数量 */
+.qty-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.qty-big{font-family:var(--display);font-size:44px;font-weight:850;line-height:1;min-width:76px;letter-spacing:-.03em}
+.qty-big small{font-size:14px;font-weight:600;color:var(--muted);margin-left:4px}
+.qchips{display:flex;gap:6px;flex-wrap:wrap}
+.qchips button{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--inset);font-size:12.5px;font-weight:650}
+.qchips button.on{border-color:var(--a1);background:color-mix(in srgb,var(--a1) 16%,transparent)}
+#qr{width:100%;margin-top:14px;accent-color:var(--a1)}
+/* 策略 */
+#stratChoice{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+/* 右侧：预览这批码 + 费用 */
+.gen-side{position:sticky;top:14px;display:grid;gap:14px}
+.gen-ticket{position:relative;color:#fff;border-radius:calc(var(--r)*1.05);padding:18px 18px 0;overflow:hidden;--stub:64px;min-height:210px;display:flex;flex-direction:column;
+  -webkit-mask:radial-gradient(circle 10px at left calc(100% - var(--stub)),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 10px at right calc(100% - var(--stub)),#0000 97%,#000) right/51% 100% no-repeat;
+  mask:radial-gradient(circle 10px at left calc(100% - var(--stub)),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 10px at right calc(100% - var(--stub)),#0000 97%,#000) right/51% 100% no-repeat;
+  filter:drop-shadow(0 18px 26px rgba(0,0,0,.3))}
+.gen-ticket .gt-plan{font-family:var(--display);font-size:24px;font-weight:850;margin-top:auto;letter-spacing:-.02em}
+.gen-ticket .gt-mode{font-size:12px;opacity:.8;margin-top:3px}
+.gen-ticket .pp-cut{margin:16px 2px 0}
+.gen-ticket .gt-stub{height:var(--stub);display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:13px}
+.gen-ticket .gt-x{position:absolute;right:18px;top:16px;font-family:var(--display);font-size:30px;font-weight:850;opacity:.95}
+#sum{display:grid;gap:2px}
+#sum>div{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;color:var(--muted)}
+#sum>div b{color:var(--text);font-family:var(--mono);font-weight:600}
+#sum>.tot{border-top:1px dashed var(--border);margin-top:6px;padding-top:12px;color:var(--text);font-weight:650}
+#sum>.tot b{font-family:var(--display);font-size:24px;font-weight:850}
+#go{padding:14px;font-size:15px}
+@media (max-width:1100px){.gen{grid-template-columns:1fr}.gen-side{position:static}}
+@media (max-width:640px){#prodChoice{grid-template-columns:1fr}.gen-step{padding:16px}}
+</style>
+<div id="page" data-title="生成 CDK" data-crumb="<a href='cdks.html'>CDK 管理</a> / 生成">
+<div id="warn"></div>
+<div class="gen">
+  <div>
+    <section class="card glass gen-step">
+      <div class="gen-h"><span class="no">1</span><h3>产品线</h3></div>
+      <div class="choice" id="prodChoice">
+        <button class="opt pass gpt" data-v="gpt"><span class="pp-mark">G</span><span><b>ChatGPT</b><small>Go · Plus · Pro</small></span></button>
+        <button class="opt pass x" data-v="x"><span class="pp-mark">𝕏</span><span><b>X Premium</b><small>Premium · Premium+</small></span></button>
+        <button class="opt pass tg" data-v="tg"><span class="pp-mark">✈</span><span><b>Telegram</b><small>Premium 3 / 6 / 12 月</small></span></button>
+      </div>
+    </section>
+    <section class="card glass gen-step">
+      <div class="gen-h"><span class="no">2</span><h3>套餐</h3><small id="planHint"></small></div>
+      <div class="choice" id="planChoice"></div>
+    </section>
+    <section class="card glass gen-step">
+      <div class="gen-h"><span class="no">3</span><h3>数量</h3><small>每批 1–50 张</small></div>
+      <div class="qty-row">
+        <div class="qty-big" id="qtyBig">10<small>张</small></div>
+        <div class="stepper"><button id="qm" aria-label="减少">−</button><input id="qty" value="10" aria-label="数量" inputmode="numeric"><button id="qp" aria-label="增加">＋</button></div>
+        <div class="qchips" id="qchips"><button data-q="1">1</button><button data-q="5">5</button><button data-q="10">10</button><button data-q="20">20</button><button data-q="50">50</button></div>
+      </div>
+      <input type="range" id="qr" min="1" max="50" value="10" aria-label="数量滑块">
+    </section>
+    <section class="card glass gen-step">
+      <div class="gen-h"><span class="no">4</span><h3>兑换策略</h3><small><a class="link" href="strategy.html">管理策略 →</a></small></div>
+      <div class="choice" id="stratChoice"></div><div class="help mt8" id="stratHelp"></div>
+      <div id="socOnly" class="hidden mt16">
+        <div class="f"><div class="flabel">单码成本上限 <small>USD · 含预付额、通道费、服务费；超过直接失败，不会多扣</small></div>
+          <div class="inputgrp"><span>$</span><input id="cap" aria-label="单码成本上限"></div></div>
+        <details class="mt12"><summary class="sm muted" style="cursor:pointer">高级：预付额、官方金额上限与币种（默认值在「售价与利润」里设置）</summary>
+          <div class="form"><div class="three mt12">
+            <div class="f"><label for="cur">官方报价币种</label><input class="field mono" id="cur" maxlength="3"></div>
+            <div class="f"><label for="maxOff">官方金额上限 <small>按最小单位，如 2400 = 24.00</small></label><input class="field mono" id="maxOff"></div>
+            <div class="f"><label for="fund">单次预付额 <small>USD</small></label><input class="field mono" id="fund"></div>
+          </div></div></details>
+      </div>
+    </section>
+    <section class="card glass gen-step">
+      <div class="gen-h"><span class="no">5</span><h3>批次备注</h3><small>仅自己可见，可选</small></div>
+      <input class="field" id="memo" maxlength="100" placeholder="例如：淘宝 10 月第 3 批" aria-label="批次备注">
+    </section>
+  </div>
+  <aside class="gen-side">
+    <div class="gen-ticket pass gpt" id="ticket"><div class="pp-top"><span class="pp-mark" id="tkMark">G</span><span class="pp-kind">即将生成</span></div><span class="gt-x" id="tkQty">×10</span>
+      <div class="gt-plan" id="tkPlan">—</div><div class="gt-mode" id="tkMode"></div><div class="pp-cut"></div><div class="gt-stub"><span id="tkCode">—</span><span id="quoteBadge"></span></div></div>
+    <section class="card glass">
+      <div class="row-flex mb12 hidden" id="sumHead"></div>
+      <div id="sum"></div>
+      <div class="note mt12" id="riskNote"></div>
+      <button class="btn primary block mt16" id="go">✦ 生成</button>
+    </section>
+  </aside>
+</div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const S = { p: qs('p') || 'gpt', plan: null, qty: 10, strat: null };
+let cat, strategies, idemKey = null, dirtySocial = false;
+const newKey = () => { idemKey = null; };   // 参数变化后重新生成幂等键
+
+ready(async me => {
+  if (!can('operator')) { $('#page').innerHTML = '<div class="empty">你的角色没有生成权限</div>'; return; }
+  await load();
+});
+/** 首屏缓存刷新时重新取报价和策略，保留当前选择 */
+async function load() {
+  [cat, strategies] = await Promise.all([GET('/api/admin/catalog'), GET('/api/admin/strategies').then(r => r.list.filter(s => s.on))]);
+  if (cat.errors.length) $('#warn').innerHTML = `<div class="alert warn glass">⚠<span>卡台报价获取失败：${esc(cat.errors[0])}</span><a class="btn sm" href="settings.html">检查设置</a></div>`;
+  render();
+}
+
+function render() {
+  $$('#prodChoice .opt').forEach(b => b.classList.toggle('on', b.dataset.v === S.p));
+  const plans = cat[S.p];
+  const usable = p => S.p === 'gpt' ? p.enabled && p.cost != null : p.enabled !== false;
+  if (!plans.find(p => p.key === S.plan && usable(p))) S.plan = (plans.find(p => p.key === 'plus' && usable(p)) || plans.find(usable))?.key;
+  $('#planChoice').innerHTML = plans.map(p => {
+    const dis = !usable(p);
+    const name = esc(p.label.replace(/^(ChatGPT|X|Telegram) /, ''));
+    // GPT：成本 + 平台库存条；X / TG：官方金额兑换时才确定，只显示服务费
+    const body = S.p === 'gpt'
+      ? (dis ? '<div class="pc-cost">—</div><small>等待卡台报价</small>' : `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><div class="meter ${p.stock < 30 ? 'low' : ''}"><i style="width:${Math.min(100, (p.stock / 400) * 100)}%"></i></div><small>平台库存 ${p.stock}</small>`)
+      : (dis ? '<div class="pc-cost">—</div><small>暂未开放</small>' : `<div class="pc-cost">${money(p.serviceFee)}<small>服务费</small></div><small>官方金额兑换时确定</small>`);
+    return `<button class="opt ${p.key === S.plan ? 'on' : ''}" data-k="${p.key}" ${dis ? 'disabled' : ''}><b>${name}</b>${body}</button>`;
+  }).join('');
+  $$('#planChoice .opt').forEach(b => b.onclick = () => { S.plan = b.dataset.k; dirtySocial = false; newKey(); render(); });
+  $('#planHint').textContent = S.p === 'gpt' ? '成本来自卡台实时售价，24 小时有效' : '官方金额在用户兑换时才确定';
+  $('#quoteBadge').innerHTML = S.p === 'gpt' ? (cat.errors.length ? '<span class="badge warn">报价不可用</span>' : '<span class="badge ok">✓ 报价有效</span>') : '';
+
+  const avail = strategies.filter(s => s.prod.includes(S.p));
+  if (!avail.find(s => s.id === S.strat)) S.strat = (avail.find(s => s.mode === 'own') || avail[0])?.id;
+  $('#stratChoice').innerHTML = avail.map(s => `<button class="opt ${s.id === S.strat ? 'on' : ''}" data-s="${s.id}"><b>${esc(s.name)}</b><small>${s.mode === 'own' ? `自有码 · ${s.prefix}-` : '托管码（卡台码）'}</small></button>`).join('') || '<div class="xs c-warn">没有适用于这个产品的启用策略</div>';
+  $$('#stratChoice .opt').forEach(b => b.onclick = () => { S.strat = b.dataset.s; dirtySocial = false; newKey(); render(); });
+  const st = strategies.find(s => s.id === S.strat);
+  $('#stratHelp').innerHTML = st ? `${esc(st.desc)} · 同账号 ${st.accDays} 天内限 ${st.accN} 次${st.freeOnly ? ' · 仅 Free 账号' : ''} · 价格保护 ${st.priceTol}% · 失败${st.mode === 'own' && st.failAct === 'retry' ? `自动重试 ${st.retryN} 次` : st.failAct === 'manual' ? '转人工' : '释放重兑'}` : '';
+
+  $('#socOnly').classList.toggle('hidden', S.p === 'gpt');
+  if (S.p !== 'gpt' && !dirtySocial) {
+    const d = cat.socialDefaults[`${S.p}.${S.plan}`] || {};
+    // 上限至少要覆盖预付额 + 服务费 + 通道费余量，否则卡台会拒绝
+    const fee = cat[S.p].find(p => p.key === S.plan)?.serviceFee || 0;
+    const minCap = Number(d.fundingAmountUsd || 0) + fee + 3;
+    $('#cap').value = Math.max(st ? st.costCap : 30, minCap).toFixed(2);
+    $('#cur').value = (d.currency || 'usd').toUpperCase(); $('#maxOff').value = d.maxOfficialAmountMinor || ''; $('#fund').value = d.fundingAmountUsd || '';
+  }
+  $('#qty').value = S.qty; $('#qr').value = S.qty;
+  $('#qtyBig').innerHTML = `${S.qty}<small>张</small>`;
+  $$('#qchips button').forEach(b => b.classList.toggle('on', +b.dataset.q === S.qty));
+  summary();
+}
+function summary() {
+  const plan = cat[S.p].find(p => p.key === S.plan), st = strategies.find(s => s.id === S.strat);
+  if (!plan || !st) { $('#go').disabled = true; $('#sum').innerHTML = ''; $('#riskNote').textContent = '请选择套餐和策略'; return; }
+  const own = st.mode === 'own', q = S.qty;
+  $('#sumHead').innerHTML = `${PIC[S.p]}<div><b>${esc(plan.label)}</b><div class="xs muted">${q} 张 · ${esc(st.name)}</div></div>`;
+  $('#ticket').className = 'gen-ticket pass ' + S.p;
+  $('#tkMark').textContent = { gpt: 'G', x: '𝕏', tg: '✈' }[S.p];
+  $('#tkQty').textContent = '×' + q;
+  $('#tkPlan').textContent = plan.label;
+  $('#tkMode').textContent = `${own ? '自有码' : '托管码（卡台码）'} · ${st.name}`;
+  $('#tkCode').textContent = own ? `${st.prefix}-XXXX-XXXX-XXXX` : { gpt: 'AVF-…', x: 'XCDK-…', tg: 'TGCD-…' }[S.p];
+  let cost, bad = '';
+  if (S.p === 'gpt') { cost = plan.cost; if (q > plan.stock) bad = '数量超过平台库存'; }
+  else {
+    const cap = parseFloat($('#cap').value), fund = parseFloat($('#fund').value);
+    cost = cap;
+    if (!(cap > 0)) bad = '请填写单码成本上限';
+    else if (fund >= cap) bad = '预付额必须小于成本上限（上限还要覆盖通道费和服务费）';
+    else if (!cat.paymentConfigured && !own) bad = '还没有在设置里选择 X / TG 付款通道';
+  }
+  $('#sum').innerHTML = `<div>生成费用<b>$0.00</b></div><div>${S.p === 'gpt' ? '单码成本' : '单码成本上限'}<b>${money(cost)}</b></div>
+    ${S.p === 'gpt' ? `<div>平台库存<b>${plan.stock ?? '—'} 张</b></div>` : ''}
+    <div class="tot">全部兑换${S.p === 'gpt' ? '预计' : '最多'}成本<b>${money(cost * q)}</b></div>`;
+  $('#riskNote').innerHTML = bad ? `<span class="c-bad">✕ ${bad}</span>`
+    : own ? 'ⓘ 自有码：卡台码在用户兑换时才生成，买家拿不到，策略不可绕过。之后可随时再导出。'
+    : S.p === 'gpt' ? 'ⓘ 托管码：系统会加密保存完整码；但买家拿到的是卡台码，可以绕过本系统直接去卡台兑换。'
+    : 'ⓘ 托管码：生成时立即在卡台发行，不扣款；兑换时按上限扣款。';
+  if (S.p !== 'gpt' && own && !cat.paymentConfigured) $('#riskNote').innerHTML += '<br><span class="c-warn">⚠ 还没设置付款通道，用户兑换时会失败</span>';
+  $('#go').disabled = !!bad;
+  $('#go').innerHTML = `✦ 生成 ${q} 张`;
+}
+
+$$('#prodChoice .opt').forEach(b => b.onclick = () => { S.p = b.dataset.v; S.plan = null; dirtySocial = false; newKey(); history.replaceState(null, '', '?p=' + S.p); render(); });
+const setQ = v => { S.qty = Math.max(1, Math.min(50, v | 0 || 1)); newKey(); render(); };
+$('#qm').onclick = () => setQ(S.qty - 1); $('#qp').onclick = () => setQ(S.qty + 1);
+$('#qr').oninput = e => setQ(+e.target.value);
+$$('#qchips button').forEach(b => b.onclick = () => setQ(+b.dataset.q)); $('#qty').onchange = e => setQ(+e.target.value);
+['cap', 'cur', 'maxOff', 'fund'].forEach(id => $('#' + id).oninput = () => { dirtySocial = true; newKey(); summary(); });
+
+$('#go').onclick = e => run(e.currentTarget, '正在生成…', async () => {
+  idemKey ??= 'gen-' + uuid();   // 同一份参数重试时复用，卡台不会重复生成
+  const st = strategies.find(s => s.id === S.strat);
+  const body = { product: S.p, plan: S.plan, quantity: S.qty, strategyId: S.strat, memo: $('#memo').value, idemKey };
+  if (S.p !== 'gpt') body.social = { maxWalletDebitUsd: (+$('#cap').value).toFixed(2), currency: $('#cur').value.trim().toLowerCase(), maxOfficialAmountMinor: parseInt($('#maxOff').value, 10), fundingAmountUsd: $('#fund').value.trim() };
+  const r = await POST('/api/admin/batches', body);
+  showResult(r, st);
+  newKey();
+});
+function showResult(r, st) {
+  codesDialog({
+    title: `已生成 ${r.codes.length} 张兑换码${r.replayed ? '（重放）' : ''}`, tone: 'ok',
+    sub: `${esc(r.label)} · ${esc(st.name)} · 批次 <span class="mono">${r.batchId}</span>`,
+    noteTone: r.mode === 'own' ? '' : 'warn',
+    note: (r.mode === 'own' ? 'ⓘ 自有码已加密保存，之后在 CDK 管理中随时可以再导出。' : '⚠ 完整码已加密保存在本系统，可以再导出；卡台本身只返回这一次。') + (r.missing ? `<br>有 ${r.missing} 张卡台没有返回完整码（超过恢复窗口）。` : ''),
+    items: r.codes.map(code => ({ code })),
+    csv: { name: r.batchId, header: 'code,product,plan,strategy,batch', rows: r.codes.map(c => [c, r.product, r.plan, st.name, r.batchId].join(',')) },
+    doneLabel: '完成，去 CDK 管理', onDone: () => { location.href = 'cdks.html?p=' + r.product; },
+  });
+}
+</script>
+</body></html>

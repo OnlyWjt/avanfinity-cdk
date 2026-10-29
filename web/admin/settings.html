@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="settings">
+<div id="page" data-title="设置" data-crumb="系统">
+  <div id="welcome"></div>
+  <div class="seg mb16" id="tab"><button class="on" data-v="api" data-role="admin">卡台 API</button><button data-v="redeem" data-role="admin">兑换页</button><button data-v="shop" data-role="admin">商城</button><button data-v="pay" data-role="admin">支付</button><button data-v="mail" data-role="admin">邮件</button><button data-v="team" data-role="admin">管理员</button><button data-v="security">安全</button></div>
+
+  <div data-t="api" class="grid">
+    <section class="card glass s7">
+      <h3>卡台连接 <span id="connState"></span></h3>
+      <div class="form">
+        <div class="f"><label>卡台地址 <small>站点根地址，如 https://avanfinity.com（接口在 /api/v1）</small></label><input class="field mono" id="baseUrl" placeholder="https://"></div>
+        <div class="two"><div class="f"><label>App-Id</label><input class="field mono" id="appId" placeholder="app_…"></div>
+          <div class="f"><label>App-Secret <small>加密保存，只在服务端使用</small></label><input class="field mono" id="appSecret" type="password" autocomplete="off"></div></div>
+        <div class="row-flex"><button class="btn primary" id="saveApi">保存</button><button class="btn" id="testConn">测试连接</button></div>
+        <div id="testRes"></div>
+      </div>
+    </section>
+    <section class="card glass s5">
+      <h3>需要在卡台控制台做的事</h3>
+      <div class="kv">
+        <div><span>1. 创建 API Key</span><b class="sm">勾选 cdk:read、cdk:purchase、x-direct、tg-direct 权限</b></div>
+        <div><span>2. IP 白名单</span><b class="sm">加入本服务器的出口 IP（生成码等写接口必须）</b></div>
+        <div><span>3. Webhook</span><b class="sm"><a class="link" href="webhooks.html">接收地址与签名密钥 →</a></b></div>
+      </div>
+      <div class="xs faint mt12" id="serverInfo"></div>
+    </section>
+    <section class="card glass s7">
+      <h3>X / Telegram 付款通道</h3>
+      <p class="sm muted mb12">X / TG 兑换时由卡台的付款通道完成付款。这里只选择通道，付款细节不会出现在后台和兑换页。</p>
+      <div class="form">
+        <div class="f"><label>付款通道</label><div class="row-flex"><select class="field" id="productCode"><option value="">加载中…</option></select><button class="btn" id="loadProducts">刷新</button></div></div>
+        <div class="two"><div class="f"><label>付款人名</label><input class="field mono" id="firstName"></div><div class="f"><label>付款人姓</label><input class="field mono" id="lastName"></div></div>
+        <div><button class="btn primary" id="savePay">保存</button></div>
+      </div>
+    </section>
+    <section class="card glass s5">
+      <h3>Telegram 通知 <span id="tgState"></span></h3>
+      <div class="form" id="notify">
+        <div class="f"><label>Bot Token <small>找 @BotFather 创建机器人获得</small></label><input class="field mono" id="tgToken" type="password" autocomplete="off" placeholder="123456:ABC-…"></div>
+        <div class="f"><label>Chat ID <small>你的用户 ID、群组 ID（负数）或 @频道</small></label><input class="field mono" id="tgChat" placeholder="例如 123456789"></div>
+        <div class="toggle"><div>兑换需要关注<p>失败、待审核、需处理时推送，每分钟合并一条</p></div><button class="sw" data-n="failAlert"></button></div>
+        <div class="toggle"><div>商城动态<p>新成交、发货失败、代理申请、提现申请，每分钟合并一条</p></div><button class="sw" data-n="shopAlert"></button></div>
+        <div class="toggle"><div>平台库存不足<p>GPT 套餐库存低于 <input class="field sm mono" id="lowTh" style="width:56px;display:inline-block;padding:2px 6px"> 张时提醒</p></div><button class="sw" data-n="lowStock"></button></div>
+        <div class="toggle"><div>每日报告<p>每天 9 点推送前一天的成功、拦截、利润</p></div><button class="sw" data-n="dailyReport"></button></div>
+        <div class="row-flex"><button class="btn primary" id="saveNotify">保存</button><button class="btn" id="testNotify">发送测试消息</button></div>
+      </div>
+    </section>
+  </div>
+
+  <div data-t="redeem" class="grid hidden">
+    <section class="card glass s7">
+      <h3>兑换页 <a class="link" href="/" target="_blank">打开 ↗</a></h3>
+      <div class="form">
+        <div class="f"><label>页面说明</label><textarea class="field" id="rDesc" style="font-family:var(--sans);font-size:13px;min-height:70px" maxlength="300"></textarea><div class="help">标语、品牌名在「主题与品牌」里修改</div></div>
+        <div class="f"><label>开放的产品</label><div class="row-flex"><label class="row-flex"><input type="checkbox" id="pGpt"> ChatGPT</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" id="pX"> X Premium</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" id="pTg"> Telegram</label></div></div>
+        <div class="f"><label>客服联系方式 <small>显示在兑换页「帮助」和失败提示里</small></label><input class="field" id="rContact" maxlength="100" placeholder="例如 Telegram @your_support"></div>
+        <div class="toggle"><div>维护模式<p>开启后兑换页停止新的兑换</p></div><button class="sw" id="rMaint"></button></div>
+        <div class="f"><label>维护提示</label><input class="field" id="rMaintMsg" maxlength="200"></div>
+      </div>
+    </section>
+    <section class="card glass s5"><h3>人机验证（Cloudflare Turnstile）</h3>
+      <p class="sm muted mb12">策略里设置「输错几次后要求人机验证」时使用。不配置的话只按 IP 频率限制。</p>
+      <div class="form">
+        <div class="f"><label>Site Key</label><input class="field mono" id="tsKey"></div>
+        <div class="f"><label>Secret Key <small id="tsSet"></small></label><input class="field mono" id="tsSecret" type="password" autocomplete="off" placeholder="不修改请留空"></div>
+      </div></section>
+    <div class="s12"><button class="btn primary" id="saveRedeem">保存兑换页设置</button></div>
+  </div>
+
+  <div data-t="shop" class="grid hidden">
+    <section class="card glass s7"><h3>商城 <a class="link" href="/shop/" target="_blank">打开 ↗</a></h3>
+      <div class="form">
+        <div class="toggle"><div>开启商城<p>关闭后前台不能下单，已付款的订单照常发货</p></div><button class="sw" id="shEn"></button></div>
+        <div class="f"><label>网站首页</label><div class="seg" id="shHome"><button data-v="redeem">兑换页</button><button data-v="shop">商城</button></div><div class="help">设为商城时，兑换页地址变为 /redeem</div></div>
+        <div class="f"><label>商城名称</label><input class="field" id="shTitle" maxlength="30"></div>
+        <div class="f"><label>公告 <small>显示在商城顶部，可留空</small></label><textarea class="field" id="shNotice" maxlength="500" style="font-family:var(--sans);font-size:13px;min-height:70px"></textarea></div>
+        <div class="f"><label>未付款订单保留（分钟） <small>超时自动关闭并释放库存</small></label><input class="field mono" id="shExp" inputmode="numeric" style="max-width:140px"></div>
+        <div class="toggle"><div>允许买家注册<p>不注册也能购买，注册后可以用余额、自动保存订单</p></div><button class="sw" id="shReg"></button></div>
+      </div></section>
+    <section class="card glass s5"><h3>代理分销</h3>
+      <div class="form">
+        <div class="toggle"><div>开放代理申请<p>买家在「我的」里申请，后台审核</p></div><button class="sw" id="shAg"></button></div>
+        <div class="f"><label>收益冻结天数 <small>0–60，防止退款后已被提现</small></label><input class="field mono" id="shFz" inputmode="numeric"></div>
+        <div class="f"><label>最低提现金额（元）</label><input class="field mono" id="shMin" inputmode="decimal"></div>
+        <div class="f"><label>推广归因天数 <small>点推广链接后多少天内下单算代理的</small></label><input class="field mono" id="shRef" inputmode="numeric"></div>
+        <div class="help">等级、审核、提现在 <a class="link" href="agents.html">代理分销</a> 页面管理</div>
+      </div></section>
+    <div class="s12"><button class="btn primary" id="saveShop">保存商城设置</button></div>
+  </div>
+
+  <div data-t="pay" class="grid hidden" id="payGrid"></div>
+
+  <div data-t="mail" class="grid hidden">
+    <section class="card glass s7"><h3>SMTP 邮件 <span id="mailState"></span></h3>
+      <p class="sm muted mb12">用来给买家发兑换码、找回密码。QQ 邮箱 / 163 / 企业邮箱 / Resend / SendGrid 等都支持 SMTP。</p>
+      <div class="form">
+        <div class="toggle"><div>启用邮件发送</div><button class="sw" id="mEn"></button></div>
+        <div class="two"><div class="f"><label>SMTP 服务器</label><input class="field mono" id="mHost" placeholder="smtp.qq.com"></div>
+          <div class="f"><label>端口 <small>SSL 465 / STARTTLS 587</small></label><input class="field mono" id="mPort" inputmode="numeric"></div></div>
+        <div class="toggle"><div>SSL 加密连接<p>端口 465 时开启；587 端口关闭（会自动 STARTTLS）</p></div><button class="sw" id="mSec"></button></div>
+        <div class="two"><div class="f"><label>账号</label><input class="field mono" id="mUser" autocomplete="off"></div>
+          <div class="f"><label>密码 / 授权码 <small id="mPassSet"></small></label><input class="field mono" id="mPass" type="password" autocomplete="new-password"></div></div>
+        <div class="two"><div class="f"><label>发件地址</label><input class="field mono" id="mFrom" placeholder="noreply@example.com"></div>
+          <div class="f"><label>发件人名称</label><input class="field" id="mFromName" maxlength="40"></div></div>
+        <div class="row-flex"><button class="btn primary" id="saveMail">保存</button><button class="btn" id="testMail">发送测试邮件</button></div>
+      </div></section>
+    <section class="card glass s5"><h3>最近发送 <small>100 条</small></h3><div class="kv" id="mailLog" style="max-height:440px;overflow:auto"></div></section>
+  </div>
+
+  <div data-t="team" class="grid hidden">
+    <section class="card glass p0 s12">
+      <div class="head"><h3>管理员</h3><button class="btn sm primary" id="invite">＋ 添加</button></div>
+      <table class="tbl"><thead><tr><th>成员</th><th>角色</th><th>两步验证</th><th>最近登录</th><th></th></tr></thead><tbody id="team"></tbody></table>
+    </section>
+    <section class="card glass s12"><h3>角色说明</h3><div class="kv">
+      <div><span>管理员</span><b class="sm">全部权限：卡台配置、策略、主题、管理员</b></div>
+      <div><span>运营</span><b class="sm">生成 / 导出 / 撤销兑换码，审核和处理兑换记录</b></div>
+      <div><span>客服（只读）</span><b class="sm">查看兑换码和兑换记录，不能导出完整码</b></div></div></section>
+  </div>
+
+  <div data-t="security" class="grid hidden">
+    <section class="card glass s6"><h3>我的账号</h3>
+      <div class="form">
+        <div class="toggle"><div>两步验证（TOTP）<p id="totpState"></p></div><button class="btn sm" id="totpBtn"></button></div>
+        <div class="f"><label>修改密码</label><input class="field" type="password" id="oldPw" placeholder="原密码" autocomplete="current-password"></div>
+        <div class="f"><input class="field" type="password" id="newPw" placeholder="新密码（至少 8 位）" autocomplete="new-password"></div>
+        <div><button class="btn" id="chPw">修改密码</button></div>
+      </div></section>
+    <section class="card glass s6" data-role="admin"><h3>审计日志 <small>最近 50 条</small></h3><div class="kv" id="audit" style="max-height:420px;overflow:auto"></div></section>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let S;
+const showTab = v => { segSet($('#tab'), v); $$('[data-t]').forEach(s => s.classList.toggle('hidden', s.dataset.t !== v)); if (v === 'team') team(); if (v === 'security') security(); if (['shop', 'pay', 'mail'].includes(v)) shopSettings(v).catch(e => toast(e.message, 'bad')); };
+segInit($('#tab'), showTab);
+ready(async () => {
+  if (!can('admin')) return showTab('security');
+  if (qs('welcome')) $('#welcome').innerHTML = '<div class="alert info glass">👋<span>欢迎！先填写卡台地址和 App-Id / Secret，再到 Webhook 页面配置签名密钥，就可以开始生成兑换码了。</span></div>';
+  S = await GET('/api/admin/settings');
+  $('#baseUrl').value = S.avan.baseUrl; $('#appId').value = S.avan.appId;
+  $('#appSecret').placeholder = S.avan.appSecretMasked ? `已保存 ${S.avan.appSecretMasked}（不修改请留空）` : S.avan.appId ? '已保存（不修改请留空）' : 'sk_…';
+  $('#connState').innerHTML = S.avan.appId ? '' : '<span class="badge warn">未配置</span>';
+  $('#serverInfo').textContent = `对外地址 ${S.server.publicUrl} · 业务时区 ${S.server.timezone} · ${S.server.trustProxy ? '已信任反向代理' : '未启用反向代理 IP 识别'}`;
+  $('#firstName').value = S.payment.firstName; $('#lastName').value = S.payment.lastName;
+  $$('#notify [data-n]').forEach(b => { b.classList.toggle('on', !!S.notify[b.dataset.n]); swInit(b); });
+  $('#tgChat').value = S.notify.tgChatId || ''; $('#lowTh').value = S.notify.lowStockThreshold;
+  $('#tgToken').placeholder = S.notify.tgTokenSet ? '已保存（不修改请留空）' : '123456:ABC-…';
+  $('#tgState').innerHTML = S.notify.tgTokenSet && S.notify.tgChatId ? '<span class="badge ok">已配置</span>' : '<span class="badge idle">未配置</span>';
+  const r = S.redeem;
+  $('#rDesc').value = r.desc; $('#pGpt').checked = r.products.gpt; $('#pX').checked = r.products.x; $('#pTg').checked = r.products.tg;
+  $('#rContact').value = r.contact; $('#rMaint').classList.toggle('on', r.maintenance); $('#rMaintMsg').value = r.maintenanceMsg;
+  $('#tsKey').value = r.turnstileSiteKey; $('#tsSet').textContent = r.turnstileSecretSet ? '已保存' : '未设置';
+  swInit($('#rMaint'));
+  if (S.avan.appId) loadProducts();
+  if (qs('tab')) showTab(qs('tab'));
+});
+async function loadProducts() {
+  const r = await GET('/api/admin/settings/products');
+  const cur = S.payment.productCode;
+  $('#productCode').innerHTML = '<option value="">请选择</option>' + r.list.map(p => `<option value="${esc(p.productCode)}" ${p.productCode === cur ? 'selected' : ''}>${esc(p.productCode)} · ${esc(p.label)}</option>`).join('') + (cur && !r.list.find(p => p.productCode === cur) ? `<option selected value="${esc(cur)}">${esc(cur)}</option>` : '');
+  if (r.error) toast('获取付款通道失败：' + r.error, 'warn');
+}
+$('#loadProducts').onclick = e => run(e.currentTarget, '…', loadProducts);
+$('#saveApi').onclick = e => run(e.currentTarget, '保存中…', async () => {
+  await PUT('/api/admin/settings/avan', { baseUrl: $('#baseUrl').value.trim(), appId: $('#appId').value.trim(), ...($('#appSecret').value && { appSecret: $('#appSecret').value.trim() }) });
+  $('#appSecret').value = ''; toast('已保存'); S = await GET('/api/admin/settings'); $('#appSecret').placeholder = S.avan.appSecretMasked ? `已保存 ${S.avan.appSecretMasked}（不修改请留空）` : '已保存（不修改请留空）'; loadProducts();
+});
+$('#testConn').onclick = e => run(e.currentTarget, '连接中…', async () => {
+  const r = await POST('/api/admin/settings/avan/test');
+  $('#testRes').innerHTML = r.ok ? `<div class="note ok">✓ 连接成功 · ${r.ms}ms · GPT 套餐 ${r.offers} 个 · ${Object.entries(r.checks).map(([k, v]) => `${k} ${v}`).join(' · ')}</div>`
+    : `<div class="note bad">✕ ${esc(r.error)}${r.status === 401 ? '<br>App-Id / Secret 不正确' : r.status === 403 ? '<br>权限不足，或服务器 IP 不在白名单' : ''}</div>`;
+});
+$('#savePay').onclick = e => run(e.currentTarget, '保存中…', async () => { await PUT('/api/admin/settings/payment', { productCode: $('#productCode').value, firstName: $('#firstName').value, lastName: $('#lastName').value }); toast('付款通道已保存'); });
+async function saveNotify() {
+  const o = { tgChatId: $('#tgChat').value.trim(), lowStockThreshold: Number($('#lowTh').value) || 20, ...($('#tgToken').value && { tgToken: $('#tgToken').value.trim() }) };
+  $$('#notify [data-n]').forEach(b => o[b.dataset.n] = b.classList.contains('on'));
+  await PUT('/api/admin/settings/notify', o);
+  $('#tgToken').value = ''; S = await GET('/api/admin/settings');
+  $('#tgToken').placeholder = S.notify.tgTokenSet ? '已保存（不修改请留空）' : '123456:ABC-…';
+  $('#tgState').innerHTML = S.notify.tgTokenSet && S.notify.tgChatId ? '<span class="badge ok">已配置</span>' : '<span class="badge idle">未配置</span>';
+}
+$('#saveNotify').onclick = e => run(e.currentTarget, '保存中…', async () => { await saveNotify(); toast('通知设置已保存'); });
+$('#testNotify').onclick = e => run(e.currentTarget, '发送中…', async () => { await saveNotify(); await POST('/api/admin/settings/notify/test'); toast('测试消息已发送，请查看 Telegram'); });
+$('#saveRedeem').onclick = e => run(e.currentTarget, '保存中…', async () => {
+  await PUT('/api/admin/settings/redeem', { desc: $('#rDesc').value, contact: $('#rContact').value, maintenance: $('#rMaint').classList.contains('on'), maintenanceMsg: $('#rMaintMsg').value,
+    products: { gpt: $('#pGpt').checked, x: $('#pX').checked, tg: $('#pTg').checked }, turnstileSiteKey: $('#tsKey').value.trim(), ...($('#tsSecret').value && { turnstileSecret: $('#tsSecret').value.trim() }) });
+  $('#tsSecret').value = ''; toast('兑换页设置已保存');
+});
+
+async function team() {
+  const r = await GET('/api/admin/users');
+  $('#team').innerHTML = r.list.map(u => `<tr><td><div class="row-flex"><span class="avatar" style="width:28px;height:28px;font-size:11px">${esc(u.name.slice(0, 1))}</span><div><b>${esc(u.name)}</b>${u.id === ME.id ? ' <span class="tag">我</span>' : ''}<div class="xs faint">${esc(u.email)}</div></div></div></td>
+    <td>${u.id === ME.id ? `<span class="badge acc">${ROLE_CN[u.role]}</span>` : `<select class="field sm" data-role-of="${u.id}">${Object.entries(ROLE_CN).map(([k, l]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td>
+    <td>${u.totpEnabled ? '<span class="badge ok">已开启</span>' : '<span class="badge idle">未开启</span>'}</td>
+    <td class="xs faint">${u.lastLoginAt ? fmtTime(u.lastLoginAt) + ' · ' + esc(u.lastLoginIp || '') : '从未'}</td>
+    <td class="acts">${u.id === ME.id ? '' : `<button class="btn sm" data-dis="${u.id}" data-v="${u.disabled ? 0 : 1}">${u.disabled ? '启用' : '停用'}</button> <button class="btn sm danger" data-del="${u.id}">删除</button>`}</td></tr>`).join('');
+  $$('[data-role-of]').forEach(s => s.onchange = async () => {
+    const u = r.list.find(x => String(x.id) === s.dataset.roleOf);
+    if (!(await confirmBox({ title: `把 ${esc(u.name)} 改为「${ROLE_CN[s.value]}」？`, body: '立即生效，对方刷新页面后按新角色显示。', ok: '修改' }))) { s.value = u.role; s.dispatchEvent(new Event('change-silent')); return team(); }
+    PATCH('/api/admin/users/' + s.dataset.roleOf, { role: s.value }).then(() => { toast('角色已修改'); team(); }, e => toast(e.message, 'bad'));
+  });
+  $$('[data-dis]').forEach(b => b.onclick = async () => {
+    if (b.dataset.v === '1' && !(await confirmBox({ title: '停用这个管理员？', body: '停用后对方立即被登出，不能再登录，可以随时启用。', ok: '停用', danger: true }))) return;
+    PATCH('/api/admin/users/' + b.dataset.dis, { disabled: b.dataset.v === '1' }).then(team, e => toast(e.message, 'bad'));
+  });
+  $$('[data-del]').forEach(b => b.onclick = async () => { if (await confirmBox({ title: '删除这个管理员？', ok: '删除', danger: true })) DEL('/api/admin/users/' + b.dataset.del).then(team, e => toast(e.message, 'bad')); });
+}
+$('#invite').onclick = () => {
+  const m = dialog({
+    title: '添加管理员', sub: '对方用这里设置的邮箱和初始密码登录，登录后请修改密码。',
+    body: `<div class="form">
+      <div class="two"><div class="f"><label>名称</label><input class="field" id="n"></div><div class="f"><label>邮箱</label><input class="field" id="e" type="email"></div></div>
+      <div class="f"><label>初始密码 <small>至少 8 位</small></label><input class="field mono" id="p" value="${uuid().slice(0, 12)}"></div>
+      <div class="f"><label>角色</label><select class="field" id="r"><option value="operator">运营</option><option value="support">客服（只读）</option><option value="admin">管理员</option></select></div></div>`,
+    actions: [{ label: '取消' }, { label: '添加', kind: 'primary', onClick: async () => {
+      const cred = { email: $('#e', m.el).value.trim(), password: $('#p', m.el).value, role: $('#r', m.el).value };
+      await POST('/api/admin/users', { name: $('#n', m.el).value, ...cred });
+      team();
+      // 把登录信息给管理员复制，转发给对方
+      const text = `后台地址：${location.origin}/admin/\n邮箱：${cred.email}\n初始密码：${cred.password}`;
+      dialog({ title: '已添加管理员', tone: 'ok', size: 'sm',
+        body: `<div class="dlg-text">把下面的登录信息发给对方，登录后请让对方修改密码。</div><div class="kv mt12"><div><span>邮箱</span><b class="mono">${esc(cred.email)}</b></div><div><span>初始密码</span><b class="mono">${esc(cred.password)}</b></div><div><span>角色</span><b>${ROLE_CN[cred.role]}</b></div></div>`,
+        actions: [{ label: '复制登录信息', onClick: () => { copy(text, '登录信息已复制'); return false; } }, { label: '完成', kind: 'primary' }] });
+    } }],
+  });
+};
+
+async function security() {
+  $('#totpState').textContent = ME.totpEnabled ? '已开启，登录时需要输入验证码' : '未开启，建议开启';
+  $('#totpBtn').textContent = ME.totpEnabled ? '关闭' : '开启';
+  if (can('admin')) {
+    const a = await GET('/api/admin/audit');
+    $('#audit').innerHTML = a.list.map(x => `<div><span class="xs">${fmtTime(x.at)}</span><b class="sm">${esc(x.user_name)} · ${esc(x.action)} ${esc(x.target || '')}</b></div>`).join('') || '<div><span>暂无</span><b></b></div>';
+  }
+}
+$('#totpBtn').onclick = async () => {
+  if (ME.totpEnabled) {
+    const code = await confirmBox({ title: '关闭两步验证', body: '输入验证器中的 6 位数字确认。', ok: '关闭', danger: true, input: '验证码' });
+    if (code === false) return;
+    try { await POST('/api/auth/totp/disable', { code }); ME.totpEnabled = false; toast('已关闭'); security(); } catch (e) { toast(e.message, 'bad'); }
+    return;
+  }
+  const s = await POST('/api/auth/totp/setup');
+  const m = dialog({
+    title: '开启两步验证', tone: 'info',
+    sub: '在 Google Authenticator / 1Password 等 App 中添加账户，手动输入下面的密钥（或复制链接），然后输入 App 显示的 6 位数字。',
+    body: `<div class="flabel">密钥</div><div class="copyline">${s.secret}<button id="c1">复制</button></div>
+      <div class="flabel mt12">otpauth 链接</div><div class="copyline xs">${esc(s.uri)}<button id="c2">复制</button></div>
+      <div class="f mt12"><input class="code-in" id="otp" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" style="text-align:center;letter-spacing:.5em" autofocus></div>`,
+    actions: [{ label: '取消' }, { label: '启用', kind: 'primary', onClick: async () => {
+      await POST('/api/auth/totp/enable', { code: $('#otp', m.el).value });
+      ME.totpEnabled = true; ssSet('cdk-me', ME); toast('两步验证已开启'); security();
+    } }],
+  });
+  $('#c1', m.el).onclick = () => copy(s.secret); $('#c2', m.el).onclick = () => copy(s.uri);
+};
+$('#chPw').onclick = e => run(e.currentTarget, '修改中…', async () => { await POST('/api/auth/password', { oldPassword: $('#oldPw').value, newPassword: $('#newPw').value }); toast('密码已修改，请重新登录'); setTimeout(() => location.href = '/admin/login.html', 1200); });
+/* ---------------- 商城 / 支付 / 邮件 ---------------- */
+let SH = null;
+const PAYF = {
+  epay: { title: '易支付', desc: '彩虹易支付等通用接口（MD5 签名），一个商户号可以开支付宝、微信、QQ 钱包等', fields: [
+    ['name', '前台显示名称', 'text', '例如：支付宝 / 微信'], ['apiUrl', '接口地址', 'text', '例如 https://pay.example.com，不含 submit.php'], ['pid', '商户 ID', 'text'], ['key', '商户密钥', 'secret'],
+    ['types', '开放的支付方式', 'text', '逗号分隔：alipay 支付宝、wxpay 微信、qqpay QQ 钱包、bank 网银']] },
+  alipay: { title: '支付宝（官方）', desc: '支付宝开放平台 · 公钥模式 RSA2。当面付出二维码，网站支付跳转收银台', fields: [
+    ['appId', 'APPID', 'text'], ['mode', '接入方式', 'select', [['precreate', '当面付（扫码）'], ['page', '电脑网站 / 手机网站支付']]], ['privateKey', '应用私钥', 'secretArea', 'PKCS8 格式，可以带或不带 BEGIN 行'],
+    ['alipayPublicKey', '支付宝公钥', 'area', '开放平台「接口加签方式」里的支付宝公钥，不是应用公钥'], ['gateway', '网关', 'text', '正式环境 https://openapi.alipay.com/gateway.do']] },
+  wechat: { title: '微信支付（官方）', desc: 'APIv3 · Native 扫码支付 · 微信支付公钥验签', fields: [
+    ['mchId', '商户号', 'text'], ['appId', 'AppID', 'text', '公众号或小程序 AppID，需与商户号绑定'], ['serialNo', '商户证书序列号', 'text'], ['privateKey', '商户 API 私钥', 'secretArea', 'apiclient_key.pem 的内容'],
+    ['apiV3Key', 'APIv3 密钥', 'secret', '32 位'], ['publicKeyId', '微信支付公钥 ID', 'text', 'PUB_KEY_ID_ 开头'], ['publicKey', '微信支付公钥', 'area'], ['api', '接口地址', 'text', 'https://api.mch.weixin.qq.com']] },
+  usdt: { title: 'USDT（TRC20）', desc: '固定收款地址 + 唯一金额（随机尾数识别订单），每 15 秒查链上到账，不需要第三方', fields: [
+    ['address', '收款地址', 'text', 'T 开头 34 位，建议用独立的收款钱包'], ['rate', '汇率', 'text', '1 USDT = 多少人民币，订单金额按这个换算'], ['tronApi', 'TronGrid 地址', 'text'],
+    ['apiKey', 'TronGrid API Key', 'secret', '选填；不填有频率限制，订单多时建议申请'], ['contract', 'USDT 合约地址', 'text', '一般不需要修改']] },
+};
+async function shopSettings(v) {
+  if (!SH) SH = await GET('/api/admin/shop/settings');
+  if (v === 'shop') {
+    const s = SH.shop;
+    $('#shEn').classList.toggle('on', s.enabled); segSet($('#shHome'), s.homepage); $('#shTitle').value = s.title; $('#shNotice').value = s.notice; $('#shExp').value = s.orderExpireMin;
+    $('#shReg').classList.toggle('on', s.allowRegister); $('#shAg').classList.toggle('on', s.allowAgentApply); $('#shFz').value = s.freezeDays; $('#shMin').value = (s.minWithdraw / 100).toFixed(2); $('#shRef').value = s.refDays;
+  }
+  if (v === 'pay') payForms();
+  if (v === 'mail') {
+    const m = SH.mail;
+    $('#mEn').classList.toggle('on', m.enabled); $('#mHost').value = m.host; $('#mPort').value = m.port; $('#mSec').classList.toggle('on', m.secure); $('#mUser').value = m.user;
+    $('#mPass').placeholder = m.passSet ? '已保存（不修改请留空）' : ''; $('#mPassSet').textContent = m.passSet ? '已保存' : ''; $('#mFrom').value = m.from; $('#mFromName').value = m.fromName;
+    $('#mailState').innerHTML = m.enabled && m.host && m.from ? '<span class="badge ok">已启用</span>' : '<span class="badge idle">未启用</span>';
+    const l = await GET('/api/admin/shop/mail-log');
+    $('#mailLog').innerHTML = l.list.map(x => `<div><span class="xs">${fmtTime(x.created_at)}<br>${esc(x.to_addr)}</span><b class="xs">${esc(x.subject)}<br>${x.status === 'sent' ? '<span class="c-ok">已发送</span>' : `<span class="c-bad">${esc(x.error || '失败')}</span>`}</b></div>`).join('') || '<div><span>还没有发过邮件</span><b></b></div>';
+  }
+}
+['shEn', 'shReg', 'shAg', 'mEn', 'mSec'].forEach(id => swInit($('#' + id)));
+segInit($('#shHome'));
+const on = id => $('#' + id).classList.contains('on');
+$('#saveShop').onclick = e => run(e.currentTarget, '保存中…', async () => {
+  await PUT('/api/admin/shop/settings/shop', { enabled: on('shEn'), homepage: $('#shHome .on')?.dataset.v, title: $('#shTitle').value, notice: $('#shNotice').value, orderExpireMin: $('#shExp').value,
+    allowRegister: on('shReg'), allowAgentApply: on('shAg'), freezeDays: $('#shFz').value, minWithdraw: $('#shMin').value, refDays: $('#shRef').value });
+  SH = null; toast('商城设置已保存');
+});
+function payForms() {
+  const ready = Object.fromEntries(SH.channels.map(c => [c.key, c.ready]));
+  $('#payGrid').innerHTML = Object.entries(PAYF).map(([k, f]) => {
+    const v = SH.pay[k];
+    return `<section class="card glass s6" data-ch="${k}"><h3>${f.title} ${ready[k] ? '<span class="badge ok">✓ 可用</span>' : v.enabled ? '<span class="badge warn">配置不完整</span>' : '<span class="badge idle">未启用</span>'}</h3>
+      <p class="sm muted mb12">${f.desc}</p><div class="form">
+      <div class="toggle"><div>启用</div><button class="sw ${v.enabled ? 'on' : ''}" data-en></button></div>
+      ${f.fields.map(([n, label, type, help]) => {
+        const set = v[n + 'Set'], val = Array.isArray(v[n]) ? v[n].join(', ') : v[n] ?? '';
+        const ctl = type === 'select' ? `<select class="field" data-f="${n}">${help.map(([o, l]) => `<option value="${o}" ${o === val ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+          : type === 'area' ? `<textarea class="field mono" data-f="${n}" style="min-height:70px;font-size:11.5px">${esc(val)}</textarea>`
+          : type === 'secretArea' ? `<textarea class="field mono" data-f="${n}" data-secret style="min-height:70px;font-size:11.5px" placeholder="${set ? '已保存（不修改请留空）' : ''}"></textarea>`
+          : `<input class="field mono" data-f="${n}" ${type === 'secret' ? `type="password" autocomplete="new-password" data-secret placeholder="${set ? '已保存（不修改请留空）' : ''}"` : `value="${esc(val)}"`}>`;
+        return `<div class="f"><label>${label}${type.startsWith('secret') ? ` <small>${set ? '已保存' : '加密保存'}</small>` : ''}</label>${ctl}${help && type !== 'select' ? `<div class="help">${help}</div>` : ''}</div>`;
+      }).join('')}
+      ${k !== 'usdt' ? `<div class="f"><label>异步通知地址 <small>部分平台需要在后台填写</small></label><div class="copyline xs">${esc(S.server.publicUrl)}/api/pay/notify/${k}<button data-copy="${esc(S.server.publicUrl)}/api/pay/notify/${k}">复制</button></div></div>` : ''}
+      <div><button class="btn primary" data-save>保存</button></div></div></section>`;
+  }).join('');
+  $$('#payGrid [data-en]').forEach(b => swInit(b));
+  $$('#payGrid [data-save]').forEach(b => b.onclick = e => run(e.currentTarget, '保存中…', async () => {
+    const box = b.closest('[data-ch]'), body = { enabled: $('[data-en]', box).classList.contains('on') };
+    $$('[data-f]', box).forEach(i => { if (!i.hasAttribute('data-secret') || i.value.trim()) body[i.dataset.f] = i.value; });
+    const r = await PUT('/api/admin/shop/settings/pay/' + box.dataset.ch, body);
+    toast(r.ready ? '已保存，渠道可用' : body.enabled ? '已保存，但配置还不完整' : '已保存', r.ready || !body.enabled ? 'ok' : 'warn');
+    SH = await GET('/api/admin/shop/settings'); payForms();
+  }));
+}
+const mailBody = () => ({ enabled: on('mEn'), host: $('#mHost').value.trim(), port: $('#mPort').value, secure: on('mSec'), user: $('#mUser').value.trim(), from: $('#mFrom').value.trim(), fromName: $('#mFromName').value, ...($('#mPass').value && { pass: $('#mPass').value }) });
+$('#saveMail').onclick = e => run(e.currentTarget, '保存中…', async () => { await PUT('/api/admin/shop/settings/mail', mailBody()); $('#mPass').value = ''; SH = null; toast('邮件设置已保存'); shopSettings('mail'); });
+$('#testMail').onclick = async () => {
+  const to = await confirmBox({ title: '发送测试邮件', body: '会先保存当前设置，再发一封测试邮件。', ok: '发送', input: '收件邮箱' });
+  if (to === false) return;
+  try { await PUT('/api/admin/shop/settings/mail', mailBody()); $('#mPass').value = ''; await POST('/api/admin/shop/settings/mail/test', { to }); toast('测试邮件已发送'); }
+  catch (e) { toast(e.message, 'bad'); }
+  SH = null; shopSettings('mail');
+};
+</script>
+</body></html>

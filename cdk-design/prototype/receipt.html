@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>查询兑换凭证</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body>
+<header class="pub-top">
+  <a class="brand" href="redeem.html" style="padding:0"><div class="logo" data-bind="logo">C</div><span data-bind="name">CDK</span></a>
+  <nav><a href="redeem.html">兑换</a><a class="on" href="receipt.html">查询凭证</a><button class="btn ghost sm" onclick="Theme.toggleMode()"><span data-bind="mode-icon">☾</span></button></nav>
+</header>
+<div class="pub">
+  <div class="hero">
+    <h1>查询<br><span class="grad-text">兑换结果</span></h1>
+    <p class="lead">输入完整兑换码，查看开通进度、订单号和结果。出于安全考虑，只能在<b>兑换时使用的同一设备和浏览器</b>上查询。</p>
+  </div>
+  <div class="pcard glass" id="view"></div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+function form(err = '') {
+  $('#view').innerHTML = `<h2>输入兑换码</h2><p class="desc">需要完整的 16 位兑换码。</p>
+    <input class="code-in" id="code" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" value="GPTD-7K2Q-F9WM-3TXA">
+    <div class="err">${err}</div><button class="btn primary block" id="go">查询</button>
+    <div class="demo-states">演示：<button data-d="GPTD-7K2Q-F9WM-3TXA">已完成</button><button data-d="XCDK-M91A-77QE-K2LM">处理中</button><button data-d="GPTD-OTHR-0000-0000">其他设备</button></div>`;
+  const inp = $('#code');
+  inp.oninput = () => { const raw = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16); inp.value = raw.match(/.{1,4}/g)?.join('-') || ''; };
+  $$('[data-d]').forEach(b => b.onclick = () => inp.value = b.dataset.d);
+  $('#go').onclick = e => busy(e.currentTarget, '查询中…', 700, () => {
+    const v = inp.value;
+    if (v.length < 19) return form('兑换码不完整');
+    if (v.includes('OTHR')) return form('没有在这台设备上找到这个兑换码的记录。请使用兑换时的设备和浏览器查询，或联系卖家。');
+    result(v);
+  });
+}
+function result(code) {
+  const gpt = code.startsWith('GPTD'), running = code.startsWith('XCDK');
+  $('#view').innerHTML = `<div class="between mb16"><h2>${gpt ? 'ChatGPT Plus · 1 个月' : 'X Premium+ · 12 个月'}</h2>${running ? badge('paying') : badge('completed')}</div>
+    <div class="kv mb16"><div><span>兑换码</span><b class="mono">${code.slice(0, 9)}-••••</b></div><div><span>订单号</span><b class="mono">CDK-7Q2MXK9A</b></div>
+      <div><span>开通到</span><b>${gpt ? 'm***@gmail.com' : '@elonfan'}</b></div><div><span>兑换时间</span><b>2026-10-25 14:20</b></div>
+      ${gpt ? '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>' : ''}</div>
+    <div class="tl mb16">${(gpt ? ['兑换码已确认', '账号与报价已确认', '付款成功', '会员已开通', '自动续费已关闭'] : ['准备付款', '向官方付款', '确认会员生效']).map((t, i, a) => { const cls = running && i === 2 ? 'cur' : running && i > 2 ? 'wait' : 'done'; return `<div class="it ${cls}"><div class="dot">${cls === 'done' ? '✓' : cls === 'cur' ? '' : i + 1}</div><div><b>${t}</b></div><span class="tm">${cls === 'done' ? '14:2' + i : ''}</span></div>`; }).join('')}</div>
+    ${gpt ? '<button class="btn block" id="renew">我的账号仍在自动续费？</button>' : '<div class="note">◷ 付款处理中，页面会自动刷新。请不要重复兑换。</div>'}
+    <button class="backlink" id="back">← 查询其他兑换码</button>`;
+  $('#back').onclick = () => form();
+  const r = $('#renew'); if (r) r.onclick = () => {
+    const m = modal(`<h2>取消自动续费 <button class="iconbtn" data-close>×</button></h2><div class="sub">我们默认已经帮你关闭了续费。如果你在 ChatGPT 里又打开了，可以粘贴同一账号的 Session 再关一次。</div>
+      <textarea class="field" placeholder="ChatGPT session JSON"></textarea><div class="foot"><button class="btn" data-close>取消</button><button class="btn primary" id="ok">关闭续费</button></div>`);
+    $('#ok', m.el).onclick = e => busy(e.currentTarget, '处理中…', 1000, () => { m.close(); toast('已提交，几分钟内生效'); });
+  };
+}
+form();
+</script>
+</body></html>

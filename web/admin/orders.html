@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>兑换记录 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="orders">
+<div id="page" data-title="兑换记录" data-crumb="CDK">
+  <div class="grid mb16">
+    <div class="card glass s3 stat"><div class="lbl">近 24 小时</div><div class="v" id="kToday">—</div><span class="trend up" id="kTodayOk"></span></div>
+    <div class="card glass s3 stat"><div class="lbl">处理中</div><div class="v c-run" id="kRun">—</div><span class="lbl">Webhook 实时更新</span></div>
+    <div class="card glass s3 stat"><div class="lbl">需要处理</div><div class="v c-warn" id="kAttn">—</div><span class="lbl">待审核 / 需用户或平台处理</span></div>
+    <div class="card glass s3 stat"><div class="lbl">24 小时策略拦截</div><div class="v c-bad" id="kBlk">—</div><span class="lbl">没有提交卡台，不产生费用</span></div>
+  </div>
+  <section class="card glass p0">
+    <div class="toolbar">
+      <div class="seg" id="fSeg"><button data-v="all" class="on">全部</button><button data-v="attention">需处理</button><button data-v="running">进行中</button><button data-v="completed">已完成</button><button data-v="blocked">策略拦截</button><button data-v="failed">失败/超时</button></div>
+      <select class="field sm" id="typeSel"><option value="">全部产品</option><option value="gpt">ChatGPT</option><option value="x">X</option><option value="tg">Telegram</option></select>
+      <select class="field sm" id="stratSel"><option value="">全部策略</option></select>
+      <div class="fsearch">⌕<input id="q" placeholder="记录号 / 兑换码 / 账号"></div>
+      <select class="field sm" id="rangeSel"></select>
+      <button class="btn sm" id="exportBtn" data-role="operator" title="导出当前筛选条件下的全部记录（不含完整兑换码）">导出 CSV</button>
+      <span class="xs faint" style="margin-left:auto"><span class="pulse" style="color:var(--ok)"></span> 每 10 秒刷新</span>
+    </div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th>记录</th><th>套餐</th><th>策略</th><th>账号 / 接收方</th><th>状态</th><th>说明</th><th class="num">成本 <small class="faint">USD</small></th><th>时间</th></tr></thead>
+      <tbody id="tbody"></tbody></table></div>
+    <div class="pager" id="pager"></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let F = { f: qs('f') || 'all', product: '', strategy: '', q: '', page: 1 };
+segSet($('#fSeg'), F.f);
+ready(async () => {
+  const st = await GET('/api/admin/strategies');
+  $('#stratSel').innerHTML += st.list.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  await load();
+  if (qs('id')) openRed(qs('id'));
+  setInterval(() => document.visibilityState === 'visible' && !$('.mask.show') && load(), 10000);
+});
+async function load() {
+  const p = redParams({ page: F.page, size: 30 });
+  const r = await GET('/api/admin/redemptions?' + p);
+  $('#kToday').textContent = r.counts.today.n; $('#kTodayOk').textContent = `成功 ${r.counts.today.ok || 0}`;
+  $('#kRun').textContent = r.counts.running; $('#kAttn').textContent = r.counts.attention; $('#kBlk').textContent = r.counts.blockedToday;
+  $('#tbody').innerHTML = r.list.map(o => `
+    <tr class="click" data-id="${o.id}">
+      <td class="t"><div class="row-flex">${PICXS[o.product]}<div><b class="mono">${o.id}</b><p>${esc(o.code)}</p></div></div></td>
+      <td>${esc(o.planLabel)}</td><td class="xs">${esc(o.strategy.name)}</td><td class="muted">${esc(o.account || '—')}</td>
+      <td>${badge(o.status)}${o.attempts > 1 ? `<div class="xs faint">重试 ${o.attempts - 1} 次</div>` : ''}</td>
+      <td class="xs muted" style="max-width:280px">${esc(o.status === 'blocked' ? (o.rule || o.message || '') : o.message || '')}</td>
+      <td class="num">${o.cost ? money(o.cost) : '—'}</td><td class="xs faint nowrap">${fmtTime(o.createdAt)}</td>
+    </tr>`).join('') || '<tr><td colspan="8"><div class="empty"><div class="ic">⇄</div>没有符合条件的记录</div></td></tr>';
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = () => openRed(tr.dataset.id));
+  pager($('#pager'), r.total, F.page, 30, n => { F.page = n; load(); });
+}
+async function openRed(id) {
+  const o = await GET('/api/admin/redemptions/' + id);
+  const ACT_DONE = { approve: '已通过', reject: '已拒绝', retry: '已重新提交', release: '已释放' };
+  const act = (key, extra) => async d => {
+    let body = {};
+    if (key === 'reject') {
+      const reason = await confirmBox({ title: '拒绝这笔兑换？', body: '用户会看到「暂时无法兑换，请稍后再试」，兑换码保持可用。', ok: '拒绝', danger: true, input: '拒绝原因（仅后台可见，可选）' });
+      if (reason === false) return false;
+      body = { reason: reason || undefined };
+    }
+    if (key === 'approve' && !await confirmBox({ title: o.stage === 'failed' ? '重新提交这笔兑换？' : '通过并提交卡台？', body: `会立即用卡台余额为 <b>${esc(o.account || '')}</b> 开通 ${esc(o.planLabel)}${o.cost ? `，预计费用 <b>$${Number(o.cost).toFixed(2)}</b>` : ''}。提交后无法撤回。`, ok: '确认提交' })) return false;
+    if (key === 'release' && !await confirmBox({ title: '释放这张兑换码？', body: '这次兑换会结束，兑换码恢复为未使用，用户可以重新兑换。', ok: '释放' })) return false;
+    await POST(`/api/admin/redemptions/${o.id}/${key}`, body);
+    toast(ACT_DONE[key]); load(); refreshNav();
+  };
+  const actions = [];
+  if (can('operator')) {
+    if (o.status === 'manual_review') actions.push({ label: o.stage === 'failed' ? '重新尝试' : '通过，提交卡台', kind: 'primary', onClick: act('approve') }, { label: '拒绝', kind: 'danger', onClick: act('reject') });
+    if (o.status === 'failed' && o.hasSession && o.mode === 'own') actions.push({ label: '再试一次', kind: 'primary', onClick: act('retry') });
+    if (['blocked', 'manual_review', 'requires_action', 'approved', 'started', 'quoted'].includes(o.status)) actions.push({ label: '释放兑换码', onClick: act('release') });
+  }
+  actions.push({ label: '复制记录号', kind: 'ghost', onClick: () => { copy(o.id); return false; } });
+  const tl = o.progress.length ? o.progress.map(p => `<div class="it ${p.status === 'failed' ? 'fail' : p.status === 'running' ? 'cur' : 'done'}"><div class="dot">${p.status === 'failed' ? '✕' : p.status === 'running' ? '' : '✓'}</div><div><b>${esc(p.step)}</b>${p.message ? `<p>${esc(p.message)}</p>` : ''}</div><span class="tm">${p.at ? fmtTime(p.at) : ''}</span></div>`).join('') : '<div class="xs faint">暂无卡台进度</div>';
+  sheet({
+    icon: PIC[o.product].replace('pic', 'pic lg'), title: `<span class="mono">${o.id}</span>`, sub: `${esc(o.planLabel)} · ${esc(o.code)} · ${esc(o.strategy.name)}`,
+    actions,
+    body: `
+      <div class="sec">${badge(o.status)}
+        ${o.status === 'blocked' ? `<div class="note bad mt8">⛔ 命中规则：${esc(o.rule || '')}<br>用户看到：${esc(o.message || '')}<br>没有提交到卡台，不产生费用。</div>` : ''}
+        ${o.status === 'manual_review' ? `<div class="note warn mt8">⚑ ${esc(o.rule || o.message || '')}<br>${o.stage === 'price' ? '通过后按当前实时报价兑换；拒绝则提示用户稍后再试，兑换码保持可用。' : '兑换失败转人工。可以重新尝试，或释放兑换码让用户自己重兑。'}${o.product === 'gpt' && !o.hasSession ? '<br><b>用户 Session 已过期</b>：通过后用户需要回到兑换页重新粘贴 Session。' : ''}</div>` : ''}
+        ${['failed', 'requires_action', 'approved'].includes(o.status) && o.message ? `<div class="note mt8">${esc(o.message)}</div>` : ''}
+        ${o.status === 'paid_pending_delivery' ? '<div class="note mt8">◷ 已有付款成功证据，等待官方交付。不要重新兑换。</div>' : ''}
+      </div>
+      <div class="sec"><h4>记录信息</h4><div class="kv">
+        <div><span>${o.product === 'gpt' ? '账号' : '接收方'}</span><b>${esc(o.account || '—')}</b></div>
+        <div><span>兑换码</span><b><a class="link" href="cdks.html?p=${o.product}&id=${o.codeId}">${esc(o.code)}</a> <span class="faint xs">${o.mode === 'own' ? '自有码' : '卡台码'}</span></b></div>
+        <div><span>兑换策略</span><b><a class="link" href="strategy.html?id=${o.strategy.id}">${esc(o.strategy.name)}</a></b></div>
+        ${o.quote ? `<div><span>报价</span><b>${o.quote.amountMinor ? (o.quote.amountMinor / 100).toFixed(2) + ' ' + String(o.quote.currency || '').toUpperCase() : '—'}${o.quote.currentPlan ? ` · 原套餐 ${esc(o.quote.currentPlan)}` : ''}</b></div>` : ''}
+        <div><span>成本</span><b>${o.cost ? money(o.cost) : '—'}</b></div>
+        <div><span>尝试次数</span><b>${o.attempts}</b></div>
+        ${o.errorCode ? `<div><span>错误码</span><b class="mono">${esc(o.errorCode)}</b></div>` : ''}
+        <div><span>IP / 地区</span><b class="mono xs">${esc(o.ip || '—')} ${esc(o.country || '')}</b></div>
+        ${o.orderId ? `<div><span>卡台订单</span><b class="mono xs">${esc(o.orderId)}</b></div>` : ''}
+        <div><span>创建 / 完成</span><b>${fmtTime(o.createdAt)} / ${fmtTime(o.completedAt)}</b></div>
+      </div></div>
+      ${o.invoiceUrls.length ? `<div class="sec"><h4>官方账单 <small class="c-warn">含访问凭据，勿分享</small></h4>${o.invoiceUrls.map(u => `<div class="copyline mb12">${esc(u.slice(0, 48))}…<a class="link" href="${esc(u)}" target="_blank" rel="noopener">打开</a></div>`).join('')}</div>` : ''}
+      ${o.transactions.length ? `<div class="sec"><h4>支付流水</h4><div class="kv">${o.transactions.map(t => `<div><span>${esc(t.merchant || '')}</span><b>${money(t.amount)} ${badge(t.status)}</b></div>`).join('')}</div></div>` : ''}
+      <div class="sec"><h4>卡台进度 <small>以状态为准，事件可能重复或延迟</small></h4><div class="tl">${tl}</div></div>`,
+  });
+}
+segInit($('#fSeg'), v => { F.f = v; F.page = 1; load(); });
+function redParams(extra) { return new URLSearchParams({ f: F.f, ...extra, ...(F.product && { product: F.product }), ...(F.strategy && { strategy: F.strategy }), ...(F.q && { q: F.q }), ...rangeOf(F.range) }); }
+$('#rangeSel').innerHTML = RANGE_OPTS;
+$('#rangeSel').onchange = e => { F.range = e.target.value; F.page = 1; load(); };
+$('#exportBtn').onclick = () => { location.href = '/api/admin/redemptions/export?' + redParams({}); };
+$('#typeSel').onchange = e => { F.product = e.target.value; F.page = 1; load(); };
+$('#stratSel').onchange = e => { F.strategy = e.target.value; F.page = 1; load(); };
+let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { F.q = e.target.value.trim(); F.page = 1; load(); }, 250); };
+</script>
+</body></html>

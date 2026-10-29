@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<div style="min-height:100vh;display:grid;place-items:center;padding:20px">
+  <div class="pcard glass" style="width:min(400px,94vw)">
+    <div class="brand" style="padding:0 0 22px;justify-content:center"><div class="logo" data-bind="logo">C</div><span data-bind="name">CDK Console</span></div>
+
+    <form id="s1" class="hidden">
+      <h2 style="text-align:center">管理后台登录</h2><p class="desc" style="text-align:center">仅限管理员</p>
+      <div class="form">
+        <div class="f"><label>邮箱</label><input class="field" id="em" type="email" autocomplete="username" required></div>
+        <div class="f"><label>密码</label><input class="field" type="password" id="pw" autocomplete="current-password" required></div>
+        <div class="err" id="err1"></div>
+        <button class="btn primary block" id="go">登录</button>
+      </div>
+    </form>
+
+    <form id="s2" class="hidden">
+      <h2 style="text-align:center">两步验证</h2><p class="desc" style="text-align:center">输入验证器 App 中的 6 位数字</p>
+      <input class="code-in" id="otp" maxlength="6" placeholder="000000" style="text-align:center;letter-spacing:.5em" inputmode="numeric" autocomplete="one-time-code">
+      <div class="err" id="err2"></div>
+      <button class="btn primary block" id="verify">验证</button>
+      <button type="button" class="backlink" id="back">← 返回</button>
+    </form>
+
+    <form id="s0" class="hidden">
+      <h2 style="text-align:center">初始化系统</h2><p class="desc" style="text-align:center">还没有管理员账号，先创建第一个。</p>
+      <div class="form">
+        <div class="f"><label>名称</label><input class="field" id="sn" value="管理员" required></div>
+        <div class="f"><label>邮箱</label><input class="field" id="se" type="email" required></div>
+        <div class="f"><label>密码 <small>至少 8 位</small></label><input class="field" type="password" id="sp" minlength="8" autocomplete="new-password" required></div>
+        <div class="err" id="err0"></div>
+        <button class="btn primary block" id="create">创建并登录</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+sessionStorage.removeItem('cdk-me');
+const next = () => { const n = qs('next'); location.href = n && n.startsWith('/admin/') ? n : '/admin/'; };
+const show = id => ['s0', 's1', 's2'].forEach(s => $('#' + s).classList.toggle('hidden', s !== id));
+GET('/api/public/config').then(c => Theme.apply(c.theme, true)).catch(() => {});
+GET('/api/auth/me').then(next, () => GET('/api/auth/setup').then(r => { show(r.needSetup ? 's0' : 's1'); $(r.needSetup ? '#se' : '#em').focus(); }));
+
+$('#s1').onsubmit = async e => {
+  e.preventDefault(); $('#err1').textContent = '';
+  try {
+    const r = await run($('#go'), '登录中…', () => POST('/api/auth/login', { email: $('#em').value, password: $('#pw').value }));
+    if (r.needTotp) { show('s2'); $('#otp').focus(); } else next();
+  } catch (e) { $('#err1').textContent = e.message; }
+};
+$('#s2').onsubmit = async e => {
+  e.preventDefault(); $('#err2').textContent = '';
+  try { await run($('#verify'), '验证中…', () => POST('/api/auth/totp', { code: $('#otp').value })); next(); }
+  catch (e) { $('#err2').textContent = e.message; if (e.status === 401 && /过期/.test(e.message)) setTimeout(() => show('s1'), 1200); }
+};
+$('#otp').oninput = e => { e.target.value = e.target.value.replace(/\D/g, ''); if (e.target.value.length === 6) $('#s2').requestSubmit(); };
+$('#back').onclick = () => show('s1');
+$('#s0').onsubmit = async e => {
+  e.preventDefault(); $('#err0').textContent = '';
+  try {
+    await run($('#create'), '创建中…', async () => {
+      await POST('/api/auth/setup', { name: $('#sn').value, email: $('#se').value, password: $('#sp').value });
+      await POST('/api/auth/login', { email: $('#se').value, password: $('#sp').value });
+    });
+    location.href = '/admin/settings.html?welcome=1';
+  } catch (e) { $('#err0').textContent = e.message; }
+};
+</script>
+</body></html>

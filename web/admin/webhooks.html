@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Webhook · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="webhooks">
+<div id="page" data-title="Webhook <small>卡台事件 → 本系统</small>" data-crumb="系统">
+  <div class="grid">
+    <section class="card glass s7">
+      <h3>接收配置 <span id="state"></span></h3>
+      <div class="form">
+        <div class="f"><label>接收地址 <small>填到卡台开发者控制台的 Webhook 地址里</small></label><div class="copyline" id="url"></div></div>
+        <div class="f"><label>签名密钥 <small>卡台创建 Webhook 时显示一次（whsec_ 开头），用于验证事件确实来自卡台</small></label>
+          <div class="row-flex"><input class="field mono" id="secret" type="password" placeholder="whsec_…" autocomplete="off"><button class="btn" id="saveSecret" data-role="admin">保存</button></div></div>
+        <div class="row-flex"><button class="btn primary" id="test" data-role="operator">发送自检事件</button><span class="xs faint">用当前密钥给自己发一条签名事件，确认接收和验签正常</span></div>
+      </div>
+      <div class="note mt16">ⓘ 订阅哪些事件在卡台控制台里设置。建议至少订阅 <span class="mono">openai.cdk.*</span>、<span class="mono">openai.direct.*</span>、<span class="mono">card.transaction.updated</span>。事件只用来加快状态更新，即使漏了，系统也会定时向卡台查询最新状态。</div>
+    </section>
+    <section class="card glass s5">
+      <h3>系统内置处理</h3>
+      <div class="kv">
+        <div><span class="mono xs">openai.cdk.consumed</span><b class="sm">刷新兑换进度；托管码被外部兑换时标记已兑换</b></div>
+        <div><span class="mono xs">openai.cdk.released</span><b class="sm">刷新进度，按策略重试或释放</b></div>
+        <div><span class="mono xs">openai.cdk.disabled</span><b class="sm">托管码标记为停用</b></div>
+        <div><span class="mono xs">openai.direct.*</span><b class="sm">立即查询订单结果</b></div>
+        <div><span class="mono xs">card.transaction.updated</span><b class="sm">写入支付流水（只保留金额和商户）</b></div>
+      </div>
+      <h3 class="mt20">近 24 小时</h3>
+      <div class="minis" id="stats"></div>
+    </section>
+    <section class="card glass p0 s12">
+      <div class="toolbar"><h3 style="margin:0;font-size:14.5px">收到的事件 <small class="muted" style="font-weight:400">最近 100 条</small></h3><div class="seg" id="fSeg" style="margin-left:auto"><button class="on" data-v="">全部</button><button data-v="1">处理失败</button></div></div>
+      <table class="tbl"><thead><tr><th>事件 ID</th><th>类型</th><th>处理</th><th>时间</th><th></th></tr></thead><tbody id="ev"></tbody></table>
+    </section>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let failed = '', events = [];
+async function load() {
+  const r = await GET('/api/admin/webhooks' + (failed ? '?failed=1' : ''));
+  $('#url').innerHTML = `${esc(r.url)}<button id="cpUrl">复制</button>`; $('#cpUrl').onclick = () => copy(r.url);
+  $('#state').innerHTML = r.secretSet ? '<span class="badge ok">● 已配置密钥</span>' : '<span class="badge warn">未配置密钥，事件会被拒收</span>';
+  $('#secret').placeholder = r.secretSet ? '已保存（重新填写可替换）' : 'whsec_…';
+  $('#stats').innerHTML = `<div><small>收到</small><strong>${r.stats.total24h}</strong></div><div><small>处理失败</small><strong class="${r.stats.failed24h ? 'c-bad' : ''}">${r.stats.failed24h}</strong></div><div><small>最近</small><strong class="sm">${r.stats.lastAt ? ago(r.stats.lastAt) : '—'}</strong></div>`;
+  events = r.events;
+  $('#ev').innerHTML = events.map((e, i) => `<tr class="click" data-i="${i}"><td class="mono xs">${esc(e.id)}</td><td class="mono xs">${esc(e.type)}</td>
+    <td>${e.error ? `<span class="badge bad">✕ ${esc(e.error.slice(0, 40))}</span>` : e.processed ? '<span class="badge ok">✓ 已处理</span>' : '<span class="badge idle">未处理</span>'}</td>
+    <td class="xs faint">${fmtTime(e.at)}</td><td class="acts">${e.error && can('operator') ? `<button class="btn sm" data-re="${esc(e.id)}">重新处理</button>` : '<button class="iconbtn">›</button>'}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">还没有收到事件</div></td></tr>';
+  $$('#ev tr[data-i]').forEach(tr => tr.onclick = async ev => {
+    const e = events[tr.dataset.i];
+    if (ev.target.dataset.re) { ev.stopPropagation(); const r = await run(ev.target, '…', () => POST(`/api/admin/webhooks/${e.id}/reprocess`)); r?.ok === false ? toast('重新处理失败：' + (r.error || '未知原因'), 'bad') : toast('已重新处理'); load(); return; }
+    dialog({
+      title: `<span class="mono">${esc(e.type)}</span>`, sub: `<span class="mono">${esc(e.id)}</span> · ${fmtTime(e.at)}`, size: 'lg', tone: e.error ? 'bad' : null,
+      body: `${e.error ? `<div class="note bad mb12">处理失败：${esc(e.error)}</div>` : ''}<pre class="copyline" style="white-space:pre-wrap;display:block;max-height:420px;overflow:auto">${esc(JSON.stringify(e.payload, null, 2))}</pre>`,
+      actions: [{ label: '复制 JSON', onClick: () => { copy(JSON.stringify(e.payload, null, 2)); return false; } }, { label: '关闭', kind: 'primary', onClick: () => {} }],
+    });
+  });
+}
+ready(load);
+segInit($('#fSeg'), v => { failed = v; load(); });
+$('#saveSecret').onclick = e => run(e.currentTarget, '保存中…', async () => { await PUT('/api/admin/webhooks/secret', { secret: $('#secret').value.trim() }); $('#secret').value = ''; toast('签名密钥已保存'); load(); refreshNav(); });
+$('#test').onclick = e => run(e.currentTarget, '发送中…', async () => { const r = await POST('/api/admin/webhooks/self-test'); toast(r.ok ? '自检事件已送达并通过验签' : `自检失败：HTTP ${r.status}`, r.ok ? 'ok' : 'bad'); load(); });
+</script>
+</body></html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>成功率与报价 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.hbar{display:grid;grid-template-columns:120px 1fr 64px;gap:10px;align-items:center;padding:7px 0;font-size:12.5px}
+.hbar .tr{height:10px;border-radius:6px;background:var(--inset);overflow:hidden}
+.hbar .tr u{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--a1),var(--a2))}
+.hbar .tr u.lo{background:var(--bad)}.hbar .tr u.mid{background:var(--warn)}
+.chart{display:flex;align-items:flex-end;gap:6px;height:140px;padding-top:10px;border-bottom:1px solid var(--border)}
+.chart div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;height:100%}
+.chart i{display:block;border-radius:4px 4px 0 0}
+.chart .ok{background:linear-gradient(var(--a2),var(--a1))}.chart .bad{background:color-mix(in srgb,var(--bad) 70%,transparent);border-radius:0}
+.xl{display:flex;gap:6px;font-size:10.5px;color:var(--faint);margin-top:4px}.xl span{flex:1;text-align:center}
+</style></head>
+<body data-page="insights">
+<div id="page" data-title="成功率分析" data-crumb="数据">
+
+  <div class="row-flex mb16"><div class="seg" id="win"><button data-v="1">24 小时</button><button class="on" data-v="7">7 天</button><button data-v="30">30 天</button></div>
+    <span class="xs faint" style="margin-left:auto">只读统计 · 不缓存 · 零样本显示 —</span></div>
+
+  <div class="grid">
+    <div class="card glass s3 stat"><div class="lbl">兑换成功率</div><div class="v c-ok">88.1%</div><span class="lbl">1,288 / 1,462 次</span></div>
+    <div class="card glass s3 stat"><div class="lbl">拒付率</div><div class="v">11.9%</div><span class="lbl">拒付后兑换码自动释放</span></div>
+    <div class="card glass s3 stat"><div class="lbl">策略拦截率</div><div class="v">18.4%</div><span class="lbl">拦截的请求不计入成功率</span></div>
+    <div class="card glass s3 stat"><div class="lbl">全站匿名成功率</div><div class="v">84.6%</div><span class="trend up">你高出 3.5%</span></div>
+
+    <section class="card glass s8">
+      <h3>每日付款 <small>成功 / 拒付</small></h3>
+      <div class="chart" id="chart"></div><div class="xl" id="xl"></div>
+    </section>
+    <section class="card glass s4">
+      <h3>按套餐 <small>GET /gpt-direct/card-successes</small></h3>
+      <div id="byPlan"></div>
+    </section>
+
+    <section class="card glass s6">
+      <h3>按兑换策略 <small>成功率 / 拦截率</small></h3>
+      <div id="byCard"></div>
+    </section>
+    <section class="card glass s6">
+      <h3>失败原因 <small>近 7 天</small></h3>
+      <table class="tbl"><thead><tr><th>原因</th><th class="num">次数</th><th class="num">占比</th><th>处理方式</th></tr></thead><tbody id="bins"></tbody></table>
+    </section>
+
+    <section class="card glass p0 s12">
+      <div class="head"><h3>近期预检实时报价 <small>GET /gpt-direct/observed-quotes · 用于判断各地区价格</small></h3></div>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>套餐</th><th>国家</th><th>币种</th><th class="num">官方报价</th><th class="num">≈ USD</th><th class="num">样本</th><th class="num">付款成功率</th><th>最近</th></tr></thead><tbody id="quotes"></tbody></table></div>
+    </section>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+const days = ['10-19', '10-20', '10-21', '10-22', '10-23', '10-24', '10-25'];
+const ok = [160, 182, 171, 205, 198, 214, 158], bad = [22, 25, 30, 18, 27, 31, 21];
+const max = Math.max(...ok.map((v, i) => v + bad[i]));
+$('#chart').innerHTML = ok.map((v, i) => `<div title="${days[i]} 成功 ${v} / 拒付 ${bad[i]}"><i class="bad" style="height:${bad[i] / max * 100}%"></i><i class="ok" style="height:${v / max * 100}%"></i></div>`).join('');
+$('#xl').innerHTML = days.map(d => `<span>${d}</span>`).join('');
+const bar = (label, pct, extra) => `<div class="hbar"><span>${label}</span><div class="tr"><u class="${pct == null ? '' : pct < 70 ? 'lo' : pct < 85 ? 'mid' : ''}" style="width:${pct ?? 0}%"></u></div><b class="right">${pct == null ? '—' : pct + '%'}</b></div>${extra || ''}`;
+$('#byPlan').innerHTML = [['Go', 93], ['Plus', 90], ['Pro 5x', 84], ['Pro 20x', 71], ['Pro 25x', null]].map(([l, p]) => bar(l, p)).join('');
+$('#byCard').innerHTML = [['淘宝渠道 · 严格', 94, '拦截 42%'], ['VIP 客户 · 宽松', 91, '拦截 2%'], ['默认策略', 85, '拦截 11%']].map(([n, p, b]) => bar(`${n} <span class="faint xs">${b}</span>`, p)).join('');
+$('#bins').innerHTML = [['支付被拒（do_not_honor）', 88, '50.6%', '码已释放 / 自动重试'], ['余额或额度不足', 31, '17.8%', '码已释放'], ['Session 过期', 24, '13.8%', '用户补交 Session'], ['账号不符合资格', 19, '10.9%', '提示用户更换账号'], ['报价超过上限', 12, '6.9%', '价格保护拦截']].map(r => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2]}</td><td class="xs muted">${r[3]}</td></tr>`).join('');
+$('#quotes').innerHTML = [['Plus', 'US', 'USD', '20.00', 20.00, 812, 90.1, '2 分钟前'], ['Plus', 'TR', 'TRY', '599.99', 17.52, 233, 82.4, '8 分钟前'], ['Plus', 'NG', 'NGN', '29,900.00', 18.30, 140, 76.0, '15 分钟前'], ['Pro 5x', 'US', 'USD', '100.00', 100.00, 66, 84.8, '22 分钟前'], ['Pro 20x', 'US', 'USD', '200.00', 200.00, 41, 70.7, '1 小时前'], ['Go', 'IN', 'INR', '399.00', 4.58, 98, 93.9, '1 小时前']]
+  .map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="mono">${r[2]}</td><td class="num">${r[3]}</td><td class="num">${money(r[4])}</td><td class="num">${r[5]}</td><td class="num">${r[6]}%</td><td class="xs faint">${r[7]}</td></tr>`).join('');
+segInit($('#win'), () => toast('已切换统计窗口（演示数据）', 'info'));
+</script>
+</body></html>

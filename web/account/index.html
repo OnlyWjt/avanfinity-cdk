@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>我的账户</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top" id="shopTop" data-on="account"></header>
+<div class="shop"><div id="view"><div class="empty"><span class="spin"></span></div></div></div>
+<script src="/assets/app.js"></script>
+<script src="/assets/shop.js"></script>
+<script>
+const NEXT = qs('next');
+const LEDGER = { topup: '充值', spend: '消费', refund: '退款', adjust: '后台调整', from_earnings: '代理收益转入' };
+
+/** 只允许跳回本站页面（防止 ?next=//evil.com 把人带走） */
+const safeNext = () => { try { const u = new URL(NEXT || '', location.origin); return NEXT && u.origin === location.origin ? u.pathname + u.search + u.hash : ''; } catch { return ''; } };
+cfgReady.then(c => c.me ? home(c.me) : auth(qs('tab') || 'login')).catch(e => loadFail($('#view'), e, () => location.reload()));
+
+/* ---------------- 登录 / 注册 ---------------- */
+function auth(tab, err = '') {
+  const reg = tab === 'register';
+  $('#view').innerHTML = `<div class="auth glass">
+    <div class="seg mb16" id="tab" style="display:flex"><button data-v="login" class="${reg ? '' : 'on'}" style="flex:1">登录</button><button data-v="register" class="${reg ? 'on' : ''}" style="flex:1">注册</button></div>
+    ${reg && !CFG.shop.allowRegister ? '<div class="note warn">暂未开放注册。没有账号也可以直接购买，用邮箱和查询密码查订单。</div>' : `
+    <div class="form">
+      <div class="f"><label for="email">邮箱</label><input class="field" id="email" type="email" autocomplete="email"></div>
+      <div class="f"><label for="pw">密码 ${reg ? '<small>至少 8 位</small>' : '<button class="link" id="forgot" type="button">忘记密码？</button>'}</label><input class="field" id="pw" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"></div>
+      ${reg ? '<div class="f"><label>昵称 <small>选填</small></label><input class="field" id="name" maxlength="30"></div><div class="xs faint">注册前免注册买的订单，仍然用邮箱和查询密码在「查订单」里查看。</div>' : ''}
+      <div class="err" id="err">${esc(err)}</div>
+      <button class="btn primary block" id="go">${reg ? '注册并登录' : '登录'}</button>
+    </div>`}
+    <p class="xs faint mt16" style="text-align:center">不想注册？<a class="link" href="${storeHome()}">直接购买</a> · <a class="link" href="/shop/query.html">查询订单</a></p></div>`;
+  segInit($('#tab'), v => auth(v));
+  if (!$('#go')) return;
+  if (!matchMedia('(pointer: coarse)').matches) $('#email').focus();
+  $('#email').onkeydown = e => { if (e.key === 'Enter') $('#pw').focus(); };
+  $('#forgot') && ($('#forgot').onclick = forgot);
+  $('#pw').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+  $('#go').onclick = async e => {
+    const body = { email: $('#email').value.trim(), password: $('#pw').value, name: $('#name')?.value || '' };
+    try {
+      $('#err').textContent = '';
+      const r = await busy(e.currentTarget, reg ? '注册中…' : '登录中…', () => POST('/api/shop/account/' + (reg ? 'register' : 'login'), body));
+      sessionStorage.removeItem('shop-cfg:' + STORE);
+      if (safeNext()) { location.href = safeNext(); return; }
+      MEC = r.me; shopTop(); home(r.me);
+    } catch (x) { $('#err').textContent = x.message; }
+  };
+}
+function forgot() {
+  let sent = false;
+  const d = dialog({ title: '找回密码', sub: '验证码会发到你的注册邮箱，15 分钟内有效', size: 'sm',
+    body: `<div class="form"><div class="f"><label>邮箱</label><div class="inputgrp"><input id="fe" type="email" value="${esc($('#email')?.value || '')}"><button type="button" class="btn ghost sm" id="send" style="border-radius:0">发送验证码</button></div></div>
+      <div class="f"><label>验证码</label><input class="field mono" id="fc" inputmode="numeric" maxlength="6"></div>
+      <div class="f"><label>新密码 <small>至少 8 位</small></label><input class="field" id="fp" type="password" autocomplete="new-password"></div></div>`,
+    actions: [{ label: '取消' }, { label: '重置密码', kind: 'primary', onClick: async () => {
+      if (!sent) throw new Error('请先发送验证码');
+      await POST('/api/shop/account/reset', { email: $('#fe', d.el).value.trim(), code: $('#fc', d.el).value.trim(), password: $('#fp', d.el).value });
+      toast('密码已重置，请用新密码登录');
+      if ($('#email')) $('#email').value = $('#fe', d.el).value.trim();
+    } }] });
+  $('#fe', d.el).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); $('#send', d.el).click(); } };
+  $('#send', d.el).onclick = async e => {
+    d.error('');
+    const r = await busy(e.currentTarget, '发送中…', () => POST('/api/shop/account/reset/send', { email: $('#fe', d.el).value.trim() })).catch(x => { d.error(x.message); return null; });
+    if (!r) return;
+    if (!r.mail) { d.error('商城还没有配置邮件发送，请联系客服重置密码'); return; }
+    sent = true; toast('如果这个邮箱已注册，验证码已发送'); $('#fc', d.el).focus();
+  };
+}
+
+/* ---------------- 账户首页 ---------------- */
+async function home(me) {
+  const ag = me.agent;
+  $('#view').innerHTML = `<div class="acct">
+    <div class="grid mb16">
+      <section class="card glass balance s5"><div class="lbl">账户余额</div><div class="v">${yuan(me.balance)}</div>
+        <div class="row-flex"><button class="btn" id="topup">充值</button><a class="btn" href="${storeHome()}">去购物</a></div></section>
+      <section class="card glass s4"><div class="lbl">账户</div><div style="font-size:15px;font-weight:700;margin:6px 0 2px;word-break:break-all">${esc(me.email)}</div><div class="xs faint mb12">${esc(me.name || '')} 注册于 ${fmtTime(me.createdAt)}</div>
+        <div class="row-flex"><button class="btn sm" id="chpw">修改密码</button><button class="btn sm ghost" id="logout">退出登录</button></div></section>
+      <section class="card glass s3"><div class="lbl">代理</div>${agentCard(ag)}</section>
+    </div>
+    <div class="seg mb12" id="tab"><button class="on" data-v="orders">我的订单</button><button data-v="ledger">余额明细</button></div>
+    <section class="card glass p0"><div class="tblwrap" id="list"><div class="empty"><span class="spin"></span></div></div></section></div>`;
+  $('#topup').onclick = () => topup(me);
+  $('#chpw').onclick = chpw;
+  $('#logout').onclick = async () => { await POST('/api/shop/account/logout'); sessionStorage.removeItem('shop-cfg:' + STORE); MEC = null; shopTop(); auth('login'); };
+  $('#apply') && ($('#apply').onclick = apply);
+  segInit($('#tab'), v => (v === 'orders' ? orders() : ledger()));
+  orders();
+}
+function agentCard(ag) {
+  if (ag?.status === 'active') return `<div style="font-size:15px;font-weight:700;margin:6px 0 12px">${esc(ag.shopName)}</div><a class="btn sm primary" href="/agent/">进入代理中心 →</a>`;
+  if (ag?.status === 'pending') return `<div class="mt8 mb12"><span class="badge warn">审核中</span></div><div class="xs faint">店铺 ${esc(ag.shopName)}，审核通过后即可使用</div>`;
+  if (ag?.status === 'disabled') return '<div class="mt8"><span class="badge idle">代理资格已停用</span></div>';
+  if (!CFG.shop.allowAgentApply) return '<div class="xs faint mt8">暂未开放代理申请</div>';
+  return `<div class="xs faint mt8 mb12">${ag?.status === 'rejected' ? '上次申请没有通过，可以修改后重新申请。' : '开分站自定价、推广返佣、批发进货'}</div><button class="btn sm" id="apply">申请成为代理</button>`;
+}
+async function orders() {
+  let r; try { r = await GET('/api/shop/account/orders'); } catch (e) { return loadFail($('#list'), e, orders); }
+  $('#list').innerHTML = `<table class="tbl stack"><thead><tr><th>订单</th><th>商品</th><th class="num">金额</th><th>状态</th><th>时间</th><th></th></tr></thead><tbody>${r.list.map(o => `
+    <tr class="click" onclick="location.href='${orderUrl(o.no, o.token)}'"><td class="mono xs"><a href="${orderUrl(o.no, o.token)}" style="color:inherit;text-decoration:none">${esc(o.no)}</a></td><td>${esc(o.title)}${o.kind === 'topup' ? '' : ` × ${o.quantity}`}${o.kind === 'wholesale' ? ' <span class="badge acc">批发</span>' : ''}${o.status === 'pending' ? ' <span class="link xs">去支付 →</span>' : ''}</td>
+    <td class="num">${yuan(o.total)}</td><td>${oBadge(o.status)}</td><td class="xs faint nowrap">${fmtTime(o.created_at)}</td><td class="acts"><span class="iconbtn">›</span></td></tr>`).join('') || '<tr><td colspan="6"><div class="empty"><div class="ic">✦</div>还没有订单</div></td></tr>'}</tbody></table>`;
+}
+async function ledger() {
+  let r; try { r = await GET('/api/shop/account/ledger'); } catch (e) { return loadFail($('#list'), e, ledger); }
+  $('#list').innerHTML = `<table class="tbl stack"><thead><tr><th>类型</th><th class="num">金额</th><th class="num">余额</th><th>说明</th><th>时间</th></tr></thead><tbody>${r.list.map(l => `
+    <tr><td>${LEDGER[l.type] || esc(l.type)}</td><td class="num ${l.amount > 0 ? 'c-ok' : ''}">${l.amount > 0 ? '+' : ''}${yuanN(l.amount)}</td><td class="num">${yuanN(l.balance_after)}</td><td class="muted">${esc(l.note || '')}</td><td class="xs faint nowrap">${fmtTime(l.created_at)}</td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">暂无记录</div></td></tr>'}</tbody></table>`;
+}
+function topup(me) {
+  let amt = 100;
+  const d = dialog({ title: '余额充值', sub: '充值后可以直接用余额购买，下单更快', size: 'md',
+    body: `<div class="form"><div class="amts" id="amts">${[50, 100, 200, 500].map(a => `<button type="button" class="opt ${a === amt ? 'on' : ''}" data-a="${a}" style="text-align:center"><b>¥${a}</b></button>`).join('')}</div>
+      <div class="f"><label>其他金额 <small>1–50000 元</small></label><div class="inputgrp"><span>¥</span><input id="amt" inputmode="decimal" placeholder="自定义金额"></div></div>
+      <div class="f"><label>支付方式</label><div id="pm"></div></div></div>`,
+    actions: [{ label: '取消' }, { label: '去支付', kind: 'primary', busyLabel: '创建订单…', onClick: async () => {
+      const pm = pick(); if (!pm) throw new Error('暂无可用的支付方式');
+      const v = Number($('#amt', d.el).value || amt);
+      if (!(v >= 1 && v <= 50000)) throw new Error('充值金额 1–50000 元');
+      const r = await POST('/api/shop/account/topup', { amount: v, payMethod: pm.method, paySub: pm.sub, device: DEVICE });
+      afterPay(r.no, r.token, r.pay); return false;
+    } }] });
+  $$('[data-a]', d.el).forEach(b => b.onclick = () => { amt = +b.dataset.a; $('#amt', d.el).value = ''; $$('[data-a]', d.el).forEach(x => x.classList.toggle('on', x === b)); });
+  $('#amt', d.el).oninput = () => $$('[data-a]', d.el).forEach(x => x.classList.remove('on'));
+  const pick = payPicker($('#pm', d.el));
+  $('#amt', d.el).setAttribute('aria-label', '自定义充值金额');
+}
+function chpw() {
+  const d = dialog({ title: '修改密码', size: 'sm', body: `<div class="form"><div class="f"><label>原密码</label><input class="field" id="o" type="password" autocomplete="current-password"></div><div class="f"><label>新密码 <small>至少 8 位</small></label><input class="field" id="n" type="password" autocomplete="new-password"></div></div>`,
+    actions: [{ label: '取消' }, { label: '保存', kind: 'primary', onClick: async () => { await POST('/api/shop/account/password', { oldPassword: $('#o', d.el).value, newPassword: $('#n', d.el).value }); toast('密码已修改'); } }] });
+}
+function apply() {
+  const d = dialog({ title: '申请成为代理', sub: '审核通过后可以开自己的分站、推广返佣、按进货价批发', size: 'md',
+    body: `<div class="form"><div class="f"><label>店铺名称</label><input class="field" id="sn" maxlength="30" placeholder="例如：小明会员小铺"></div>
+      <div class="f"><label>店铺地址 <small>3–24 位小写字母、数字或横线</small></label><div class="inputgrp"><span>${esc(location.host)}/s/</span><input id="sl" maxlength="24" placeholder="mystore"></div></div>
+      <div class="f"><label>联系方式 <small>方便管理员联系你</small></label><input class="field" id="sc" maxlength="60" placeholder="TG / 微信 / QQ"></div></div>`,
+    actions: [{ label: '取消' }, { label: '提交申请', kind: 'primary', onClick: async () => {
+      await POST('/api/shop/agent/apply', { shopName: $('#sn', d.el).value, slug: $('#sl', d.el).value.trim().toLowerCase(), contact: $('#sc', d.el).value });
+      toast('已提交，等待审核'); const r = await GET('/api/shop/account/me'); home(r.me);
+    } }] });
+  $('#sl', d.el).oninput = e => { e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''); };
+}
+</script>
+</body></html>

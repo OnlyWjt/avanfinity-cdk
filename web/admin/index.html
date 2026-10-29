@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>总览 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="index">
+<div id="page" data-title="总览 <small id='sub'></small>">
+  <div id="setupTip"></div>
+  <div class="alert warn glass hidden" id="attn"><span>⚑</span><span id="attnText"></span><a class="btn sm" href="orders.html?f=attention">去处理 →</a></div>
+
+  <div class="grid">
+    <section class="card glass glowcard s5">
+      <div class="between"><span class="lbl" title="按「售价与利润」里设置的零售价估算的兑换利润；商城的真实成交在下方">今日兑换利润（估算）</span><a class="link" href="pricing.html">售价设置 →</a></div>
+      <div class="stat"><div class="v" style="font-size:40px" id="profit">—</div></div>
+      <div class="legend" id="profitLegend"></div>
+      <div class="bars" style="height:46px;margin-top:14px" id="profitBars"></div>
+    </section>
+    <section class="card glass s2 stat">
+      <div class="lbl">近 30 天发行</div><div class="v" id="issued">—</div><span class="trend" id="issuedTrend"></span>
+      <div class="bars" id="issuedBars"></div>
+    </section>
+    <section class="card glass s3">
+      <div class="lbl">兑换成功率 · 30 天</div>
+      <div class="row-flex mt12" style="gap:16px"><div class="ring" id="ring" style="--p:0"><b>—</b></div><div class="sm muted" style="line-height:1.9" id="ringText"></div></div>
+    </section>
+    <a class="card glass s2 stat" href="orders.html?f=blocked" style="text-decoration:none">
+      <div class="lbl">今日策略拦截</div><div class="v c-warn" id="blocked">—</div><span class="lbl" id="blockedBy"></span>
+    </a>
+
+    <div class="s12 hidden" id="shopRow"></div>
+    <div class="s12 grid prods3" id="prods"></div>
+
+    <section class="card glass s8">
+      <h3>实时兑换
+        <div class="seg" id="feedSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button><button data-v="attention">需处理</button></div>
+      </h3>
+      <div id="feed"></div>
+      <a class="link mt12" style="display:inline-block" href="orders.html">查看全部兑换记录 →</a>
+    </section>
+    <section class="card glass s4">
+      <h3>快捷操作</h3>
+      <div class="choice c2">
+        <a class="opt" href="generate.html?p=gpt" style="text-decoration:none" data-role="operator"><b>✦ 生成 GPT CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="generate.html?p=x" style="text-decoration:none" data-role="operator"><b>𝕏 生成 X CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="generate.html?p=tg" style="text-decoration:none" data-role="operator"><b>✈ 生成 TG CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="strategy.html" style="text-decoration:none"><b>⛉ 兑换策略</b><small id="stratN"></small></a>
+      </div>
+      <h3 class="mt20">策略命中 · 今日</h3>
+      <div class="kv" id="stratHits"></div>
+    </section>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const STAGE_CN = { gate: '门槛', account: '账号', price: '价格', review: '人工拒绝', other: '其他' };
+ready(() => load());
+async function load() {
+  const [o, set] = await Promise.all([GET('/api/admin/overview'), can('admin') ? GET('/api/admin/settings').catch(() => null) : null]);
+  if (set && (!set.avan.appId || !set.avan.webhookSecretSet)) $('#setupTip').innerHTML = `<div class="alert info glass">ⓘ<span>还没有完成卡台配置（${!set.avan.appId ? 'App-Id / Secret' : 'Webhook 签名密钥'}）。</span><a class="btn sm" href="settings.html">去设置 →</a></div>`;
+  $('#sub').textContent = `今天已兑换 ${o.today.redeemed} 张`;
+  const p = o.today;
+  const [i, d] = cny(p.profit).split('.');
+  $('#profit').innerHTML = p.priced ? `${i}<span>.${d}</span>` : '<span style="font-size:15px;font-weight:600;color:var(--muted)">—</span><div class="xs faint" style="font-weight:400;margin-top:4px">在「售价与利润」里设置零售价后显示</div>';
+  $('#profitLegend').innerHTML = `<span><i style="background:var(--a1)"></i>销售额<b>${cny(p.sales)}</b></span><span><i style="background:var(--warn)"></i>成本<b>${cny(p.cost)}</b></span><span><i style="background:var(--ok)"></i>毛利率<b>${p.margin == null ? '—' : (p.margin * 100).toFixed(1) + '%'}</b></span>`;
+  const bars = (arr) => { const m = Math.max(1, ...arr.map(v => Math.abs(v))); return arr.map(v => `<u style="height:${Math.max(4, Math.abs(v) / m * 100)}%" title="${v}"></u>`).join(''); };
+  $('#profitBars').innerHTML = bars(p.dailyProfit);
+  $('#issued').textContent = o.issued.month.toLocaleString();
+  const tr = o.issued.prev ? ((o.issued.month - o.issued.prev) / o.issued.prev * 100) : null;
+  $('#issuedTrend').innerHTML = tr == null ? '<span class="lbl">上期无数据</span>' : `<span class="${tr >= 0 ? 'trend up' : 'trend down'}">${tr >= 0 ? '↑' : '↓'} ${Math.abs(tr).toFixed(1)}% 环比</span>`;
+  $('#issuedBars').innerHTML = bars(o.issued.daily);
+  const s = o.success30, rate = s.ok + s.failed ? Math.round(s.ok / (s.ok + s.failed) * 100) : null;
+  $('#ring').style.setProperty('--p', rate ?? 0); $('#ring').innerHTML = `<b>${rate == null ? '—' : rate + '%'}</b>`;
+  $('#ringText').innerHTML = `已完成 <b style="color:var(--text)">${s.ok}</b><br>处理中 <b style="color:var(--text)">${s.running}</b><br>失败 <b class="c-bad">${s.failed}</b>`;
+  $('#blocked').textContent = o.blockedToday.total;
+  $('#blockedBy').textContent = Object.entries(o.blockedToday.byStage).map(([k, n]) => `${STAGE_CN[k] || k} ${n}`).join(' · ') || '今天没有拦截';
+
+  const attn = o.attention.reduce((a, b) => a + b.n, 0);
+  if (attn) {
+    const parts = o.attention.map(a => `${a.n} 笔${a.status === 'manual_review' ? (a.stage === 'price' ? '价格保护待审核' : '失败待处理') : a.status === 'requires_action' ? '需用户 / 平台处理' : '已通过待提交'}`);
+    $('#attnText').innerHTML = `<b class="c-warn">${attn} 笔兑换需要关注</b>：${parts.join('、')}。`;
+    $('#attn').classList.remove('hidden');
+  }
+  const info = { gpt: 'Go · Plus · Pro', x: 'Premium · Premium+', tg: 'Premium 3 · 6 · 12 月' };
+  $('#prods').innerHTML = ['gpt', 'x', 'tg'].map(k => `<a class="card glass" href="cdks.html?p=${k}" style="text-decoration:none">
+    <div class="row-flex mb12">${PIC[k].replace('pic', 'pic lg')}<div><b style="font-size:15px">${PNAME[k]}</b><div class="xs muted">${info[k]}</div></div></div>
+    <div class="minis"><div><small>未兑换</small><strong>${o.unused[k] || 0}</strong></div><div><small>今日兑换</small><strong>${o.todayBy[k] || 0}</strong></div><div><small>&nbsp;</small><strong class="sm"><span class="link">管理 →</span></strong></div></div></a>`).join('');
+  $('#stratN').textContent = `${o.strategies.filter(x => x.on).length} 条启用中`;
+  $('#stratHits').innerHTML = o.strategies.map(x => `<div><span>${esc(x.name)}</span><b>拦截 ${x.blocked} · 成功 ${x.ok}${x.review ? ` · <a class="link" href="orders.html?f=attention">待审 ${x.review}</a>` : ''}</b></div>`).join('') + `<div><span>自动重试成功</span><b class="c-ok">${o.retried} 笔</b></div>`;
+  feed($('#feedSeg .on')?.dataset.v || '');
+  shopSummary();
+}
+const yuanC = c => '¥' + (Number(c || 0) / 100).toFixed(2);
+async function shopSummary() {
+  const s = await GET('/api/admin/shop/summary').catch(() => null);
+  if (!s || (!s.enabled && !s.today.orders)) return $('#shopRow').classList.add('hidden');
+  const todo = [
+    s.undelivered && `<a class="badge warn" href="shop-orders.html?status=paid">${s.undelivered} 笔待发货</a>`,
+    s.overpaid && `<a class="badge bad" href="shop-orders.html">${s.overpaid} 笔重复付款需退款</a>`,
+    s.agentApply && `<a class="badge acc" href="agents.html">${s.agentApply} 个代理申请</a>`,
+    s.withdrawals.n && `<a class="badge acc" href="agents.html">${s.withdrawals.n} 笔提现 ${yuanC(s.withdrawals.s)}</a>`,
+    !s.channels && '<a class="badge warn" href="settings.html?tab=pay">还没有可用的支付渠道</a>',
+    !s.products && '<a class="badge warn" href="products.html">还没有上架商品</a>',
+  ].filter(Boolean);
+  const t = s.today;
+  $('#shopRow').innerHTML = `<section class="card glass shop-sum"><div class="between mb12"><h3 style="margin:0">商城 · 今日 ${s.enabled ? '' : '<span class="badge idle">已关闭</span>'}</h3><a class="link" href="shop-orders.html">商城订单 →</a></div>
+    <div class="minis"><div><small>成交</small><strong>${t.orders} 单</strong></div><div><small>销售额</small><strong>${yuanC(t.sales)}</strong></div><div><small>毛利</small><strong class="${t.profit < 0 ? 'c-bad' : 'c-ok'}">${yuanC(t.profit)}</strong></div><div><small>代理分成</small><strong>${yuanC(t.agentShare)}</strong></div></div>
+    <div class="row-flex mt12" style="flex-wrap:wrap;gap:6px">${todo.length ? todo.join('') : '<span class="xs faint">✓ 没有需要处理的事项</span>'}</div></section>`;
+  $('#shopRow').classList.remove('hidden');
+}
+async function feed(f) {
+  const r = await GET('/api/admin/redemptions?size=8' + (f === 'attention' ? '&f=attention' : f ? '&product=' + f : ''));
+  $('#feed').innerHTML = r.list.map(o => `
+    <a class="lrow" href="orders.html?id=${o.id}">${PIC[o.product]}
+      <div class="t"><b>${esc(o.planLabel)}</b><p>${esc(o.code)}</p></div>
+      <div class="who">${esc(o.account || '—')}</div><div class="amt">${o.cost ? money(o.cost) : '—'}</div><div>${badge(o.status)}</div><div class="tm">${ago(o.createdAt)}</div></a>`).join('') || '<div class="empty"><div class="ic">⇄</div>还没有兑换记录</div>';
+}
+segInit($('#feedSeg'), feed);
+</script>
+</body></html>

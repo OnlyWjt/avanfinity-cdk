@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>支付流水 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="transactions">
+<div id="page" data-title="支付流水 <small>兑换在官方产生的扣款记录</small>" data-crumb="数据">
+  <div class="note mb16">ⓘ 流水来自卡台同步（每 5 分钟自动同步一次，也会通过 Webhook 实时写入），不包含付款账户信息。按支付时间关联到对应的兑换记录。</div>
+  <section class="card glass p0">
+    <div class="toolbar">
+      <select class="field sm" id="product"><option value="">全部产品</option><option value="gpt">ChatGPT</option><option value="x">X</option><option value="tg">Telegram</option></select>
+      <select class="field sm" id="status"><option value="">全部状态</option><option value="APPROVED">成功</option><option value="DECLINED">拒付</option><option value="SETTLED">已结算</option><option value="REVERSED">已撤销</option></select>
+      <div class="fsearch">⌕<input id="q" placeholder="商户 / 交易 ID / 兑换码"></div>
+      <button class="btn sm" style="margin-left:auto" id="sync" data-role="operator">↻ 立即同步</button>
+      <button class="btn sm" id="csv" title="导出当前页显示的记录">⤓ 导出本页 CSV</button>
+    </div>
+    <div class="tblwrap"><table class="tbl stack"><thead><tr><th>时间</th><th>商户</th><th>类型</th><th>状态</th><th class="num">金额</th><th>原币</th><th>关联兑换</th></tr></thead><tbody id="tb"></tbody></table></div>
+    <div class="pager" id="pager"></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const F = { product: '', status: '', q: '', page: 1 };
+let rows = [];
+async function load() {
+  const r = await GET('/api/admin/transactions?' + new URLSearchParams({ page: F.page, size: 50, ...(F.product && { product: F.product }), ...(F.status && { status: F.status }), ...(F.q && { q: F.q }) }));
+  rows = r.list;
+  $('#tb').innerHTML = r.list.map(t => `<tr><td class="xs faint nowrap">${fmtTime(t.at)}</td>
+    <td class="t"><b>${esc(t.merchant || '—')}</b>${t.reason ? `<p class="c-bad">${esc(t.reason)}</p>` : ''}</td><td><span class="tag">${esc(t.type || '')}</span></td><td>${badge(t.status)}</td>
+    <td class="num">${money(t.amount)}</td><td class="xs muted">${esc(t.merchantAmount || t.currency || '')}</td>
+    <td>${t.redemptionId ? `<a class="link" href="orders.html?id=${t.redemptionId}">${PICXS[t.product] || ''} ${esc(t.code || t.redemptionId)}</a><div class="xs faint">${esc(t.account || '')}</div>` : '<span class="faint xs">未关联</span>'}</td></tr>`).join('') || '<tr><td colspan="7"><div class="empty"><div class="ic">≡</div>还没有流水</div></td></tr>';
+  pager($('#pager'), r.total, F.page, 50, p => { F.page = p; load(); });
+}
+ready(load);
+['product', 'status'].forEach(k => $('#' + k).onchange = e => { F[k] = e.target.value; F.page = 1; load(); });
+let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { F.q = e.target.value.trim(); F.page = 1; load(); }, 250); };
+$('#sync').onclick = e => run(e.currentTarget, '同步中…', async () => { const r = await POST('/api/admin/transactions/sync'); toast(`已同步 ${r.synced} 条`); load(); });
+$('#csv').onclick = () => download('transactions.csv', 'time,merchant,type,status,amount,currency,code,account\n' + rows.map(t => [t.at, `"${(t.merchant || '').replace(/"/g, '""')}"`, t.type, t.status, t.amount, t.currency, t.code || '', t.account || ''].join(',')).join('\n'), 'text/csv');
+</script>
+</body></html>

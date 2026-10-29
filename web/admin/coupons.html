@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>优惠券 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="coupons">
+<div id="page" data-title="优惠券" data-crumb="商城">
+  <section class="card glass p0">
+    <div class="head"><h3>优惠券 <small class="muted" style="font-weight:400">只能在主站购买时使用，代理分站和批发不能用</small></h3><button class="btn primary sm" id="add" data-role="admin">＋ 新建优惠券</button></div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th>券码</th><th>优惠</th><th>条件</th><th>适用商品</th><th class="num">已用 / 总量</th><th>有效期</th><th>状态</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="8"><div class="empty"><span class="spin"></span></div></td></tr></tbody></table></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const yuan = c => (Number(c) < 0 ? '-¥' : '¥') + (Math.abs(Number(c || 0)) / 100).toFixed(2);
+let LIST = [], PRODS = [];
+ready(async () => { $('#add').onclick = () => edit(); load(); });
+async function load() { [PRODS, LIST] = await Promise.all([GET('/api/admin/shop/products').then(r => r.list), GET('/api/admin/shop/coupons').then(r => r.list)]); render(); }
+const pct = c => c.type === 'percent' ? `打 ${((100 - c.value) / 10).toFixed(1).replace(/\.0$/, '')} 折` + (c.maxDiscount != null ? `，最多减 ${yuan(c.maxDiscount)}` : '') : `立减 ${yuan(c.value)}`;
+function render() {
+  const now = new Date().toISOString();
+  $('#tbody').innerHTML = LIST.map(c => {
+    const st = !c.enabled ? ['idle', '已停用'] : c.endsAt && c.endsAt < now ? ['idle', '已过期'] : c.startsAt && c.startsAt > now ? ['acc', '未开始'] : c.maxUses != null && c.used + c.holding >= c.maxUses ? ['warn', '已领完'] : ['ok', '✓ 可用'];
+    return `<tr class="click" data-id="${c.id}"><td class="t"><b class="mono">${esc(c.code)}</b><p>${esc(c.name || '')}</p></td><td><b>${pct(c)}</b></td>
+      <td class="xs">${c.minAmount ? `满 ${yuan(c.minAmount)}` : '无门槛'} · 每人 ${c.perUser} 次</td>
+      <td class="xs muted">${c.productIds?.length ? c.productIds.map(id => esc(PRODS.find(p => p.id === id)?.title || id)).join('、') : '全部商品'}</td>
+      <td class="num">${c.used}${c.holding ? `<span class="xs faint">+${c.holding}</span>` : ''} / ${c.maxUses ?? '∞'}</td>
+      <td class="xs faint">${c.startsAt || c.endsAt ? `${c.startsAt ? fmtTime(c.startsAt) : '现在'} → ${c.endsAt ? fmtTime(c.endsAt) : '长期'}` : '长期有效'}</td>
+      <td><span class="badge ${st[0]}">${st[1]}</span></td><td class="acts"><button class="iconbtn">›</button></td></tr>`;
+  }).join('') || '<tr><td colspan="8"><div class="empty"><div class="ic">✂</div>还没有优惠券</div></td></tr>';
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = () => edit(LIST.find(c => c.id === +tr.dataset.id)));
+}
+const local = iso => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+function edit(c) {
+  const v = c || { code: '', name: '', type: 'amount', value: 500, minAmount: 0, maxDiscount: null, maxUses: null, perUser: 1, productIds: [], startsAt: null, endsAt: null, enabled: true };
+  let type = v.type;
+  const d = sheet({
+    title: c ? '编辑优惠券' : '新建优惠券', sub: c ? `已使用 ${c.used} 次` : '买家下单时输入券码使用',
+    body: `<div class="form">
+      <div class="two"><div class="f"><label>券码 <small>3–32 位</small></label><input class="field mono" id="cc" maxlength="32" value="${esc(v.code)}" style="text-transform:uppercase"></div>
+        <div class="f"><label>名称 <small>选填，买家可见</small></label><input class="field" id="cn" maxlength="40" value="${esc(v.name)}" placeholder="新人立减"></div></div>
+      <div class="f"><label>优惠方式</label><div class="seg" id="ct"><button data-v="amount">立减金额</button><button data-v="percent">按比例打折</button></div></div>
+      <div class="two"><div class="f"><label id="cvl">减免金额（元）</label><input class="field mono" id="cv" inputmode="decimal"></div>
+        <div class="f" id="cmdw"><label>最多减（元） <small>留空不限</small></label><input class="field mono" id="cmd" inputmode="decimal" value="${v.maxDiscount != null ? (v.maxDiscount / 100).toFixed(2) : ''}"></div></div>
+      <div class="two"><div class="f"><label>满多少可用（元） <small>0 为无门槛</small></label><input class="field mono" id="cmin" inputmode="decimal" value="${(v.minAmount / 100).toFixed(2)}"></div>
+        <div class="f"><label>每人限用 <small>按邮箱</small></label><input class="field mono" id="cpu" inputmode="numeric" value="${v.perUser}"></div></div>
+      <div class="f"><label>发放总量 <small>留空不限；待付款订单会先占用</small></label><input class="field mono" id="cmu" inputmode="numeric" value="${v.maxUses ?? ''}"></div>
+      <div class="f"><label>适用商品 <small>都不选 = 全部商品</small></label><div class="choice c2">${PRODS.map(p => `<button type="button" class="opt ${v.productIds?.includes(p.id) ? 'on' : ''}" data-pid="${p.id}"><b>${esc(p.title)}</b><small>${yuan(p.price)}</small></button>`).join('') || '<span class="xs faint">还没有商品</span>'}</div></div>
+      <div class="two"><div class="f"><label>开始时间 <small>选填</small></label><input class="field" type="datetime-local" id="cs" value="${local(v.startsAt)}"></div>
+        <div class="f"><label>结束时间 <small>选填</small></label><input class="field" type="datetime-local" id="ce" value="${local(v.endsAt)}"></div></div>
+      <div class="toggle"><div>启用</div><button class="sw ${v.enabled ? 'on' : ''}" id="cen"></button></div>
+    </div>`,
+    actions: !can('admin') ? [{ label: '关闭', kind: 'ghost' }] : [
+      ...(c ? [{ label: '删除', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: `删除优惠券 ${esc(c.code)}？`, body: '用过的券不能删除，可以停用。', ok: '删除', danger: true }))) return false; await DEL('/api/admin/shop/coupons/' + c.id); toast('已删除'); load(); } }] : []),
+      { label: '取消' },
+      { label: '保存', kind: 'primary', onClick: async () => {
+        const body = { code: $('#cc', d.el).value, name: $('#cn', d.el).value, type, value: $('#cv', d.el).value, maxDiscount: type === 'percent' ? $('#cmd', d.el).value : '', minAmount: $('#cmin', d.el).value,
+          perUser: $('#cpu', d.el).value, maxUses: $('#cmu', d.el).value, productIds: $$('[data-pid].on', d.el).map(b => b.dataset.pid),
+          startsAt: $('#cs', d.el).value || null, endsAt: $('#ce', d.el).value || null, enabled: $('#cen', d.el).classList.contains('on') };
+        if (c) await PUT('/api/admin/shop/coupons/' + c.id, body); else await POST('/api/admin/shop/coupons', body);
+        toast('已保存'); load();
+      } },
+    ],
+  });
+  const setType = t => {
+    type = t; segSet($('#ct', d.el), t);
+    $('#cvl', d.el).innerHTML = t === 'amount' ? '减免金额（元）' : '优惠比例（%） <small>20 = 打 8 折</small>';
+    $('#cmdw', d.el).classList.toggle('hidden', t === 'amount');
+    $('#cv', d.el).value = t === v.type ? (t === 'amount' ? (v.value / 100).toFixed(2) : v.value) : '';
+  };
+  segInit($('#ct', d.el), setType); setType(type);
+  swInit($('#cen', d.el));
+  $$('[data-pid]', d.el).forEach(b => b.onclick = () => b.classList.toggle('on'));
+  lockForm(d);
+}
+</script>
+</body></html>

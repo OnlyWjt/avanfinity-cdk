@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>商品 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="products">
+<div id="page" data-title="商品" data-crumb="商城">
+  <div id="warn"></div>
+  <div class="pc-wrap">
+  <aside class="card glass pc-tree">
+    <div class="between mb12"><h3 style="margin:0">分类</h3><button class="btn sm" id="addCat" data-role="admin">＋ 新建</button></div>
+    <div id="tree"></div>
+    <p class="xs faint mt12">最多两级。前台按分类展示，空分类不会出现。</p>
+  </aside>
+  <section class="card glass p0" style="min-width:0">
+    <div class="toolbar">
+      <div class="seg" id="prodSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button></div>
+      <div style="margin-left:auto" class="row-flex"><a class="btn" href="/shop/" target="_blank">打开商城 ↗</a><button class="btn primary" id="add" data-role="admin">＋ 新建商品</button></div>
+    </div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th>商品</th><th>分类</th><th>套餐 / 策略</th><th class="num">零售价</th><th class="num">代理基础价</th><th class="num">成本（估）</th><th class="num">毛利</th><th class="num">库存</th><th class="num">已售</th><th>上架</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="11"><div class="empty"><span class="spin"></span></div></td></tr></tbody></table></div>
+  </section>
+  </div>
+  <style>
+.pc-wrap{display:grid;grid-template-columns:240px 1fr;gap:16px;align-items:start}
+.pc-tree{position:sticky;top:12px}
+.tr-it{display:flex;align-items:center;gap:6px;width:100%;padding:7px 9px;border-radius:calc(var(--r)*.45);font-size:13px;text-align:left}
+.tr-it:hover{background:var(--surface-2)}
+.tr-it.on{background:color-mix(in srgb,var(--a1) 16%,transparent);color:var(--text);font-weight:650}
+.tr-it.sub{padding-left:26px;font-size:12.5px}
+.tr-it .n{margin-left:auto;font-size:11px;color:var(--faint)}
+.tr-it .ed{opacity:0;font-size:12px;color:var(--muted);padding:0 4px}
+.tr-it:hover .ed,.tr-it:focus-within .ed{opacity:1}
+.tr-it.off{color:var(--faint)}
+@media (max-width:980px){.pc-wrap{grid-template-columns:1fr}.pc-tree{position:static}}
+</style>
+  <p class="xs faint mt8">卖出后自动按商品绑定的策略生成兑换码发货。代理进货价 = 代理基础价 × 代理等级的批发折扣。</p>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+let LIST = [], CAT = null, STRATS = [], P = '', CATS = [], CSEL = '';
+const yuan = c => (Number(c) < 0 ? '-¥' : '¥') + (Math.abs(Number(c || 0)) / 100).toFixed(2);
+ready(async () => {
+  [CAT, STRATS] = await Promise.all([GET('/api/admin/catalog'), GET('/api/admin/strategies').then(r => r.list)]);
+  segInit($('#prodSeg'), v => { P = v; render(); });
+  $('#add').onclick = () => edit();
+  $('#addCat').onclick = () => editCat();
+  load();
+  GET('/api/admin/shop/settings').then(s => {
+    const off = [!s.shop.enabled && '商城还没有开启', !s.channels.some(c => c.ready) && '还没有可用的支付渠道'].filter(Boolean);
+    if (off.length) $('#warn').innerHTML = `<div class="note warn mb16">⚠ ${off.join('，')}，买家暂时不能下单。<a class="link" href="settings.html?tab=shop">去设置 →</a></div>`;
+  }).catch(() => {});
+});
+async function load() { [LIST, CATS] = await Promise.all([GET('/api/admin/shop/products').then(r => r.list), GET('/api/admin/shop/categories').then(r => r.list)]); tree(); render(); }
+/* ---------- 分类树 ---------- */
+const kids = id => CATS.filter(c => c.parent_id === id);
+const catPath = id => { const c = CATS.find(x => x.id === id); if (!c) return ''; const p = c.parent_id && CATS.find(x => x.id === c.parent_id); return p ? `${p.name} / ${c.name}` : c.name; };
+/** 选中分类 id 及其所有二级分类 */
+const catIds = id => [id, ...kids(id).map(k => k.id)];
+function tree() {
+  const none = LIST.filter(p => !p.category_id).length;
+  const row = (c, sub) => `<button type="button" class="tr-it ${sub ? 'sub' : ''} ${String(c.id) === String(CSEL) ? 'on' : ''} ${c.enabled ? '' : 'off'}" data-c="${c.id}">${c.icon ? esc(c.icon) + ' ' : ''}${esc(c.name)}${c.enabled ? '' : ' <span class="xs">（隐藏）</span>'}<span class="n">${LIST.filter(p => catIds(c.id).includes(p.category_id)).length}</span>${can('admin') ? `<span class="ed" data-ed="${c.id}" title="编辑分类">✎</span>` : ''}</button>`;
+  $('#tree').innerHTML = `<button type="button" class="tr-it ${CSEL === '' ? 'on' : ''}" data-c="">全部商品<span class="n">${LIST.length}</span></button>`
+    + kids(null).map(c => row(c) + kids(c.id).map(k => row(k, true)).join('')).join('')
+    + (none ? `<button type="button" class="tr-it ${CSEL === 'none' ? 'on' : ''}" data-c="none">未分类<span class="n">${none}</span></button>` : '')
+    + (CATS.length ? '' : '<div class="xs faint mt8">还没有分类。建好分类后，商城会按分类展示商品。</div>');
+  $$('#tree [data-c]').forEach(b => b.onclick = e => {
+    const ed = e.target.closest('[data-ed]');
+    if (ed) { e.stopPropagation(); return editCat(CATS.find(c => c.id === +ed.dataset.ed)); }
+    CSEL = b.dataset.c; tree(); render();
+  });
+}
+function editCat(c, parentId) {
+  const tops = kids(null).filter(x => !c || x.id !== c.id);
+  const canBeChild = !c || !kids(c.id).length;
+  const d = dialog({ title: c ? '编辑分类' : '新建分类', size: 'sm',
+    body: `<div class="form">
+      <div class="two"><div class="f"><label for="cn">名称</label><input class="field" id="cn" maxlength="20" value="${esc(c?.name || '')}" placeholder="例如：ChatGPT"></div>
+        <div class="f"><label for="ci">图标 <small>选填，1 个表情</small></label><input class="field" id="ci" maxlength="4" value="${esc(c?.icon || '')}" placeholder="✦"></div></div>
+      <div class="f"><label for="cp">上级分类</label><select class="field" id="cp"><option value="">无（一级分类）</option>${canBeChild ? tops.map(t => `<option value="${t.id}" ${(c?.parent_id ?? parentId) === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('') : ''}</select>${canBeChild ? '' : '<div class="help">它下面有二级分类，只能是一级分类</div>'}</div>
+      <div class="two"><div class="f"><label for="cs">排序 <small>越小越靠前</small></label><input class="field mono" id="cs" inputmode="numeric" value="${c?.sort ?? 0}"></div>
+        <div class="toggle" style="align-self:end"><div>在商城显示</div><button class="sw ${!c || c.enabled ? 'on' : ''}" id="ce"></button></div></div></div>`,
+    actions: [
+      ...(c ? [{ label: '删除', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: `删除分类「${esc(c.name)}」？`, body: '分类里还有商品或二级分类时不能删除。', ok: '删除', danger: true }))) return false; await DEL('/api/admin/shop/categories/' + c.id); if (String(CSEL) === String(c.id)) CSEL = ''; toast('已删除'); load(); } }] : []),
+      ...(c && !c.parent_id ? [{ label: '＋ 二级分类', onClick: () => { setTimeout(() => editCat(null, c.id), 200); } }] : []),
+      { label: '取消' },
+      { label: '保存', kind: 'primary', onClick: async () => {
+        const b = { name: $('#cn', d.el).value, icon: $('#ci', d.el).value, parentId: $('#cp', d.el).value, sort: $('#cs', d.el).value, enabled: $('#ce', d.el).classList.contains('on') };
+        if (c) await PUT('/api/admin/shop/categories/' + c.id, b); else await POST('/api/admin/shop/categories', b);
+        toast('分类已保存'); load();
+      } }] });
+  swInit($('#ce', d.el));
+}
+function render() {
+  const list = LIST.filter(p => (!P || p.product === P) && (CSEL === '' || (CSEL === 'none' ? !p.category_id : catIds(+CSEL).includes(p.category_id))));
+  $('#tbody').innerHTML = list.map(p => {
+    const s = STRATS.find(x => x.id === p.strategy_id), plan = CAT[p.product].find(x => x.key === p.plan);
+    return `<tr class="click" data-id="${p.id}">
+      <td class="t"><div class="row-flex">${PICXS[p.product]}<div><b>${esc(p.title)}</b>${p.badge ? ` <span class="badge acc">${esc(p.badge)}</span>` : ''}<p>${esc(p.subtitle || '')}</p></div></div></td>
+      <td class="xs">${p.category_id ? esc(catPath(p.category_id)) : '<span class="faint">未分类</span>'}</td>
+      <td class="xs">${esc(plan?.label || p.plan)}<div class="faint">${esc(s?.name || '策略已删除')}</div></td>
+      <td class="num"><b>${yuan(p.price)}</b></td><td class="num">${yuan(p.agent_price)}</td>
+      ${(() => { const c = costCny(p); const m = c == null ? null : p.price - c; return `<td class="num muted" title="按卡台售价 × 汇率估算；X / TG 按实际扣款，下单后才知道">${c == null ? '—' : yuan(c)}</td><td class="num ${m == null ? 'faint' : m < 0 ? 'c-bad' : 'c-ok'}" title="零售价 − 成本（不含代理分成）">${m == null ? '—' : (m < 0 ? '亏 ' : '') + yuan(Math.abs(m))}</td>`; })()}
+      <td class="num">${p.stock_limit == null ? '<span class="faint">不限</span>' : `${p.available}<span class="faint"> / ${p.stock_limit}</span>`}${p.reserved ? `<div class="xs faint">待付占用 ${p.reserved}</div>` : ''}</td>
+      <td class="num">${p.sold}</td>
+      <td><button class="sw ${p.enabled ? 'on' : ''}" data-sw="${p.id}" data-role="admin"></button></td>
+      <td class="acts"><button class="iconbtn">›</button></td></tr>`;
+  }).join('') || `<tr><td colspan="11"><div class="empty"><div class="ic">▦</div>这里还没有商品<br><button class="link" onclick="edit()" data-role="admin">新建第一个商品 →</button></div></td></tr>`;
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.closest('[data-sw]')) return; edit(LIST.find(p => p.id === tr.dataset.id)); });
+  $$('[data-sw]').forEach(b => b.onclick = async () => {
+    const p = LIST.find(x => x.id === b.dataset.sw);
+    if (p.enabled && !(await confirmBox({ title: `下架「${esc(p.title)}」？`, body: '下架后买家看不到这个商品；已经下单的订单不受影响，照常发货。', ok: '下架' }))) return;
+    try { await PUT('/api/admin/shop/products/' + p.id, { ...form(p), enabled: !p.enabled }); toast(p.enabled ? '已下架' : '已上架'); load(); } catch (e) { toast(e.message, 'bad'); }
+  });
+  applyRoles();
+}
+/** 卡台成本折合人民币（分）；X / TG 下单时才知道实际扣款，返回 null */
+const costCny = p => { if (p.product !== 'gpt') return null; const c = CAT.gpt.find(x => x.key === p.plan)?.cost; return c == null ? null : Math.round(c * (CAT.fx || 7.2) * 100); };
+const form = p => ({ product: p.product, plan: p.plan, title: p.title, subtitle: p.subtitle, description: p.description, badge: p.badge, price: (p.price / 100).toFixed(2), agentPrice: (p.agent_price / 100).toFixed(2), strategyId: p.strategy_id, stockLimit: p.stock_limit ?? '', maxPerOrder: p.max_per_order, sort: p.sort, enabled: !!p.enabled, categoryId: p.category_id ?? '' });
+
+function edit(p) {
+  const v = p ? form(p) : { product: P || 'gpt', plan: '', title: '', subtitle: '', description: '', badge: '', price: '', agentPrice: '', strategyId: '', stockLimit: '', maxPerOrder: 10, sort: 0, enabled: true, categoryId: CSEL && CSEL !== 'none' ? +CSEL : '' };
+  const d = sheet({
+    title: p ? '编辑商品' : '新建商品', sub: p ? `已售 ${p.sold}` : '买家付款后自动生成兑换码发货',
+    body: `<div class="form">
+      <div class="f"><label>产品</label><div class="seg" id="ep"><button data-v="gpt">ChatGPT</button><button data-v="x">X Premium</button><button data-v="tg">Telegram</button></div></div>
+      <div class="f"><label>套餐</label><select class="field" id="eplan"></select><div class="help" id="costHelp"></div></div>
+      <div class="f"><label>发货策略 <small>生成兑换码时使用</small></label><select class="field" id="estr"></select></div>
+      <div class="f"><label>分类 <small>商城按分类展示</small></label><select class="field" id="ecat"><option value="">未分类</option>${kids(null).map(t => `<option value="${t.id}" ${v.categoryId === t.id ? 'selected' : ''}>${esc(t.name)}</option>${kids(t.id).map(k => `<option value="${k.id}" ${v.categoryId === k.id ? 'selected' : ''}>　└ ${esc(k.name)}</option>`).join('')}`).join('')}</select></div>
+      <div class="f"><label>商品名称 <small>留空用套餐名</small></label><input class="field" id="et" maxlength="60" value="${esc(v.title)}"></div>
+      <div class="two"><div class="f"><label>副标题</label><input class="field" id="es" maxlength="80" value="${esc(v.subtitle)}" placeholder="例如：官方直充 · 自动关闭续费"></div>
+        <div class="f"><label>角标 <small>选填</small></label><input class="field" id="eb" maxlength="12" value="${esc(v.badge)}" placeholder="热销 / 推荐"></div></div>
+      <div class="two"><div class="f"><label>零售价（元）</label><input class="field mono" id="epr" inputmode="decimal" value="${esc(v.price)}"></div>
+        <div class="f"><label>代理基础价（元） <small>≤ 零售价</small></label><input class="field mono" id="eap" inputmode="decimal" value="${esc(v.agentPrice)}"></div></div>
+      <div class="help" id="margin"></div>
+      <div class="two"><div class="f"><label>库存上限 <small>留空不限</small></label><input class="field mono" id="esl" inputmode="numeric" value="${esc(v.stockLimit)}"></div>
+        <div class="f"><label>每单最多</label><input class="field mono" id="emx" inputmode="numeric" value="${esc(v.maxPerOrder)}"></div></div>
+      <div class="f"><label>商品说明 <small>显示在购买弹窗里</small></label><textarea class="field" id="ed" maxlength="2000" style="font-family:var(--sans);min-height:70px">${esc(v.description)}</textarea></div>
+      <div class="two"><div class="f"><label>排序 <small>越小越靠前</small></label><input class="field mono" id="eso" inputmode="numeric" value="${esc(v.sort)}"></div>
+        <div class="toggle" style="align-self:end"><div>上架</div><button class="sw ${v.enabled ? 'on' : ''}" id="een"></button></div></div>
+    </div>`,
+    actions: !can('admin') ? [{ label: '关闭', kind: 'ghost' }] : [
+      ...(p ? [{ label: '删除', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: '删除这个商品？', body: '已经有订单的商品不能删除，可以下架。', ok: '删除', danger: true }))) return false; await DEL('/api/admin/shop/products/' + p.id); toast('已删除'); load(); } }] : []),
+      { label: '取消' },
+      { label: '保存', kind: 'primary', onClick: async () => {
+        const body = { product: v.product, plan: $('#eplan', d.el).value, strategyId: $('#estr', d.el).value, categoryId: $('#ecat', d.el).value, title: $('#et', d.el).value, subtitle: $('#es', d.el).value, badge: $('#eb', d.el).value,
+          price: $('#epr', d.el).value, agentPrice: $('#eap', d.el).value || $('#epr', d.el).value, stockLimit: $('#esl', d.el).value, maxPerOrder: $('#emx', d.el).value, description: $('#ed', d.el).value, sort: $('#eso', d.el).value, enabled: $('#een', d.el).classList.contains('on') };
+        if (p) await PUT('/api/admin/shop/products/' + p.id, body); else await POST('/api/admin/shop/products', body);
+        toast('已保存'); load();
+      } },
+    ],
+  });
+  swInit($('#een', d.el));
+  const fill = () => {
+    $('#eplan', d.el).innerHTML = CAT[v.product].map(x => `<option value="${x.key}" ${x.key === v.plan ? 'selected' : ''}>${esc(x.label)}${x.enabled === false ? '（卡台未开放）' : ''}</option>`).join('');
+    const ss = STRATS.filter(s => s.prod.includes(v.product));
+    $('#estr', d.el).innerHTML = ss.map(s => `<option value="${s.id}" ${s.id === v.strategyId || (!v.strategyId && s.isDefault) ? 'selected' : ''}>${esc(s.name)} · ${s.mode === 'own' ? '自有码' : '托管码'}</option>`).join('') || '<option value="">没有适用的策略</option>';
+    Dropdown.scan(d.el); hint();
+  };
+  const hint = () => {
+    const plan = CAT[v.product].find(x => x.key === $('#eplan', d.el).value);
+    const fx = CAT.fx || 7.2, cost = v.product === 'gpt' && plan?.cost != null ? plan.cost * fx : null;
+    $('#costHelp', d.el).textContent = v.product === 'gpt' ? (plan?.cost != null ? `卡台售价 $${plan.cost.toFixed(2)} ≈ ¥${cost.toFixed(2)}（汇率 ${fx}），库存 ${plan.stock ?? '—'}` : '卡台暂未报价') : `成本按兑换时实际扣款计算，服务费 $${plan?.serviceFee ?? '—'}`;
+    const pr = Number($('#epr', d.el).value), ap = Number($('#eap', d.el).value || pr);
+    const warn = cost != null && pr > 0 && (pr < cost || ap < cost);
+    $('#margin', d.el).innerHTML = pr > 0 ? `${cost != null ? `每单毛利 <b class="${pr - cost < 0 ? 'c-bad' : 'c-ok'}">${(pr - cost).toFixed(2)}</b> 元 · ` : ''}代理每单最多赚 <b>${(pr - ap).toFixed(2)}</b> 元${warn ? '<div class="note bad mt8">⚠ 价格低于卡台成本，每卖一单都会亏钱</div>' : ''}` : '';
+  };
+  segSet($('#ep', d.el), v.product);
+  segInit($('#ep', d.el), x => { v.product = x; v.plan = ''; v.strategyId = ''; fill(); });
+  $('#eplan', d.el).onchange = hint; $('#epr', d.el).oninput = hint; $('#eap', d.el).oninput = hint;
+  fill();
+  lockForm(d);
+}
+</script>
+</body></html>

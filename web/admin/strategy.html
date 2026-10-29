@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>兑换策略 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+.slist .it{display:block;padding:12px 14px;border-radius:calc(var(--r)*.6);border:1px solid var(--border);margin-bottom:8px;cursor:pointer;background:var(--inset);transition:.15s}
+.slist .it:hover{border-color:color-mix(in srgb,var(--a1) 50%,var(--border))}
+.slist .it.on{border-color:var(--a1);background:color-mix(in srgb,var(--a1) 12%,transparent)}
+.slist .it .between b{font-size:13.5px}
+.grp{border-top:1px solid var(--border);padding:16px 0}
+.grp:first-of-type{border-top:0;padding-top:4px}
+.grp>h4{font-size:14px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.grp>h4 small{font-weight:400;color:var(--faint);font-size:12px;margin-left:auto}
+.rule{display:grid;grid-template-columns:1fr 200px;gap:14px;align-items:center;padding:9px 0}
+.rule .t b{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.rule .t p{font-size:11.5px;color:var(--faint);margin-top:2px}
+.rule .ctl{display:flex;justify-content:flex-end}
+.rule .ctl .inputgrp{width:100%}
+.rule .ctl .inputgrp input{text-align:right}
+.mx td,.mx th{font-size:12.5px}
+.mx td:first-child{font-weight:600}
+.sim .row-ok{color:var(--ok)}.sim .row-bad{color:var(--bad)}.sim .row-warn{color:var(--warn)}
+.arch{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.arch>div{padding:14px;border-radius:calc(var(--r)*.6);background:var(--inset);border:1px solid var(--border)}
+.arch b{display:block;margin-bottom:6px}
+.flow{font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.9}
+.flow i{font-style:normal;color:var(--a2)}
+</style></head>
+<body data-page="strategy">
+<div id="page" data-title="兑换策略 <small>控制谁能兑、怎么兑、失败了怎么办</small>" data-crumb="CDK">
+
+  <!-- 覆盖说明 -->
+  <section class="card glass mb16">
+    <div class="between"><h3 style="margin:0">能覆盖卡台的兑换策略吗？</h3><button class="btn sm" id="toggleMx">展开对照表 ▾</button></div>
+    <p class="sm muted mt8" style="line-height:1.8">
+      <b style="color:var(--text)">大部分可以。</b>做法是用户<b>不直接</b>去卡台兑换，而是先经过我们的兑换页和后端；后端检查完规则，再替用户去调卡台的接口。
+      每条规则都标了在哪一层执行：
+      ${LAYER_OWN} 我们自己的后端执行，随时可改；
+      ${LAYER_GEN} 生成兑换码时写进卡台，这批码之后就不能再改；
+      ${LAYER_PLAT} 卡台强制执行，我们改不了，只能在它之上再加严。
+    </p>
+    <div id="mx" class="hidden mt12">
+      <div class="arch mb16">
+        <div><b>托管码 <span class="badge idle">简单</span></b>
+          <div class="flow">给用户的是卡台原始码 <i>GPTD-XXXX…</i><br>用户 → <i>我们的兑换页</i> → 后端检查规则 → 卡台公开兑换接口</div>
+          <div class="note warn mt8">⚠ 卡台码本身就能兑换。用户如果直接去卡台官方兑换页兑，就<b>绕过了</b>我们的规则，所以只算「软控制」。</div></div>
+        <div><b>自有码 <span class="badge ok">推荐</span></b>
+          <div class="flow">给用户的是我们自己生成的码 <i>TB-XXXX…</i><br>用户 → 我们的兑换页 → 后端检查规则 → <i>当场</i>向卡台生成 1 张码 → 后端替用户兑换</div>
+          <div class="note ok mt8">✓ 卡台码从来不会给到用户，规则<b>不能绕过</b>；还能做「失败自动重试」「人工审核后再兑」这类卡台没有的功能。</div></div>
+      </div>
+      <table class="tbl mx"><thead><tr><th>能力</th><th>卡台自带</th><th>我们能做到</th><th>执行层</th></tr></thead><tbody>
+        <tr><td>IP / 设备频率限制</td><td>只有按 IP 的全局限流</td><td>每个策略单独设置次数、时间窗、人机验证</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>有效期 / 兑换时段 / 地区</td><td>无</td><td>码的有效期、每天可兑时段、按国家拦截</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>同一账号兑换次数</td><td>无</td><td>预检会返回账号邮箱 / 用户名，按账号计数</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>只允许 Free 账号 / 邮箱域名黑白名单</td><td>无</td><td>根据预检结果判断</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>价格保护</td><td>报价超过上限时直接失败</td><td>实时报价比售价高多少就拦截 / 转人工 / 放行</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>失败后自动重试</td><td>失败后码被释放，要用户自己再兑</td><td>自有码模式下由后端自动重试 N 次</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>人工审核</td><td>无</td><td>命中规则先挂起，管理员通过后再提交卡台</td><td>${LAYER_OWN}</td></tr>
+        <tr><td>每码独立支付 / 资金上限</td><td>有</td><td>生成时选择，写进这批码</td><td>${LAYER_GEN}</td></tr>
+        <tr><td>报价有效期（GPT 24h、X/TG 30 分钟）</td><td>有</td><td>只能更严，不能延长</td><td>${LAYER_PLAT}</td></tr>
+        <tr><td>每分钟最多 5 个新报价、一次性令牌、设备绑定</td><td>有</td><td>无法改变</td><td>${LAYER_PLAT}</td></tr>
+        <tr><td>卡台风控、账号资格判定（如已是会员）</td><td>有</td><td>无法放行卡台拒绝的请求</td><td>${LAYER_PLAT}</td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <div class="grid">
+    <!-- 策略列表 -->
+    <aside class="s3" style="align-self:start">
+      <div class="card glass">
+        <h3>策略 <button class="btn sm primary" id="add" data-role="admin">＋ 新建</button></h3>
+        <div class="slist" id="slist"></div>
+        <div class="xs faint mt8">兑换码按「码前缀 → 批次 → 默认」匹配策略；同时命中多个时，优先级数字小的生效。</div>
+      </div>
+      <div class="card glass mt16 sim">
+        <h3>规则测试</h3>
+        <div class="form">
+          <div class="f"><label>兑换码</label><input class="field mono" id="tCode" placeholder="完整兑换码或前缀，如 TB-XXXX"></div>
+          <div class="f"><label>账号 <small>邮箱或 @用户名</small></label><input class="field" id="tAcc" placeholder="user@gmail.com"></div>
+          <div class="form"><div class="f"><label>账号当前套餐</label><select class="field" id="tPlan"><option value="free">Free</option><option value="plus">Plus</option><option value="pro">Pro</option></select></div>
+            <div class="f"><label>当前成本 <small>留空=生成时成本</small></label><div class="inputgrp"><span>$</span><input id="tQuote" placeholder="例如 21.00"></div></div></div>
+          <button class="btn primary" id="runTest">运行测试</button>
+        </div>
+        <div id="tRes" class="mt12"></div>
+      </div>
+    </aside>
+
+    <!-- 编辑器 -->
+    <section class="card glass s9" id="editor"></section>
+  </div>
+</div>
+
+<script src="/assets/app.js"></script>
+<script src="strategy.js"></script>
+</body></html>

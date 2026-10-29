@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>代理中心</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top" id="shopTop" data-on="agent"></header>
+<div class="shop"><div class="acct" id="view" style="max-width:1100px"><div class="empty"><span class="spin"></span></div></div></div>
+<script src="/assets/app.js"></script>
+<script src="/assets/shop.js"></script>
+<script>
+let D = null;
+const LT = { profit: '分站利润', commission: '推广佣金', reverse: '退款冲回', withdraw: '提现', withdraw_reject: '提现退回', to_balance: '转入余额' };
+const WM = { alipay: '支付宝', wechat: '微信', usdt: 'USDT', bank: '银行卡' };
+const WS = { pending: ['warn', '审核中'], paid: ['ok', '✓ 已打款'], rejected: ['bad', '已拒绝'] };
+const SRC = { store: '分站', ref: '推广', wholesale: '批发' };
+
+(async () => {
+  await cfgReady.catch(() => {});
+  if (!MEC) { location.href = '/account/?next=/agent/'; return; }
+  try { D = await GET('/api/shop/agent/dashboard'); } catch (e) { return loadFail($('#view'), e, () => location.reload()); }
+  if (!D.agent || D.agent.status !== 'active') { location.href = '/account/'; return; }
+  render();
+})();
+
+function render() {
+  const a = D.agent, base = location.origin;
+  $('#view').innerHTML = `
+    <div class="shop-hero" style="margin-bottom:16px"><div><h1 style="font-size:30px">${esc(a.shopName)}</h1><p>代理等级 <span class="badge acc">${esc(D.level.name)}</span> 进货 ${D.level.wholesalePct}% · 推广佣金 ${D.level.commissionPct}%</p></div>
+      <a class="btn" href="/s/${esc(a.slug)}" target="_blank">打开我的分站 ↗</a></div>
+    <div class="grid mb16">
+      <section class="card glass balance s4"><div class="lbl">可提现</div><div class="v">${yuan(a.earnings)}</div>${a.earnings < 0 ? '<div class="xs" style="margin:-8px 0 12px;opacity:.9">有订单退款冲回了收益，之后的收益会先抵扣</div>' : ''}<div class="row-flex"><button class="btn" id="wd">提现</button><button class="btn" id="tb">转入余额</button></div></section>
+      <section class="card glass s2 stat"><div class="lbl">冻结中</div><div class="v">${yuan(a.frozen)}</div><span class="lbl">${D.settings.freezeDays ? `发货 ${D.settings.freezeDays} 天后转为可提现` : '发货后立即可提现'}</span></section>
+      <section class="card glass s2 stat"><div class="lbl">累计收益</div><div class="v">${yuan(a.totalEarned)}</div></section>
+      <section class="card glass s2 stat"><div class="lbl">今日</div><div class="v">${D.today.n} 单</div><span class="lbl">收益 ${yuan(D.today.earn)}</span></section>
+      <section class="card glass s2 stat"><div class="lbl">近 30 天</div><div class="v">${D.month.n} 单</div><span class="lbl">销售 ${yuan(D.month.sales)}</span></section>
+    </div>
+    <section class="card glass mb16"><div class="grid" style="gap:14px">
+      <div class="s6"><div class="flabel">分站链接 <small>按你设置的售价卖，赚差价</small></div><div class="copyline">${esc(base)}/s/${esc(a.slug)}<button data-copy="${esc(base)}/s/${esc(a.slug)}" data-msg="分站链接已复制">复制</button></div></div>
+      <div class="s6"><div class="flabel">推广链接 <small>按主站价成交，你拿 ${D.level.commissionPct}% 佣金</small></div><div class="copyline">${esc(base)}/shop/?ref=${esc(a.slug)}<button data-copy="${esc(base)}/shop/?ref=${esc(a.slug)}" data-msg="推广链接已复制">复制</button></div></div>
+    </div>${D.withdrawPending ? `<div class="note warn mt12">有一笔 ${yuan(D.withdrawPending.amount)} 的提现正在审核</div>` : ''}</section>
+    <div class="seg mb12" id="tab"><button class="on" data-v="prices">商品与定价</button><button data-v="orders">订单</button><button data-v="wholesale">批发进货</button><button data-v="stock">我的库存</button><button data-v="ledger">收益明细</button><button data-v="store">店铺设置</button></div>
+    <div id="pane"></div>`;
+  $('#wd').onclick = withdraw; $('#tb').onclick = toBalance;
+  const tabs = { prices, orders, wholesale, stock, ledger, store };
+  segInit($('#tab'), v => safe(tabs[v])());
+  safe(prices)();
+}
+const pane = html => { $('#pane').innerHTML = html; };
+/** 标签页加载失败时显示可重试的错误 */
+const safe = fn => async () => { try { await fn(); } catch (e) { loadFail($('#pane'), e, safe(fn)); } };
+
+async function prices() {
+  const r = await GET('/api/shop/agent/products');
+  pane(`<section class="card glass p0"><div class="tblwrap"><table class="tbl stack"><thead><tr><th>商品</th><th class="num">主站零售价</th><th class="num">我的进货价</th><th>分站售价</th><th class="num">每单利润</th><th></th></tr></thead><tbody>${r.list.map(p => `
+    <tr data-id="${p.id}"><td><div class="row-flex">${PICXS[p.product]}<b>${esc(p.title)}</b></div></td><td class="num">${yuan(p.sitePrice)}</td><td class="num">${yuan(p.cost)}</td>
+      <td><div class="inputgrp" style="width:130px"><span>¥</span><input data-price value="${yuanN(p.myPrice)}" inputmode="decimal" aria-label="${esc(p.title)} 分站售价"></div></td>
+      <td class="num c-ok" data-profit>${yuan(p.myPrice - p.cost)}</td>
+      <td class="acts nowrap"><button class="btn sm primary" data-save>保存</button>${p.custom ? '<button class="btn sm ghost" data-reset title="恢复为主站价">恢复</button>' : ''}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">暂无商品</div></td></tr>'}</tbody></table></div></section>
+    <p class="xs faint mt8">售价不能低于进货价，也不能超过主站零售价的 3 倍。推广链接的订单按主站价成交，不受这里的售价影响。</p>`);
+  $$('#pane tr[data-id]').forEach(tr => {
+    const p = r.list.find(x => x.id === tr.dataset.id), inp = $('[data-price]', tr);
+    inp.oninput = () => { $('[data-profit]', tr).textContent = yuan(Math.round(Number(inp.value) * 100) - p.cost); };
+    $('[data-save]', tr).onclick = e => run(e.currentTarget, '保存中', () => PUT('/api/shop/agent/prices/' + p.id, { price: inp.value })).then(() => { toast('售价已保存'); prices(); });
+    $('[data-reset]', tr) && ($('[data-reset]', tr).onclick = () => PUT('/api/shop/agent/prices/' + p.id, { price: null }).then(() => { toast('已恢复为主站价'); prices(); }));
+  });
+}
+async function orders() {
+  const r = await GET('/api/shop/agent/orders');
+  pane(`<section class="card glass p0"><div class="tblwrap"><table class="tbl stack"><thead><tr><th>订单</th><th>来源</th><th>商品</th><th>买家</th><th class="num">金额</th><th class="num">我的收益</th><th>状态</th><th>时间</th></tr></thead><tbody>${r.list.map(o => `
+    <tr><td class="mono xs">${esc(o.no)}</td><td><span class="badge ${o.source === 'wholesale' ? 'acc' : 'idle'}">${SRC[o.source] || o.source}</span></td><td>${esc(o.title)} × ${o.quantity}</td><td class="muted xs">${esc(o.email)}</td>
+    <td class="num">${yuan(o.total)}</td><td class="num c-ok">${o.source === 'wholesale' ? '—' : yuan(o.agent_profit + o.commission)}</td><td>${oBadge(o.status)}</td><td class="xs faint nowrap">${fmtTime(o.created_at)}</td></tr>`).join('') || '<tr><td colspan="8"><div class="empty"><div class="ic">✦</div>还没有订单，把分站或推广链接发出去吧</div></td></tr>'}</tbody></table></div></section>`);
+}
+async function wholesale() {
+  const r = await GET('/api/shop/agent/products');
+  pane(`<section class="card glass" style="max-width:560px"><h3>批发进货</h3><p class="sm muted mb12">按进货价一次买一批兑换码，自己卖。买到的码在「我的库存」里。</p>
+    <div class="form"><div class="f"><label>商品</label><select class="field" id="wp">${r.list.filter(p => !p.soldOut).map(p => `<option value="${p.id}">${esc(p.title)} · 进货价 ${yuan(p.cost)}</option>`).join('')}</select></div>
+      <div class="f"><label>数量 <small>每次最多 50</small></label><div class="stepper"><button type="button" id="dec">−</button><input id="wq" value="10" inputmode="numeric"><button type="button" id="inc">＋</button></div></div>
+      <div class="f"><label>支付方式</label><div id="pm"></div></div>
+      <div class="sum" id="wsum"></div>
+      <button class="btn primary block" id="wbuy">确认进货</button></div></section>`);
+  Dropdown.scan();
+  const pick = payPicker($('#pm'), { balance: MEC.balance, total: 0 });
+  const cur = () => r.list.find(p => p.id === $('#wp').value);
+  const q = () => Math.max(1, Math.min(50, Math.floor(Number($('#wq').value)) || 1));
+  const upd = () => { const p = cur(); if (!p) return; $('#wq').value = q(); pick.setTotal(p.cost * q()); $('#wsum').innerHTML = `<div><span>进货价</span><b>${yuan(p.cost)} × ${q()}</b></div><div><span>按主站价可卖</span><b>${yuan(p.sitePrice * q())}</b></div><div class="total"><span>应付</span><b>${yuan(p.cost * q())}</b></div>`; };
+  $('#dec').onclick = () => { $('#wq').value = q() - 1; upd(); }; $('#inc').onclick = () => { $('#wq').value = q() + 1; upd(); };
+  $('#wq').onchange = upd; $('#wp').onchange = upd; upd();
+  $('#wbuy').onclick = async e => {
+    const pm = pick(); if (!pm || !cur()) return;
+    const o = await run(e.currentTarget, '创建订单…', () => POST('/api/shop/agent/wholesale', { productId: cur().id, quantity: q(), payMethod: pm.method, paySub: pm.sub, device: DEVICE }));
+    if (o.pay.type === 'done') { toast('进货成功，正在发货'); MEC = (await GET('/api/shop/account/me')).me; setTimeout(() => { segSet($('#tab'), 'stock'); safe(stock)(); }, 1200); return; }
+    afterPay(o.no, o.token, o.pay);
+  };
+}
+async function stock() {
+  const r = await GET('/api/shop/agent/stock');
+  const unused = r.list.filter(c => c.status === 'unused');
+  pane(`<section class="card glass p0"><div class="head"><h3>我的库存 <small class="muted">未使用 ${unused.length} / 共 ${r.list.length}</small></h3>
+    <div class="row-flex"><button class="btn sm" id="cpU" ${unused.length ? '' : 'disabled'}>复制未使用</button><button class="btn sm" id="dlU" ${unused.length ? '' : 'disabled'}>下载 TXT</button></div></div>
+    <div class="tblwrap"><table class="tbl stack"><thead><tr><th>兑换码</th><th>套餐</th><th>状态</th><th>进货订单</th><th>时间</th><th></th></tr></thead><tbody>${r.list.map(c => `
+    <tr><td class="mono">${esc(c.code)}</td><td>${PICXS[c.product]} ${esc(c.planLabel || c.plan)}</td><td>${badge(c.status)}</td><td class="mono xs muted">${esc(c.orderNo)}</td><td class="xs faint">${fmtTime(c.at)}</td><td class="acts">${c.status === 'unused' ? `<button class="btn sm ghost" data-c="${esc(c.code)}">复制</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">还没有批发过</div></td></tr>'}</tbody></table></div></section>`);
+  $$('[data-c]').forEach(b => b.onclick = () => { copy(b.dataset.c); b.textContent = '已复制'; });
+  const txt = unused.map(c => c.code).join('\n');
+  $('#cpU').onclick = () => copy(txt, `已复制 ${unused.length} 个兑换码`);
+  $('#dlU').onclick = () => download('库存兑换码.txt', txt);
+}
+async function ledger() {
+  const [l, w] = await Promise.all([GET('/api/shop/agent/ledger'), GET('/api/shop/agent/withdrawals')]);
+  pane(`<div class="grid"><section class="card glass p0 s7"><div class="head"><h3>收益明细</h3></div><div class="tblwrap"><table class="tbl stack"><thead><tr><th>类型</th><th class="num">金额</th><th>说明</th><th>时间</th></tr></thead><tbody>${l.list.map(x => `
+      <tr><td>${LT[x.type] || esc(x.type)}${x.settled === 0 ? ` <span class="badge warn" title="${fmtTime(x.unfreeze_at)} 解冻">冻结中</span>` : x.settled === 2 ? ' <span class="badge idle">已冲回</span>' : ''}</td><td class="num ${x.amount > 0 ? 'c-ok' : ''}">${x.amount > 0 ? '+' : ''}${yuanN(x.amount)}</td><td class="muted xs">${esc(x.note || '')}</td><td class="xs faint nowrap">${fmtTime(x.created_at)}</td></tr>`).join('') || '<tr><td colspan="4"><div class="empty">暂无记录</div></td></tr>'}</tbody></table></div></section>
+    <section class="card glass p0 s5"><div class="head"><h3>提现记录</h3></div><div class="tblwrap"><table class="tbl stack"><thead><tr><th class="num">金额</th><th>收款</th><th>状态</th><th>时间</th></tr></thead><tbody>${w.list.map(x => `
+      <tr><td class="num">${yuan(x.amount)}</td><td class="xs">${WM[x.method] || x.method}<div class="faint mono">${esc(x.account)}</div></td><td>${(([k, t]) => `<span class="badge ${k}">${t}</span>`)(WS[x.status] || ['idle', x.status])}${x.note ? `<div class="xs faint">${esc(x.note)}</div>` : ''}</td><td class="xs faint nowrap">${fmtTime(x.created_at)}</td></tr>`).join('') || '<tr><td colspan="4"><div class="empty">暂无提现</div></td></tr>'}</tbody></table></div></section></div>`);
+}
+function store() {
+  const a = D.agent;
+  pane(`<section class="card glass" style="max-width:560px"><h3>店铺设置</h3><div class="form">
+    <div class="f"><label>店铺名称</label><input class="field" id="sn" maxlength="30" value="${esc(a.shopName)}"></div>
+    <div class="f"><label>店铺公告 <small>显示在分站顶部</small></label><textarea class="field" id="sno" maxlength="300" style="font-family:var(--sans);min-height:80px">${esc(a.notice || '')}</textarea></div>
+    <div class="f"><label>客服联系方式 <small>显示在分站底部</small></label><input class="field" id="sc" maxlength="60" value="${esc(a.contact || '')}"></div>
+    <div class="f"><label>店铺地址</label><div class="copyline">${esc(location.origin)}/s/${esc(a.slug)}</div><div class="help">地址不能修改，如需更换请联系管理员</div></div>
+    <button class="btn primary" id="save">保存</button></div></section>`);
+  $('#save').onclick = e => run(e.currentTarget, '保存中', () => PUT('/api/shop/agent/store', { shopName: $('#sn').value, notice: $('#sno').value, contact: $('#sc').value })).then(async () => { toast('已保存'); D = await GET('/api/shop/agent/dashboard'); render(); segSet($('#tab'), 'store'); store(); });
+}
+function withdraw() {
+  const a = D.agent, min = D.settings.minWithdraw;
+  const d = dialog({ title: '申请提现', sub: `可提现 ${yuan(a.earnings)}，最低 ${yuan(min)}，管理员审核后人工打款`, size: 'md',
+    body: `<div class="form"><div class="f"><label>提现金额</label><div class="inputgrp"><span>¥</span><input id="wa" inputmode="decimal" value="${a.earnings > 0 ? yuanN(a.earnings) : ''}"></div></div>
+      <div class="f"><label>收款方式</label><select class="field" id="wm">${Object.entries(WM).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="two"><div class="f"><label>收款账号 <small>USDT 填 TRC20 地址</small></label><input class="field mono" id="wac" maxlength="120"></div><div class="f"><label>收款人姓名 <small>选填</small></label><input class="field" id="wn" maxlength="30"></div></div></div>`,
+    actions: [{ label: '取消' }, { label: '提交申请', kind: 'primary', onClick: async () => {
+      await POST('/api/shop/agent/withdrawals', { amount: $('#wa', d.el).value, method: $('#wm', d.el).value, account: $('#wac', d.el).value, name: $('#wn', d.el).value });
+      toast('已提交，等待审核'); D = await GET('/api/shop/agent/dashboard'); render();
+    } }] });
+  Dropdown.scan();
+}
+function toBalance() {
+  const d = dialog({ title: '收益转入余额', sub: '转入后可以用余额批发进货或购买，不能再转回', size: 'sm',
+    body: `<div class="f"><div class="flabel">金额 <small>可转 ${yuan(D.agent.earnings)}</small></div><div class="inputgrp"><span>¥</span><input id="ta" inputmode="decimal"></div></div>`,
+    actions: [{ label: '取消' }, { label: '转入', kind: 'primary', onClick: async () => {
+      await POST('/api/shop/agent/to-balance', { amount: $('#ta', d.el).value });
+      toast('已转入余额'); D = await GET('/api/shop/agent/dashboard'); const m = await GET('/api/shop/account/me'); MEC = m.me; render();
+    } }] });
+}
+</script>
+</body></html>

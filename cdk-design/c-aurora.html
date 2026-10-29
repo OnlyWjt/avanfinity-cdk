@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 C · Aurora Glass</title>
+<style>
+  :root{
+    --t:#eef0ff; --m:#9aa0c3; --glass:rgba(255,255,255,.06); --gl:rgba(255,255,255,.12);
+    --vio:#8b7cff; --cy:#4fd8ff; --pink:#ff7ac6; --grn:#4ef0a6; --red:#ff6b7f; --amb:#ffc56b;
+    --sans:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--t);font-size:13px;padding:32px;display:flex;gap:30px;align-items:flex-start;min-width:1580px;
+    background:#0a0b1a;
+    background-image:radial-gradient(800px 500px at 15% 10%,rgba(139,124,255,.35),transparent 60%),
+      radial-gradient(700px 500px at 85% 30%,rgba(79,216,255,.22),transparent 60%),
+      radial-gradient(600px 400px at 50% 100%,rgba(255,122,198,.18),transparent 60%);}
+  .tag{font-size:11px;color:var(--m);letter-spacing:.08em;margin-bottom:10px}
+  .g{background:var(--glass);border:1px solid var(--gl);border-radius:18px;backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+  .admin{width:1130px;padding:14px;display:grid;grid-template-columns:72px 1fr;gap:14px;border-radius:26px}
+  .rail{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0}
+  .rail .lg{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--vio),var(--cy));display:grid;place-items:center;font-weight:800;margin-bottom:12px}
+  .rail i{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-style:normal;color:var(--m);font-size:16px}
+  .rail i.on{background:rgba(139,124,255,.22);color:#fff;box-shadow:inset 0 0 0 1px rgba(139,124,255,.5)}
+  .main{padding:8px 8px 8px 0}
+  .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .hd h1{font-size:22px;font-weight:700}
+  .hd h1 span{color:var(--m);font-weight:400;font-size:14px;margin-left:8px}
+  .usr{display:flex;align-items:center;gap:10px;color:var(--m)}
+  .usr b{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--vio))}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .hero{grid-column:span 2;padding:20px;position:relative;overflow:hidden}
+  .hero:after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(139,124,255,.6),transparent 70%)}
+  .hero small,.st small{color:var(--m)}
+  .hero .v{font-size:40px;font-weight:700;margin:6px 0 2px;letter-spacing:-.02em}
+  .hero .v span{font-size:18px;color:var(--m)}
+  .hero .acts{display:flex;gap:8px;margin-top:14px}
+  .pill{padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--gl);font-size:12px}
+  .pill.p{background:linear-gradient(135deg,var(--vio),#6a5cff);border:0;font-weight:600}
+  .st{padding:18px}
+  .st .v{font-size:28px;font-weight:700;margin-top:6px}
+  .st .chip{display:inline-block;margin-top:8px;padding:3px 8px;border-radius:999px;font-size:11px;background:rgba(78,240,166,.15);color:var(--grn)}
+  .ring{width:64px;height:64px;border-radius:50%;background:conic-gradient(var(--cy) 0 82%,rgba(255,255,255,.08) 82% 100%);display:grid;place-items:center;float:right;margin-top:-4px}
+  .ring:before{content:"82%";width:50px;height:50px;border-radius:50%;background:#14162b;display:grid;place-items:center;font-weight:700;font-size:13px}
+  .prods{grid-column:span 4;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .pc{padding:16px 18px;border-radius:18px;position:relative;overflow:hidden}
+  .pc .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-weight:800;margin-bottom:10px}
+  .pc.gpt .ic{background:rgba(78,240,166,.18);color:var(--grn)}
+  .pc.x .ic{background:rgba(255,255,255,.12)}
+  .pc.tg .ic{background:rgba(79,216,255,.18);color:var(--cy)}
+  .pc b{font-size:15px}
+  .pc p{color:var(--m);font-size:12px;margin-top:2px}
+  .pc .nums{display:flex;justify-content:space-between;margin-top:14px;font-size:12px;color:var(--m)}
+  .pc .nums strong{display:block;color:var(--t);font-size:18px}
+  .lower{grid-column:span 4;display:grid;grid-template-columns:1fr 320px;gap:14px}
+  .list{padding:16px 18px}
+  .list h3,.gen h3{font-size:15px;margin-bottom:10px;display:flex;justify-content:space-between}
+  .list h3 span{color:var(--m);font-weight:400;font-size:12px}
+  .it{display:grid;grid-template-columns:34px 1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)}
+  .it .a{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:12px}
+  .it .t b{font-weight:600;font-size:13px}.it .t p{color:var(--m);font-size:11.5px;font-family:var(--mono)}
+  .it .amt{font-family:var(--mono);font-size:13px}
+  .badge{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600}
+  .ok{background:rgba(78,240,166,.15);color:var(--grn)} .run{background:rgba(79,216,255,.15);color:var(--cy)}
+  .bad{background:rgba(255,107,127,.15);color:var(--red)} .idle{background:rgba(255,255,255,.08);color:var(--m)}
+  .gen{padding:18px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);background:rgba(0,0,0,.25);border-radius:12px;padding:4px;margin-bottom:12px}
+  .seg span{text-align:center;padding:8px 0;border-radius:9px;color:var(--m);font-size:12px}
+  .seg span.on{background:rgba(255,255,255,.12);color:#fff;font-weight:600}
+  .plans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .plans div{padding:10px;border-radius:12px;border:1px solid var(--gl);font-size:12px}
+  .plans div small{display:block;color:var(--m);font-family:var(--mono)}
+  .plans div.on{border-color:var(--vio);background:rgba(139,124,255,.15)}
+  .slider{margin:6px 0 14px}
+  .slider .tr{height:6px;border-radius:6px;background:rgba(255,255,255,.1);position:relative;margin-top:8px}
+  .slider .tr u{position:absolute;left:0;top:0;bottom:0;width:40%;border-radius:6px;background:linear-gradient(90deg,var(--vio),var(--cy))}
+  .slider .tr i{position:absolute;left:40%;top:50%;width:16px;height:16px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 0 4px rgba(139,124,255,.35)}
+  .slider .lb{display:flex;justify-content:space-between;color:var(--m);font-size:12px}
+  .slider .lb b{color:#fff}
+  .cta{width:100%;padding:13px;border:0;border-radius:14px;color:#fff;font-weight:700;font-size:14px;background:linear-gradient(135deg,var(--vio),var(--cy));box-shadow:0 10px 30px -10px rgba(139,124,255,.8)}
+  .tot{display:flex;justify-content:space-between;margin-bottom:12px;color:var(--m)}
+  .tot b{color:#fff;font-size:18px}
+  /* redeem */
+  .phone{width:390px;padding:26px 22px;border-radius:34px}
+  .phone .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;font-weight:700}
+  .phone .brand i{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--vio),var(--cy))}
+  .phone h1{font-size:26px;line-height:1.25;font-weight:800}
+  .phone h1 em{font-style:normal;background:linear-gradient(90deg,var(--vio),var(--cy),var(--pink));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .phone .sub{color:var(--m);margin:8px 0 20px}
+  .cin{padding:16px;border-radius:16px;background:rgba(0,0,0,.3);border:1px solid rgba(139,124,255,.5);font-family:var(--mono);font-size:17px;letter-spacing:.1em;box-shadow:0 0 0 4px rgba(139,124,255,.12)}
+  .card{margin-top:16px;border-radius:20px;padding:18px;position:relative;overflow:hidden;background:linear-gradient(135deg,rgba(78,240,166,.25),rgba(79,216,255,.15));border:1px solid rgba(78,240,166,.35)}
+  .card small{color:rgba(255,255,255,.7)}
+  .card b{display:block;font-size:20px;margin:2px 0 12px}
+  .card .row{display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.8)}
+  .tl{margin:20px 0}
+  .tl div{display:flex;gap:12px;align-items:center;padding:8px 0}
+  .tl i{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;flex:none}
+  .tl .d i{background:var(--grn);color:#0a0b1a}
+  .tl .n i{background:transparent;border:2px solid var(--cy);box-shadow:0 0 12px var(--cy)}
+  .tl .w i{background:rgba(255,255,255,.08);color:var(--m)}
+  .tl b{font-weight:600}.tl .w b{color:var(--m);font-weight:500}
+  .tl p{color:var(--m);font-size:11.5px}
+</style>
+</head>
+<body>
+<div>
+  <div class="tag">C · Aurora Glass — 管理后台</div>
+  <div class="admin g">
+    <div class="rail g">
+      <div class="lg">C</div>
+      <i class="on">◉</i><i>✦</i><i>⇄</i><i>▤</i><i>▣</i><i>⚙</i>
+    </div>
+    <div class="main">
+      <div class="hd"><h1>早上好 <span>今天已兑换 46 张</span></h1><div class="usr">卡台已连接 <b></b></div></div>
+      <div class="grid">
+        <div class="hero g"><small>钱包余额 (USD)</small><div class="v">12,480<span>.36</span></div><small>预留授权 $3,206 · 可用 $9,274</small>
+          <div class="acts"><span class="pill p">＋ 充值</span><span class="pill">账本</span><span class="pill">资金操作</span></div></div>
+        <div class="st g"><small>本月发行</small><div class="v">1,284</div><span class="chip">↑ 18.2%</span></div>
+        <div class="st g"><div class="ring"></div><small>兑换成功率</small><div class="v">1,051</div><small>失败 7 · 处理中 12</small></div>
+        <div class="prods">
+          <div class="pc gpt g"><div class="ic">G</div><b>ChatGPT</b><p>Go · Plus · Pro 5x/20x/25x</p>
+            <div class="nums"><span>库存<strong>412</strong></span><span>Plus 售价<strong>$19.80</strong></span><span>未兑换<strong>118</strong></span></div></div>
+          <div class="pc x g"><div class="ic">𝕏</div><b>X Premium</b><p>Premium · Premium+</p>
+            <div class="nums"><span>授权上限<strong>$1,800</strong></span><span>服务费<strong>$1.20</strong></span><span>未兑换<strong>64</strong></span></div></div>
+          <div class="pc tg g"><div class="ic">✈</div><b>Telegram</b><p>3 · 6 · 12 个月</p>
+            <div class="nums"><span>授权上限<strong>$900</strong></span><span>服务费<strong>$0.80</strong></span><span>未兑换<strong>51</strong></span></div></div>
+        </div>
+        <div class="lower">
+          <div class="list g"><h3>实时兑换 <span>自动刷新 · webhook</span></h3>
+            <div class="it"><div class="a" style="background:rgba(78,240,166,.18);color:var(--grn)">G</div><div class="t"><b>ChatGPT Plus</b><p>GPTD-7K2Q-•••• · m***@gmail.com</p></div><div class="amt">$19.80</div><span class="badge ok">已开通</span></div>
+            <div class="it"><div class="a" style="background:rgba(255,255,255,.12)">𝕏</div><div class="t"><b>X Premium+ 12 个月</b><p>XCDK-M91A-•••• · @elonfan</p></div><div class="amt">$229.00</div><span class="badge run">付款中</span></div>
+            <div class="it"><div class="a" style="background:rgba(79,216,255,.18);color:var(--cy)">✈</div><div class="t"><b>Telegram 12 个月</b><p>TGCD-HH4T-•••• · @neko_dev</p></div><div class="amt">$35.99</div><span class="badge ok">已到账</span></div>
+            <div class="it"><div class="a" style="background:rgba(78,240,166,.18);color:var(--grn)">G</div><div class="t"><b>ChatGPT Pro 20x</b><p>GPTD-Z3RE-•••• · z***@qq.com</p></div><div class="amt">$200.00</div><span class="badge bad">失败 · 重试</span></div>
+            <div class="it"><div class="a" style="background:rgba(79,216,255,.18);color:var(--cy)">✈</div><div class="t"><b>Telegram 6 个月</b><p>TGCD-P0LX-•••• · —</p></div><div class="amt">—</div><span class="badge idle">未使用</span></div>
+          </div>
+          <div class="gen g"><h3>生成 CDK</h3>
+            <div class="seg"><span class="on">ChatGPT</span><span>X</span><span>Telegram</span></div>
+            <div class="plans"><div>Go<small>$4.90</small></div><div class="on">Plus<small>$19.80 · 库存 412</small></div><div>Pro 5x<small>$99.00</small></div><div>Pro 20x<small>$199.00</small></div></div>
+            <div class="slider"><div class="lb"><span>数量</span><b>20 张</b></div><div class="tr"><u></u><i></i></div></div>
+            <div class="tot"><span>预计成本</span><b>$406.00</b></div>
+            <button class="cta">✦ 立即生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="tag">C · 用户兑换页（移动端优先）</div>
+  <div class="phone g">
+    <div class="brand"><i></i>CDK Redeem</div>
+    <h1>一码开通<br><em>你的 AI 会员</em></h1>
+    <p class="sub">ChatGPT · X Premium · Telegram Premium</p>
+    <div class="cin">GPTD-7K2Q-F9WM-3TXA</div>
+    <div class="card"><small>已识别套餐</small><b>ChatGPT Plus · 1 个月</b>
+      <div class="row"><span>m***@gmail.com</span><span>报价已锁定 09:58</span></div></div>
+    <div class="tl">
+      <div class="d"><i>✓</i><span><b>兑换码有效</b><p>已校验</p></span></div>
+      <div class="d"><i>✓</i><span><b>账号预检通过</b><p>套餐与价格已确认</p></span></div>
+      <div class="n"><i></i><span><b>正在为你开通…</b><p>通常 30 秒内完成</p></span></div>
+      <div class="w"><i>4</i><span><b>开通成功</b></span></div>
+    </div>
+    <button class="cta">查看兑换凭证</button>
+  </div>
+</div>
+</body>
+</html>

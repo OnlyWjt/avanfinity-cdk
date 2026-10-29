@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>总览 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="index">
+<div id="page" data-title="总览 <small>今天已兑换 46 张 · 2026-10-25</small>">
+
+  <div class="alert warn glass">
+    <span>⚑</span><span><b class="c-warn">3 笔兑换需要你处理</b>：1 笔价格保护待审核、1 笔需用户补交 Session、1 笔 X 账号需平台审核。</span>
+    <a class="btn sm" href="orders.html?f=attention">去处理 →</a>
+  </div>
+
+  <div class="grid">
+    <section class="card glass glowcard s5">
+      <div class="between"><span class="lbl">今日利润（按你设置的零售价）</span><a class="link" href="pricing.html">售价设置 →</a></div>
+      <div class="stat"><div class="v" style="font-size:40px">¥1,862<span>.40</span></div></div>
+      <div class="legend">
+        <span><i style="background:var(--a1)"></i>销售额<b>¥7,320.00</b></span>
+        <span><i style="background:var(--warn)"></i>成本<b>¥5,457.60</b></span>
+        <span><i style="background:var(--ok)"></i>毛利率<b>25.4%</b></span>
+      </div>
+      <div class="bars" style="height:46px;margin-top:14px"><u style="height:30%"></u><u style="height:42%"></u><u style="height:38%"></u><u style="height:55%"></u><u style="height:48%"></u><u style="height:70%"></u><u style="height:62%"></u><u style="height:80%"></u><u style="height:74%"></u><u style="height:100%"></u></div>
+    </section>
+
+    <section class="card glass s2 stat">
+      <div class="lbl">本月发行 CDK</div><div class="v">1,284</div><span class="trend up">↑ 18.2% 环比</span>
+      <div class="bars"><u style="height:40%"></u><u style="height:62%"></u><u style="height:48%"></u><u style="height:75%"></u><u style="height:58%"></u><u style="height:84%"></u><u style="height:100%"></u></div>
+    </section>
+
+    <section class="card glass s3">
+      <div class="lbl">兑换成功率 · 30 天</div>
+      <div class="row-flex mt12" style="gap:16px">
+        <div class="ring" style="--p:88"><b>88%</b></div>
+        <div class="sm muted" style="line-height:1.9">已完成 <b style="color:var(--text)">1,051</b><br>处理中 <b style="color:var(--text)">12</b><br>失败 <b class="c-bad">143</b></div>
+      </div>
+    </section>
+
+    <a class="card glass s2 stat" href="strategy.html" style="text-decoration:none">
+      <div class="lbl">今日策略拦截</div><div class="v c-warn">27</div><span class="lbl">账号重复 19 · 价格 5 · 频率 3</span>
+      <div class="bars"><u style="height:20%"></u><u style="height:35%"></u><u style="height:28%"></u><u style="height:60%"></u><u style="height:45%"></u><u style="height:52%"></u><u style="height:70%"></u></div>
+    </a>
+
+    <a class="card glass s4" href="cdks.html?p=gpt" style="text-decoration:none">
+      <div class="row-flex mb12"><span class="pic lg gpt">G</span><div><b style="font-size:15px">ChatGPT</b><div class="xs muted">Go · Plus · Pro 5x/20x/25x</div></div><span class="badge ok" style="margin-left:auto">✓ 报价有效 · 23h</span></div>
+      <div class="minis"><div><small>平台库存</small><strong>558</strong></div><div><small>Plus 成本</small><strong>$19.80</strong></div><div><small>未兑换</small><strong>118</strong></div></div>
+    </a>
+    <a class="card glass s4" href="cdks.html?p=x" style="text-decoration:none">
+      <div class="row-flex mb12"><span class="pic lg x">𝕏</span><div><b style="font-size:15px">X Premium</b><div class="xs muted">Premium · Premium+ · 3/6/12 月</div></div><span class="badge ok" style="margin-left:auto">✓ 正常</span></div>
+      <div class="minis"><div><small>今日兑换</small><strong>9</strong></div><div><small>服务费起</small><strong>$1.00</strong></div><div><small>未兑换</small><strong>64</strong></div></div>
+    </a>
+    <a class="card glass s4" href="cdks.html?p=tg" style="text-decoration:none">
+      <div class="row-flex mb12"><span class="pic lg tg">✈</span><div><b style="font-size:15px">Telegram</b><div class="xs muted">Premium 3 · 6 · 12 月</div></div><span class="badge warn" style="margin-left:auto">◷ 1 笔待交付</span></div>
+      <div class="minis"><div><small>今日兑换</small><strong>6</strong></div><div><small>服务费起</small><strong>$0.60</strong></div><div><small>未兑换</small><strong>51</strong></div></div>
+    </a>
+
+    <section class="card glass s8">
+      <h3>实时兑换
+        <div class="seg" id="feedSeg"><button class="on" data-v="all">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button><button data-v="bad">异常</button></div>
+      </h3>
+      <div id="feed"></div>
+      <a class="link mt12" style="display:inline-block" href="orders.html">查看全部兑换记录 →</a>
+    </section>
+
+    <section class="card glass s4">
+      <h3>快捷操作</h3>
+      <div class="choice c2">
+        <a class="opt" href="generate.html?p=gpt" style="text-decoration:none"><b>✦ 生成 GPT CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="generate.html?p=x" style="text-decoration:none"><b>𝕏 生成 X CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="generate.html?p=tg" style="text-decoration:none"><b>✈ 生成 TG CDK</b><small>1–50 张</small></a>
+        <a class="opt" href="strategy.html" style="text-decoration:none"><b>⛉ 兑换策略</b><small>3 条启用中</small></a>
+      </div>
+      <h3 class="mt20">策略命中 · 今日</h3>
+      <div class="kv">
+        <div><span>淘宝渠道 · 严格</span><b>拦截 23 · 通过 31</b></div>
+        <div><span>默认策略</span><b>拦截 4 · 通过 15</b></div>
+        <div><span>价格保护待审核</span><b><a class="link" href="orders.html?f=attention">1 笔</a></b></div>
+        <div><span>自动重试成功</span><b class="c-ok">3 笔</b></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+function renderFeed(f) {
+  const rows = MOCK.orders.filter(o => f === 'all' || (f === 'bad' ? ['declined', 'failed', 'requires_action', 'review_required', 'blocked', 'manual_review'].includes(o.status) : o.type === f)).slice(0, 7);
+  $('#feed').innerHTML = rows.map(o => `
+    <a class="lrow" href="orders.html?id=${o.id}">${PIC[o.type]}
+      <div class="t"><b>${o.plan}</b><p>${o.ref}-••••</p></div>
+      <div class="who">${o.who}</div><div class="amt">${o.amount ? money(o.amount) : '—'}</div><div>${badge(o.status)}</div><div class="tm">${o.at.slice(6)}</div></a>`).join('');
+}
+segInit($('#feedSeg'), renderFeed);
+renderFeed('all');
+</script>
+</body></html>

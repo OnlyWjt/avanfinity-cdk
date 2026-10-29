@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>生成 CDK · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="generate">
+<div id="page" data-title="生成 CDK" data-crumb="<a href='cdks.html'>CDK 管理</a> / 生成">
+
+<div class="grid">
+  <section class="card glass s8">
+    <div class="form">
+      <div class="f"><label>产品线</label>
+        <div class="choice c3" id="prodChoice">
+          <button class="opt" data-v="gpt"><div class="row-flex"><span class="pic xs gpt">G</span><b>ChatGPT</b></div><small>Go · Plus · Pro</small></button>
+          <button class="opt" data-v="x"><div class="row-flex"><span class="pic xs x">𝕏</span><b>X Premium</b></div><small>Premium · Premium+</small></button>
+          <button class="opt" data-v="tg"><div class="row-flex"><span class="pic xs tg">✈</span><b>Telegram</b></div><small>Premium 3 / 6 / 12 月</small></button>
+        </div>
+      </div>
+
+      <div class="f"><label>套餐 <small id="planHint"></small></label><div class="choice c3" id="planChoice"></div></div>
+
+      <div class="f"><label>数量 <small>每批 1–50 张</small></label>
+        <div class="row-flex"><div class="stepper"><button id="qm">−</button><input id="qty" value="10"><button id="qp">＋</button></div>
+          <input type="range" id="qr" min="1" max="50" value="10" style="flex:1;margin-left:12px"></div>
+      </div>
+
+      <div class="f"><label>兑换策略 <a class="link" href="strategy.html">管理策略 →</a></label>
+        <div class="choice c3" id="stratChoice"></div>
+        <div class="help" id="stratHelp"></div>
+      </div>
+
+      <div id="socOnly" class="hidden">
+        <div class="f"><label>单码成本上限 <small>超过这个金额的兑换直接失败，不会多扣</small></label>
+          <div class="inputgrp"><span>$</span><input id="cap" value="30.00"></div>
+          <div class="help" id="capHelp"></div>
+        </div>
+        <details class="mt12"><summary class="sm muted" style="cursor:pointer">高级：官方金额上限与币种</summary>
+          <div class="two mt12">
+            <div class="f"><label>官方报价币种</label><select class="field" id="cur"><option>BDT</option><option>USD</option><option>INR</option><option>NGN</option><option>TRY</option></select></div>
+            <div class="f"><label>官方金额上限</label><div class="inputgrp"><input id="maxOff" value="2900.00"><span id="curSpan">BDT</span></div></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="f"><label>批次备注 <small>仅自己可见，可选</small></label><input class="field" id="memo" placeholder="例如：淘宝 10 月第 3 批"></div>
+    </div>
+  </section>
+
+  <aside class="card glass s4" style="align-self:start;position:sticky;top:16px">
+    <h3>本批摘要 <span class="badge ok">✓ 报价有效 · 23h</span></h3>
+    <div class="row-flex mb12" id="sumHead"></div>
+    <div class="summary" id="sum"></div>
+    <div class="note mt12" id="riskNote"></div>
+    <button class="btn primary block mt16" id="go">✦ 生成</button>
+  </aside>
+</div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+const S = { p: qs('p') || 'gpt', plan: null, qty: 10, strat: 's_taobao' };
+const plansOf = p => p === 'gpt' ? MOCK.gptPlans : p === 'x' ? MOCK.xPlans : MOCK.tgPlans;
+const strats = () => Strat.all().filter(s => s.on);
+
+function render() {
+  $$('#prodChoice .opt').forEach(b => b.classList.toggle('on', b.dataset.v === S.p));
+  const plans = plansOf(S.p);
+  if (!S.plan || !plans.find(p => p.key === S.plan && p.enabled !== false && p.status !== 'WAITING_QUOTE')) S.plan = (plans.find(p => p.key === 'plus') || plans.find(p => p.enabled !== false))?.key;
+  $('#planChoice').innerHTML = plans.map(p => {
+    const dis = S.p === 'gpt' ? p.status !== 'READY' : !p.enabled;
+    const sub = S.p === 'gpt' ? (dis ? '等待报价' : `成本 ${money(p.sale)} · 库存 ${p.stock}`) : (dis ? '暂未开放' : `成本 ≈ ${money(p.est + p.fee)}`);
+    return `<button class="opt ${p.key === S.plan ? 'on' : ''}" data-k="${p.key}" ${dis ? 'disabled' : ''}><b>${p.label.replace('ChatGPT ', '')}</b><small>${sub}</small></button>`;
+  }).join('');
+  $$('#planChoice .opt').forEach(b => b.onclick = () => { S.plan = b.dataset.k; render(); });
+  $('#planHint').textContent = S.p === 'gpt' ? '成本来自卡台实时售价，24 小时有效' : '官方金额在用户兑换时才确定';
+
+  const avail = strats().filter(s => s.prod.includes(S.p));
+  if (!avail.find(s => s.id === S.strat)) S.strat = avail[0]?.id;
+  $('#stratChoice').innerHTML = avail.map(s => `<button class="opt ${s.id === S.strat ? 'on' : ''}" data-s="${s.id}"><b>${esc(s.name)}</b><small>${s.mode === 'own' ? `自有码 · ${s.prefix}-` : '托管码'}</small></button>`).join('');
+  $$('#stratChoice .opt').forEach(b => b.onclick = () => { S.strat = b.dataset.s; render(); });
+  const st = Strat.get(S.strat);
+  $('#stratHelp').innerHTML = st ? `${esc(st.desc)} · 同账号 ${st.accDays} 天内限 ${st.accN} 次${st.freeOnly ? ' · 仅 Free 账号' : ''} · 价格保护 ${st.priceTol}% · 失败${st.mode === 'own' && st.failAct === 'retry' ? `自动重试 ${st.retryN} 次` : '释放重兑'}` : '';
+
+  $('#socOnly').classList.toggle('hidden', S.p === 'gpt');
+  if (st && S.p !== 'gpt' && !$('#cap').dataset.touched) $('#cap').value = st.costCap.toFixed(2);
+  $('#curSpan').textContent = $('#cur').value;
+  $('#qty').value = S.qty; $('#qr').value = S.qty;
+  summary();
+}
+
+function summary() {
+  const plan = plansOf(S.p).find(p => p.key === S.plan), st = Strat.get(S.strat), q = S.qty;
+  const own = st?.mode === 'own';
+  $('#sumHead').innerHTML = `${PIC[S.p]}<div><b>${PNAME[S.p]} · ${plan.label.replace('ChatGPT ', '')}</b><div class="xs muted">${q} 张 · ${st ? esc(st.name) : '—'}</div></div>`;
+  const cost = S.p === 'gpt' ? plan.sale + (st?.payMode === 'own' ? 0.5 : 0) : Math.min(parseFloat($('#cap').value) || 0, plan.est + plan.fee + 1.5);
+  const bad = S.p !== 'gpt' && (parseFloat($('#cap').value) || 0) < plan.est + plan.fee;
+  $('#sum').innerHTML = `<div>码格式<b>${own ? st.prefix + '-XXXX-XXXX' : { gpt: 'GPTD', x: 'XCDK', tg: 'TGCD' }[S.p] + '-XXXX-XXXX-XXXX'}</b></div>
+    <div>生成费用<b>$0.00</b></div>
+    <div>预计单码成本<b>${money(cost)}</b></div>
+    ${S.p === 'gpt' ? `<div>平台库存<b>${plan.stock} 张</b></div>` : `<div>单码成本上限<b>${money(parseFloat($('#cap').value) || 0)}</b></div>`}
+    <div class="tot">全部兑换预计成本<b>${money(cost * q)}</b></div>`;
+  $('#riskNote').innerHTML = bad ? `<span class="c-bad">✕ 成本上限低于当前参考成本 ${money(plan.est + plan.fee)}，兑换会失败</span>`
+    : S.p === 'gpt' && q > plan.stock ? '<span class="c-bad">✕ 数量超过平台库存</span>'
+    : own ? 'ⓘ 自有码：卡台码只在用户兑换时才生成，用户拿不到，策略不可绕过。'
+    : 'ⓘ 托管码：完整兑换码只显示一次，请立刻保存。';
+  $('#go').disabled = bad || (S.p === 'gpt' && q > plan.stock) || !st;
+  $('#go').innerHTML = `✦ 生成 ${q} 张`;
+}
+
+$$('#prodChoice .opt').forEach(b => b.onclick = () => { S.p = b.dataset.v; S.plan = null; delete $('#cap').dataset.touched; history.replaceState(null, '', '?p=' + S.p); render(); });
+const setQ = v => { S.qty = Math.max(1, Math.min(50, v | 0 || 1)); render(); };
+$('#qm').onclick = () => setQ(S.qty - 1); $('#qp').onclick = () => setQ(S.qty + 1);
+$('#qr').oninput = e => setQ(+e.target.value); $('#qty').onchange = e => setQ(+e.target.value);
+$('#cap').oninput = () => { $('#cap').dataset.touched = 1; summary(); };
+$('#cur').onchange = render;
+
+$('#go').onclick = e => busy(e.currentTarget, '正在生成…', 900, () => {
+  const plan = plansOf(S.p).find(p => p.key === S.plan), st = Strat.get(S.strat);
+  const prefix = st.mode === 'own' ? st.prefix : { gpt: 'GPTD', x: 'XCDK', tg: 'TGCD' }[S.p];
+  const codes = Array.from({ length: S.qty }, () => st.mode === 'own' ? [prefix, rnd4(), rnd4()].join('-') : [prefix, rnd4(), rnd4(), rnd4()].join('-'));
+  const batch = 'B-1025-' + String(Math.random() * 9999 | 0).padStart(4, '0');
+  const m = modal(`
+    <h2>✓ 已生成 ${codes.length} 张兑换码</h2>
+    <div class="sub">${PNAME[S.p]} · ${plan.label.replace('ChatGPT ', '')} · ${esc(st.name)} · 批次 <span class="mono">${batch}</span></div>
+    <div class="note ${st.mode === 'own' ? '' : 'warn'} mb12">${st.mode === 'own' ? 'ⓘ 自有码保存在你的系统里，之后在 CDK 管理中随时可以再导出。' : '⚠ 托管码的完整内容只显示这一次，关闭后只能看到前缀。'}</div>
+    <div class="codes">${codes.map(k => `<div>${k}<button class="link" data-c="${k}">复制</button></div>`).join('')}</div>
+    <div class="foot"><button class="btn" id="cAll">复制全部</button><button class="btn" id="cCsv">下载 CSV</button><button class="btn" id="cTxt">下载 TXT</button><button class="btn primary" id="done">完成</button></div>`);
+  $$('[data-c]', m.el).forEach(b => b.onclick = () => { copy(b.dataset.c); b.textContent = '已复制'; });
+  $('#cAll', m.el).onclick = () => copy(codes.join('\n'), `已复制 ${codes.length} 个兑换码`);
+  const dl = (ext, body, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([body], { type })); a.download = `${batch}.${ext}`; a.click(); };
+  $('#cCsv', m.el).onclick = () => dl('csv', 'code,product,plan,strategy,batch\n' + codes.map(c => [c, S.p, S.plan, st.name, batch].join(',')).join('\n'), 'text/csv');
+  $('#cTxt', m.el).onclick = () => dl('txt', codes.join('\n'), 'text/plain');
+  $('#done', m.el).onclick = async () => {
+    if (st.mode === 'own' || await confirmBox({ title: '确定已保存？', body: '关闭后将无法再看到完整兑换码。', ok: '已保存，关闭' })) { m.close(); toast('批次 ' + batch + ' 已生成'); setTimeout(() => location.href = 'cdks.html?p=' + S.p, 700); }
+  };
+});
+render();
+</script>
+</body></html>

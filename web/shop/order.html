@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>订单详情</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top" id="shopTop" data-on="query"></header>
+<div class="shop"><div class="ocard glass" id="view"><div class="empty"><span class="spin"></span> 加载订单…</div></div><div id="netErr" class="xs c-warn hidden" style="text-align:center;margin-top:10px">网络异常，正在重试…</div></div>
+<script src="/assets/app.js"></script>
+<script src="/assets/qr.js"></script>
+<script src="/assets/shop.js"></script>
+<script>
+const NO = qs('no'), T = qs('t') || (Recent.list().find(x => x.no === NO) || {}).t || '';
+let O = null, pollT = null, stopCd = null, lastKey = '', fails = 0, closedPolls = 0;
+const APP_NAME = { alipay: '支付宝', wechat: '微信' };
+const link = () => `${location.origin}${orderUrl(NO, O?.token || T)}`;
+/** 按订单类型决定「再来一单 / 继续」去哪里 */
+const backTo = () => O.kind === 'topup' ? ['/account/', '回到我的账户'] : O.kind === 'wholesale' ? ['/agent/', '回到代理中心'] : [storeHome(), '继续购物'];
+
+async function load() {
+  clearTimeout(pollT);
+  try { O = await GET(`/api/shop/orders/${encodeURIComponent(NO)}${T ? '?t=' + encodeURIComponent(T) : ''}`); fails = 0; $('#netErr').classList.add('hidden'); }
+  catch (e) {
+    if (e.status === 404 || !O) {
+      if (e.status !== 404 && !O) { $('#view').innerHTML = `<div class="empty"><div class="ic">!</div>${esc(e.message)}<br><button class="link mt8" onclick="load()">重试</button></div>`; return; }
+      $('#view').innerHTML = `<div class="bigicon warn">?</div><h2 style="text-align:center">没有找到这个订单</h2><p class="desc" style="text-align:center;color:var(--muted);margin:8px 0 18px">链接可能不完整。可以用邮箱和查询密码查询，注册用户请登录后在「我的」订单里查看。</p>
+        <a class="btn primary block" href="/shop/query.html">去查询订单</a>${contactLine()}`;
+      return;
+    }
+    // 轮询中的网络抖动：保留当前页面，退避重试
+    fails++; $('#netErr').classList.remove('hidden');
+    pollT = setTimeout(load, Math.min(30000, 3000 * 2 ** fails));
+    return;
+  }
+  if (T) Recent.add({ no: O.no, t: O.token, title: O.title });
+  // 轮询时状态没变就不重绘（避免二维码、倒计时闪动）
+  const key = JSON.stringify([O.status, O.pay, O.codes.length, O.deliverError]);
+  if (key !== lastKey) { lastKey = key; render(); }
+  if (O.status === 'closed') closedPolls++;
+  const wait = { pending: 3000, paid: 2000, closed: closedPolls < 8 ? 15000 : 0 }[O.status];
+  if (wait) pollT = setTimeout(load, wait);
+}
+const head = () => `<div class="ohead"><div><h2>${esc(O.title)}${O.kind === 'topup' ? '' : ` × ${O.quantity}`}</h2><p>订单 <span class="mono">${esc(O.no)}</span> <button class="link" data-copy="${esc(O.no)}" data-msg="订单号已复制">复制</button> · ${new Date(O.createdAt).toLocaleString('zh-CN')}</p></div>${oBadge(O.status)}</div>`;
+const sumBox = () => `<div class="sum mb16">${O.kind === 'topup' ? '' : `<div><span>单价</span><b>${yuan(O.unitPrice)} × ${O.quantity}</b></div>`}${O.discount ? `<div><span>优惠</span><b class="c-ok">− ${yuan(O.discount)}</b></div>` : ''}<div class="total"><span>${O.status === 'pending' ? '应付' : '实付'}</span><b>${yuan(O.total)}</b></div></div>`;
+/** 免注册买家：提醒保存订单链接 */
+const saveLink = () => MEC ? '' : `<div class="linkbox mt12"><div class="copyline xs">${esc(link())}</div><button class="btn sm" data-copy="${esc(link())}" data-msg="订单链接已复制，请保存好">复制链接</button></div><div class="xs faint mt8">请保存这个链接，或记住下单邮箱和查询密码，之后可以随时查看兑换码。</div>`;
+
+function render() {
+  stopCd && stopCd(); stopCd = null;
+  const v = $('#view'), [backHref, backLabel] = backTo();
+  if (O.status === 'pending') payView();
+  else if (O.status === 'paid') {
+    v.innerHTML = `${head()}<div class="paybox"><div class="bigicon" style="background:var(--a2)"><span class="spin" style="width:26px;height:26px;border-width:3px"></span></div>
+      <h2>付款成功，正在发货</h2><p class="muted mt8">${O.deliverError ? '发货稍有延迟，系统正在自动重试，请稍候，不需要重新购买。' : '通常几秒钟完成，请不要关闭页面。'}</p></div>${O.deliverError ? contactLine() : ''}`;
+  } else if (O.status === 'delivered') O.kind === 'topup' ? topupDone() : delivered();
+  else if (O.status === 'closed') {
+    v.innerHTML = `${head()}${sumBox()}<div class="note mb16">订单已关闭（超时未付款或已取消）。如果你已经付款，系统确认到账后会自动发货，不用重新购买；超过 30 分钟仍未发货请联系客服。</div><a class="btn primary block" href="${backHref}">${O.kind === 'buy' ? '重新购买' : backLabel}</a>${contactLine()}`;
+  } else {
+    v.innerHTML = `${head()}${sumBox()}<div class="note">订单已退款${O.kind === 'topup' ? '，充值金额已从余额扣回' : '，兑换码已作废'}。${O.payMethod === 'balance' ? '退款已退回你的账户余额。' : '款项会原路退回，到账时间以支付平台为准。'}</div>${contactLine()}`;
+  }
+  $$('[data-copy]', v).forEach(b => b.onclick = () => copy(b.dataset.copy, b.dataset.msg || '已复制'));
+}
+
+function payView() {
+  const v = $('#view'), p = O.pay;
+  let box = '';
+  if (!p) box = `<div class="note warn mb12">还没有选择支付方式</div><button class="btn primary block" id="sw2">选择支付方式</button>`;
+  else if (p.type === 'qr') box = `<div class="qrbox" id="qr" role="img" aria-label="付款二维码"></div><p class="sm muted">请用<b>${APP_NAME[O.payMethod] || ''}</b>扫一扫完成付款</p>
+    ${O.payMethod === 'alipay' && /^https:/.test(p.qr) ? `<a class="btn mt12" href="${esc(p.qr)}">在手机上打开支付宝</a>` : ''}
+    ${O.payMethod === 'wechat' ? '<p class="xs faint mt8">在手机上：截图保存二维码，再用微信「扫一扫」从相册识别</p>' : ''}`;
+  else if (p.type === 'crypto') box = `
+    <div class="qrbox" id="qr" role="img" aria-label="收款地址二维码"></div>
+    <div class="f" style="text-align:left"><div class="flabel">转账金额 <small>必须一分不差，含小数</small></div><div class="copyline"><b style="font-size:16px;color:var(--warn)">${esc(p.amount)}</b> USDT<button data-copy="${esc(p.amount)}" data-msg="金额已复制">复制</button></div></div>
+    <div class="f mt12" style="text-align:left"><div class="flabel">收款地址 <small>${esc(p.network)} 网络</small></div><div class="copyline">${esc(p.address)}<button data-copy="${esc(p.address)}" data-msg="地址已复制">复制</button></div></div>
+    <div class="note warn mt12" style="text-align:left">⚠ 只支持 <b>TRC20</b> 网络的 USDT；金额必须与上面完全一致（尾数用来识别你的订单），否则无法自动到账。链上确认后约 1 分钟内自动发货。注意交易所提币可能会扣手续费，请确保<b>到账</b>金额一致。</div>`;
+  else box = `<a class="btn primary block" href="${esc(p.url)}">前往支付</a><p class="xs faint mt8">支付完成后回到这个页面，会自动刷新</p>`;
+  v.innerHTML = `${head()}
+    <div class="paybox" id="paybox"><div class="amt">${p && p.type === 'crypto' ? `${esc(p.amount)} <small>USDT</small>` : `<small>¥</small>${yuanN(O.total)}`}</div>
+      <div class="meta">${O.kind === 'topup' ? '余额充值' : `${yuan(O.unitPrice)} × ${O.quantity}`}${O.discount ? ` · 已优惠 ${yuan(O.discount)}` : ''}${p && p.type === 'crypto' ? ` · 折合 ${yuan(O.total)}` : ''}</div>
+      <p class="sm muted mb12">请在 <b class="mono c-warn" id="cd">--:--</b> 内完成支付</p>${box}</div>
+    <div class="row-flex mt16" style="justify-content:center;gap:16px"><button class="link" id="sw">换一种支付方式</button><button class="link" id="cancel" style="color:var(--muted)">取消订单</button></div>${saveLink()}`;
+  if (p && (p.type === 'qr' || p.type === 'crypto')) $('#qr').innerHTML = QR.svg(p.type === 'qr' ? p.qr : p.address, { size: 196 });
+  stopCd = countdown($('#cd'), (new Date(O.expiresAt) - Date.now()) / 1000, () => {
+    // 倒计时到了：先收起二维码，避免继续扫码付款；后台关单后自动刷新
+    $('#paybox').innerHTML = '<div class="bigicon warn">◷</div><h2>订单已超时</h2><p class="muted mt8">正在确认付款状态…如果你刚刚付过款，到账后会自动发货。</p>';
+    $('#sw')?.remove(); lastKey = ''; setTimeout(load, 1500);
+  });
+  const methods = (CFG?.payMethods || []).length + (MEC && O.kind !== 'topup' ? 1 : 0);
+  if (p && methods < 2) $('#sw').remove(); else $('#sw').onclick = switchPay;
+  $('#sw2') && ($('#sw2').onclick = switchPay);
+  $('#cancel').onclick = async () => { if (await confirmBox({ title: '取消这个订单？', body: '如果已经付款，请不要取消，等待系统确认即可。', ok: '取消订单', danger: true })) { await POST(`/api/shop/orders/${O.no}/cancel`, { t: T }).catch(e => toast(e.message, 'bad')); load(); } };
+}
+function switchPay() {
+  const d = dialog({ title: '换一种支付方式', size: 'sm', body: '<div id="pm"></div>', actions: [{ label: '取消' }, { label: '确定', kind: 'primary', onClick: async () => {
+    const pm = pick(); if (!pm) throw new Error('暂无可用的支付方式');
+    const r = await POST(`/api/shop/orders/${O.no}/pay`, { t: T, payMethod: pm.method, paySub: pm.sub, device: DEVICE });
+    if (r.pay.type === 'redirect') { location.href = r.pay.url; return false; }
+    if (pm.method === 'balance') { MEC = (await GET('/api/shop/account/me').catch(() => ({ me: MEC }))).me; }
+    lastKey = ''; load();
+  } }] });
+  const pay = O.pay ? { method: O.payMethod } : null;
+  const pick = payPicker($('#pm', d.el), { balance: MEC && O.kind !== 'topup' ? MEC.balance : null, total: O.total, current: pay });
+}
+function delivered() {
+  const all = O.codes.map(c => c.code).join('\n'), [backHref, backLabel] = backTo();
+  const mailed = CFG?.shop.mail && O.kind !== 'wholesale';
+  $('#view').innerHTML = `${head()}
+    <div class="note ok mb16">✓ 发货成功${mailed ? `，兑换码也已发送到 <b>${esc(O.email)}</b>` : ''}。${O.kind === 'wholesale' ? '这批码也在代理中心「我的库存」里。' : '点「去兑换」按提示开通，兑换码也可以转送给他人。'}</div>
+    <div class="ocodes">${O.codes.map(c => `<div class="ocode"><span class="mono">${esc(c.code)}</span>${c.status === 'redeemed' ? '<span class="badge ok">已兑换</span>' : c.status === 'revoked' ? '<span class="badge idle">已作废</span>' : `<button class="btn sm ghost" data-c="${esc(c.code)}" aria-label="复制兑换码">复制</button><a class="btn sm primary" href="/redeem#code=${encodeURIComponent(c.code)}">去兑换</a>`}</div>`).join('')}</div>
+    <div class="row-flex mt16">${O.codes.length > 1 ? '<button class="btn" id="cpAll" style="flex:1">复制全部</button><button class="btn" id="dl" style="flex:1">下载 TXT</button>' : ''}<a class="btn" href="${backHref}" style="flex:1">${backLabel}</a></div>
+    ${sumBox().replace('mb16', 'mt16')}${mailed ? '' : saveLink()}${contactLine()}`;
+  $$('[data-c]').forEach(b => b.onclick = () => { copy(b.dataset.c, '兑换码已复制'); b.textContent = '已复制'; });
+  $$('[data-copy]').forEach(b => b.onclick = () => copy(b.dataset.copy, b.dataset.msg || '已复制'));
+  $('#cpAll') && ($('#cpAll').onclick = () => copy(all, `已复制 ${O.codes.length} 个兑换码`));
+  $('#dl') && ($('#dl').onclick = () => download(`兑换码-${O.no}.txt`, all));
+}
+function topupDone() {
+  $('#view').innerHTML = `${head()}<div class="paybox"><div class="bigicon">✓</div><h2>充值成功</h2><p class="muted mt8 mb16">${yuan(O.total)} 已到账，可以直接用余额购买。</p></div><div class="row-flex"><a class="btn" href="/account/" style="flex:1">查看余额</a><a class="btn primary" href="${storeHome()}" style="flex:1">去购物</a></div>`;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && O && ['pending', 'paid'].includes(O.status)) load(); });
+cfgReady.finally(load);
+</script>
+</body></html>

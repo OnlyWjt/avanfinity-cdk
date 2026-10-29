@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>代理分销 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="agents">
+<div id="page" data-title="代理分销" data-crumb="商城">
+  <div class="seg mb16" id="tab"><button class="on" data-v="agents">代理</button><button data-v="withdrawals">提现审核 <span class="badge warn hidden" id="wdN"></span></button><button data-v="levels">代理等级</button></div>
+  <div id="pane"></div>
+  <section class="card glass mt16"><h3>三种分销方式</h3><div class="kv">
+    <div><span>分站自定价</span><b class="sm">代理的店铺 /s/店铺地址，按代理设置的售价卖；利润 = 售价 − 进货价</b></div>
+    <div><span>推广返佣</span><b class="sm">主站链接带 ?ref=店铺地址，按主站价成交；佣金 = 实付 × 等级佣金比例</b></div>
+    <div><span>批发进货</span><b class="sm">代理按进货价买一批兑换码自己卖；进货价 = 商品代理基础价 × 等级批发折扣</b></div>
+    <div><span>收益结算</span><b class="sm">发货后先冻结（商城设置里的冻结天数），到期转为可提现；订单退款会自动冲回</b></div>
+  </div></section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const yuan = c => (Number(c) < 0 ? '-¥' : '¥') + (Math.abs(Number(c || 0)) / 100).toFixed(2);
+const AST = { pending: ['warn', '待审核'], active: ['ok', '✓ 正常'], disabled: ['idle', '已停用'], rejected: ['bad', '已拒绝'] };
+const WM = { alipay: '支付宝', wechat: '微信', usdt: 'USDT', bank: '银行卡' };
+let LEVELS = [], TAB = 'agents', SUB = { agents: '', withdrawals: 'pending' }, AQ = '', APAGE = 1;
+const tabs = { agents, withdrawals, levels };
+ready(() => { segInit($('#tab'), v => { TAB = v; tabs[v](SUB[v]); }); agents(); countWd(); });
+function load() { countWd(); return tabs[TAB](SUB[TAB]); }
+const pane = h => { $('#pane').innerHTML = h; applyRoles(); };
+async function countWd() { const r = await GET('/api/admin/shop/withdrawals?status=pending'); $('#wdN').textContent = r.list.length; $('#wdN').classList.toggle('hidden', !r.list.length); }
+
+async function agents(status = '') {
+  if (SUB.agents !== status) APAGE = 1;
+  const r = await GET('/api/admin/shop/agents?' + new URLSearchParams({ page: APAGE, size: 30, ...(status && { status }), ...(AQ && { q: AQ }) }));
+  LEVELS = r.levels;
+  pane(`<section class="card glass p0"><div class="toolbar"><div class="seg" id="ast"><button data-v="">全部</button><button data-v="pending">待审核</button><button data-v="active">正常</button><button data-v="disabled">已停用</button><button data-v="rejected">已拒绝</button></div><div class="fsearch">⌕<input id="aq" placeholder="店铺名 / 地址 / 邮箱" value="${esc(AQ)}"></div></div>
+    <div class="tblwrap"><table class="tbl stack"><thead><tr><th>店铺</th><th>账号</th><th>等级</th><th class="num">成交</th><th class="num">销售额</th><th class="num">可提现</th><th class="num">冻结中</th><th>状态</th><th></th></tr></thead><tbody>${r.list.map(a => `
+      <tr class="click" data-id="${a.customer_id}"><td class="t"><b>${esc(a.shop_name)}</b><p><a class="link" href="/s/${esc(a.slug)}" target="_blank" onclick="event.stopPropagation()">/s/${esc(a.slug)}</a></p></td>
+      <td class="xs">${esc(a.email)}${a.contact ? `<div class="faint">${esc(a.contact)}</div>` : ''}</td><td>${esc(a.level_name || '默认')}</td>
+      <td class="num">${a.orders}</td><td class="num">${yuan(a.sales)}</td><td class="num ${a.earnings < 0 ? 'c-bad' : ''}">${yuan(a.earnings)}</td><td class="num muted">${yuan(a.frozen)}</td>
+      <td>${(([k, t]) => `<span class="badge ${k}">${t}</span>`)(AST[a.status] || ['idle', a.status])}</td>
+      <td class="acts nowrap">${a.status === 'pending' ? `<button class="btn sm primary" data-ok="${a.customer_id}" data-role="admin">通过</button><button class="btn sm ghost" data-no="${a.customer_id}" data-role="admin">拒绝</button>` : '<button class="iconbtn">›</button>'}</td></tr>`).join('') || '<tr><td colspan="9"><div class="empty"><div class="ic">⚇</div>还没有代理。买家注册后可以在「我的」里申请。</div></td></tr>'}</tbody></table></div><div class="pager" id="apager"></div></section>`);
+  SUB.agents = status;
+  pager($('#apager'), r.total, APAGE, 30, n => { APAGE = n; agents(status); });
+  segSet($('#ast'), status); segInit($('#ast'), v => agents(v));
+  let at; $('#aq').oninput = e => { clearTimeout(at); at = setTimeout(() => { AQ = e.target.value.trim(); APAGE = 1; agents(status).then(() => { const i = $('#aq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 250); };
+  $$('[data-ok]').forEach(b => b.onclick = e => { e.stopPropagation(); approve(r.list.find(a => a.customer_id === +b.dataset.ok), status); });
+  $$('[data-no]').forEach(b => b.onclick = async e => { e.stopPropagation(); if (await confirmBox({ title: '拒绝这个代理申请？', body: '对方可以修改后重新申请。', ok: '拒绝', danger: true })) { await POST(`/api/admin/shop/agents/${b.dataset.no}/reject`); toast('已拒绝'); agents(status); } });
+  $$('#pane tr[data-id]').forEach(tr => tr.onclick = () => { const a = r.list.find(x => x.customer_id === +tr.dataset.id); (a.status === 'pending' || a.status === 'rejected') && can('admin') ? approve(a, status) : detail(a, status); });
+  if (qs('id')) { const a = r.list.find(x => x.customer_id === +qs('id')); a && detail(a, status); history.replaceState(null, '', location.pathname); }
+}
+const lvOpts = cur => LEVELS.map(l => `<option value="${l.id}" ${l.id === cur || (!cur && l.is_default) ? 'selected' : ''}>${esc(l.name)} · 进货 ${l.wholesale_pct}% · 佣金 ${l.commission_pct}%</option>`).join('');
+function approve(a, status) {
+  const d = dialog({ title: `审核：${esc(a.shop_name)}`, sub: `${esc(a.email)} · /s/${esc(a.slug)}${a.contact ? ' · ' + esc(a.contact) : ''}`, size: 'sm',
+    body: `<div class="f"><div class="flabel">代理等级</div><select class="field" id="lv">${lvOpts(a.level_id)}</select></div>`,
+    actions: [{ label: '取消' }, { label: '通过', kind: 'primary', onClick: async () => { await POST(`/api/admin/shop/agents/${a.customer_id}/approve`, { levelId: +$('#lv', d.el).value }); toast('已通过'); agents(status); } }] });
+}
+function detail(a, status) {
+  const d = sheet({ title: esc(a.shop_name), sub: `${esc(a.email)} · /s/${esc(a.slug)}`,
+    body: `<div class="sec"><h4>概况</h4><div class="kv"><div><span>状态</span><b>${(AST[a.status] || ['', a.status])[1]}</b></div><div><span>成交订单</span><b>${a.orders} 单 · ${yuan(a.sales)}</b></div>
+      <div><span>累计收益</span><b>${yuan(a.total_earned)}</b></div><div><span>可提现 / 冻结</span><b>${yuan(a.earnings)} / ${yuan(a.frozen)}</b></div><div><span>申请时间</span><b>${fmtTime(a.created_at)}</b></div></div></div>
+      <div class="sec"><h4>代理等级</h4><div class="row-flex"><select class="field" id="lv">${lvOpts(a.level_id)}</select><button class="btn" id="setLv" data-role="admin">修改</button></div></div>`,
+    actions: !can('admin') ? [{ label: '关闭', kind: 'ghost' }] : [
+      a.status === 'active' ? { label: '停用代理', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: '停用这个代理？', body: '分站会关闭，推广链接不再计佣，已有收益保留。', ok: '停用', danger: true }))) return false; await POST(`/api/admin/shop/agents/${a.customer_id}/disable`); toast('已停用'); agents(status); } }
+        : { label: '恢复代理', onClick: async () => { await POST(`/api/admin/shop/agents/${a.customer_id}/enable`); toast('已恢复'); agents(status); } },
+      { label: '关闭', kind: 'ghost' },
+    ] });
+  if (!can('admin')) $('#lv', d.el).disabled = true;
+  $('#setLv', d.el).onclick = async () => { await PUT(`/api/admin/shop/agents/${a.customer_id}/level`, { levelId: +$('#lv', d.el).value }).then(() => toast('等级已修改'), e => toast(e.message, 'bad')); agents(status); };
+  applyRoles();
+}
+
+async function withdrawals(status = 'pending') {
+  SUB.withdrawals = status;
+  const r = await GET('/api/admin/shop/withdrawals' + (status ? '?status=' + status : ''));
+  pane(`<section class="card glass p0"><div class="toolbar"><div class="seg" id="wst"><button data-v="pending">待处理</button><button data-v="paid">已打款</button><button data-v="rejected">已拒绝</button><button data-v="">全部</button></div></div>
+    <div class="tblwrap"><table class="tbl stack"><thead><tr><th>代理</th><th class="num">金额</th><th>收款</th><th>申请时间</th><th>状态</th><th></th></tr></thead><tbody>${r.list.map(w => `
+      <tr><td class="t"><b>${esc(w.shop_name)}</b><p>${esc(w.email)}</p></td><td class="num"><b>${yuan(w.amount)}</b></td>
+      <td class="xs">${WM[w.method] || w.method}${w.account_name ? ' · ' + esc(w.account_name) : ''}<div class="copyline mt8" style="padding:5px 8px">${esc(w.account || '')}<button data-copy="${esc(w.account || '')}" data-msg="账号已复制">复制</button></div></td>
+      <td class="xs faint nowrap">${fmtTime(w.created_at)}</td>
+      <td>${w.status === 'pending' ? '<span class="badge warn">待处理</span>' : w.status === 'paid' ? '<span class="badge ok">✓ 已打款</span>' : '<span class="badge bad">已拒绝</span>'}${w.note ? `<div class="xs faint">${esc(w.note)}</div>` : ''}${w.processed_by ? `<div class="xs faint">${esc(w.processed_by)} · ${fmtTime(w.processed_at)}</div>` : ''}</td>
+      <td class="acts nowrap">${w.status === 'pending' ? `<button class="btn sm primary" data-paid="${w.id}" data-role="admin">已打款</button><button class="btn sm ghost" data-rej="${w.id}" data-role="admin">拒绝</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6"><div class="empty">没有记录</div></td></tr>'}</tbody></table></div></section>
+    <p class="xs faint mt8">系统不会自动打款：请先在支付宝 / 银行 / 钱包里转账给代理，再点「已打款」。拒绝会把金额退回代理的可提现余额。</p>`);
+  segSet($('#wst'), status); segInit($('#wst'), v => withdrawals(v));
+  $$('[data-paid]').forEach(b => b.onclick = async () => { const w = r.list.find(x => x.id === +b.dataset.paid); const note = await confirmBox({ title: `确认已给 ${esc(w.shop_name)} 打款 ${yuan(w.amount)}？`, ok: '确认已打款', input: '备注（例如转账单号）' }); if (note === false) return; await POST(`/api/admin/shop/withdrawals/${w.id}/paid`, { note }); toast('已标记打款'); withdrawals(status); countWd(); });
+  $$('[data-rej]').forEach(b => b.onclick = async () => { const note = await confirmBox({ title: '拒绝这笔提现？', body: '金额会退回代理的可提现余额。', ok: '拒绝', danger: true, input: '拒绝原因（代理可见）' }); if (note === false) return; await POST(`/api/admin/shop/withdrawals/${b.dataset.rej}/rejected`, { note }); toast('已拒绝'); withdrawals(status); countWd(); });
+}
+
+async function levels() {
+  LEVELS = (await GET('/api/admin/shop/levels')).list;
+  pane(`<section class="card glass p0"><div class="head"><h3>代理等级</h3><button class="btn sm primary" id="addLv" data-role="admin">＋ 新建等级</button></div>
+    <div class="tblwrap"><table class="tbl stack"><thead><tr><th>名称</th><th class="num">批发折扣</th><th class="num">推广佣金</th><th>默认</th><th></th></tr></thead><tbody>${LEVELS.map(l => `
+      <tr class="click" data-id="${l.id}"><td><b>${esc(l.name)}</b></td><td class="num">${l.wholesale_pct}%</td><td class="num">${l.commission_pct}%</td><td>${l.is_default ? '<span class="badge acc">新代理默认</span>' : ''}</td><td class="acts"><button class="iconbtn">›</button></td></tr>`).join('')}</tbody></table></div></section>
+    <p class="xs faint mt8">批发折扣 90% 表示进货价 = 商品代理基础价 × 90%。推广佣金按订单实付金额计算。</p>`);
+  $('#addLv').onclick = () => editLv();
+  $$('#pane tr[data-id]').forEach(tr => tr.onclick = () => can('admin') && editLv(LEVELS.find(l => l.id === +tr.dataset.id)));
+}
+function editLv(l) {
+  const d = dialog({ title: l ? '编辑等级' : '新建等级', size: 'sm',
+    body: `<div class="form"><div class="f"><label>名称</label><input class="field" id="ln" maxlength="20" value="${esc(l?.name || '')}"></div>
+      <div class="two"><div class="f"><label>批发折扣（%） <small>10–100</small></label><input class="field mono" id="lw" inputmode="numeric" value="${l?.wholesale_pct ?? 100}"></div>
+        <div class="f"><label>推广佣金（%） <small>0–50</small></label><input class="field mono" id="lc" inputmode="decimal" value="${l?.commission_pct ?? 5}"></div></div>
+      <div class="two"><div class="f"><label>排序</label><input class="field mono" id="ls" inputmode="numeric" value="${l?.sort ?? 0}"></div>
+        <div class="toggle" style="align-self:end"><div>新代理默认</div><button class="sw ${l?.is_default ? 'on' : ''}" id="ld"></button></div></div></div>`,
+    actions: [
+      ...(l && !l.is_default ? [{ label: '删除', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: `删除等级「${esc(l.name)}」？`, body: '还有代理在这个等级时不能删除。', ok: '删除', danger: true }))) return false; await DEL('/api/admin/shop/levels/' + l.id); toast('已删除'); levels(); } }] : []),
+      { label: '取消' },
+      { label: '保存', kind: 'primary', onClick: async () => {
+        const b = { name: $('#ln', d.el).value, wholesalePct: $('#lw', d.el).value, commissionPct: $('#lc', d.el).value, sort: $('#ls', d.el).value, isDefault: $('#ld', d.el).classList.contains('on') };
+        if (l) await PUT('/api/admin/shop/levels/' + l.id, b); else await POST('/api/admin/shop/levels', b);
+        toast('已保存'); levels();
+      } }] });
+  swInit($('#ld', d.el));
+}
+</script>
+</body></html>

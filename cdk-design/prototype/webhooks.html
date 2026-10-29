@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Webhook · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css"></head>
+<body data-page="webhooks">
+<div id="page" data-title="Webhook <small>卡台事件 → 你的 CDK 系统</small>" data-crumb="系统">
+  <div class="grid">
+    <section class="card glass s7">
+      <h3>接收地址 <span class="badge ok">● 正常 · 24h 成功率 99.2%</span></h3>
+      <div class="form">
+        <div class="f"><label>Endpoint URL</label><div class="row-flex"><input class="field mono" id="url" value="https://cdk.example.com/api/webhooks/avanfinity"><button class="btn" id="save">保存</button></div></div>
+        <div class="f"><label>签名密钥 <small>用于验证事件确实来自卡台</small></label>
+          <div class="copyline"><span class="secret" id="sec">whsec_9fK2mQ7vXa81LpZ4tR6yN0cB</span><button id="showSec">显示</button><button id="rot" style="color:var(--warn)">轮换</button></div></div>
+        <div class="row-flex"><button class="btn primary" id="test">发送测试事件</button><span class="xs faint">发送 <span class="mono">webhook.test</span> 到上面的地址</span></div>
+      </div>
+    </section>
+    <section class="card glass s5">
+      <h3>系统内置处理 <small>收到事件后自动执行</small></h3>
+      <div class="kv">
+        <div><span class="mono xs">openai.cdk.consumed</span><b class="sm">标记兑换成功 · 通知买家</b></div>
+        <div><span class="mono xs">openai.cdk.released</span><b class="sm">释放 CDK · 允许重兑</b></div>
+        <div><span class="mono xs">openai.direct.failed</span><b class="sm">订单进入「需处理」</b></div>
+        <div><span class="mono xs">openai.direct.completed</span><b class="sm">记录成本 · 计算利润</b></div>
+        <div><span class="mono xs">card.transaction.updated</span><b class="sm">写入支付流水</b></div>
+      </div>
+    </section>
+
+    <section class="card glass s5">
+      <h3>订阅事件 <small id="subN"></small></h3>
+      <div id="evs"></div>
+    </section>
+    <section class="card glass p0 s7">
+      <div class="toolbar"><h3 style="margin:0;font-size:14.5px">投递记录</h3><div class="seg" id="dSeg" style="margin-left:auto"><button class="on" data-v="">全部</button><button data-v="fail">失败</button></div></div>
+      <table class="tbl"><thead><tr><th>事件</th><th>类型</th><th>结果</th><th class="num">耗时</th><th class="num">尝试</th><th>时间</th><th></th></tr></thead><tbody id="dl"></tbody></table>
+    </section>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+const SUB = new Set(Object.values(MOCK.webhookEvents).flat());
+function evs() {
+  $('#evs').innerHTML = Object.entries(MOCK.webhookEvents).map(([g, list]) => `<div class="mb12"><div class="between mb12" style="margin-bottom:6px"><b class="sm">${g}</b><button class="link" data-g="${g}">全选/取消</button></div>
+    ${list.map(e => `<label class="row-flex sm" style="padding:3px 0;cursor:pointer"><input type="checkbox" data-e="${e}" ${SUB.has(e) ? 'checked' : ''}><span class="mono xs">${e}</span></label>`).join('')}</div>`).join('');
+  $('#subN').textContent = `已订阅 ${SUB.size} / ${Object.values(MOCK.webhookEvents).flat().length}`;
+  $$('[data-e]').forEach(c => c.onchange = () => { c.checked ? SUB.add(c.dataset.e) : SUB.delete(c.dataset.e); $('#subN').textContent = `已订阅 ${SUB.size} / ${Object.values(MOCK.webhookEvents).flat().length}`; });
+  $$('[data-g]').forEach(b => b.onclick = () => { const l = MOCK.webhookEvents[b.dataset.g]; const all = l.every(e => SUB.has(e)); l.forEach(e => all ? SUB.delete(e) : SUB.add(e)); evs(); });
+}
+let df = '';
+function dl() {
+  $('#dl').innerHTML = MOCK.deliveries.filter(d => !df || d.status !== 'delivered').map(d => `<tr class="click" data-id="${d.id}"><td class="mono xs">${d.id}</td><td class="mono xs">${d.type}</td><td>${d.status === 'delivered' ? badge('delivered') : `<span class="badge ${d.status === 'dead' ? 'bad' : 'warn'}">${d.status === 'dead' ? '✕' : '↻'} ${d.code}</span>`}</td>
+    <td class="num">${d.ms}ms</td><td class="num">${d.tries}</td><td class="xs faint">${d.at}</td><td class="acts">${d.status !== 'delivered' ? '<button class="btn sm" data-re>重发</button>' : '<button class="iconbtn">›</button>'}</td></tr>`).join('');
+  $$('#dl tr').forEach(tr => tr.onclick = e => {
+    const d = MOCK.deliveries.find(x => x.id === tr.dataset.id);
+    if (e.target.matches('[data-re]')) { e.stopPropagation(); busy(e.target, '…', 700, () => { d.status = 'delivered'; d.code = 200; d.tries++; dl(); toast('重发成功'); }); return; }
+    modal(`<h2>${d.type} <button class="iconbtn" data-close>×</button></h2><div class="sub mono">${d.id} · ${d.at}</div>
+      <div class="flabel">请求体</div><pre class="copyline" style="white-space:pre-wrap;display:block">${esc(JSON.stringify({ id: d.id, type: d.type, createdAt: '2026-10-25T14:20:31Z', data: { object: { id: 'cdk_8f21', codePrefix: 'GPTD-7K2Q', status: 'consumed', plan: 'plus' } } }, null, 2))}</pre>
+      <div class="flabel mt12">响应</div><div class="copyline">HTTP ${d.code} · ${d.ms}ms${d.code !== 200 ? ' · Bad Gateway' : ' · {"ok":true}'}</div>
+      <div class="foot"><button class="btn primary" data-close>关闭</button></div>`, { wide: true });
+  });
+}
+segInit($('#dSeg'), v => { df = v; dl(); });
+$('#save').onclick = () => toast('接收地址已保存');
+$('#showSec').onclick = () => $('#sec').classList.toggle('on');
+$('#rot').onclick = async () => { if (await confirmBox({ title: '轮换签名密钥？', body: '旧密钥会在 24 小时后失效，请尽快更新验签代码。', ok: '轮换' })) { $('#sec').textContent = 'whsec_' + rnd4() + rnd4() + rnd4() + rnd4(); toast('已生成新密钥'); } };
+$('#test').onclick = e => busy(e.currentTarget, '发送中…', 800, () => { MOCK.deliveries.unshift({ id: 'evt_' + rnd4().toLowerCase(), type: 'webhook.test', status: 'delivered', code: 200, ms: 64, at: new Date().toTimeString().slice(0, 8), tries: 1 }); dl(); toast('测试事件已送达 · 200'); });
+evs(); dl();
+</script>
+</body></html>

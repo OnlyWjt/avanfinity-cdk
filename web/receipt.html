@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>查询兑换凭证</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top">
+  <a class="brand" href="/redeem" style="padding:0"><div class="logo" data-bind="logo">C</div><span data-bind="name"></span></a>
+  <nav><a href="/redeem">兑换</a><button class="btn ghost sm" onclick="Theme.toggleMode()" aria-label="切换深浅色"><span data-bind="mode-icon">☾</span></button></nav>
+</header>
+<div class="pub">
+  <div class="hero"><h1>查询<br><span class="grad-text">兑换结果</span></h1>
+    <p class="lead">输入完整兑换码，查看开通进度和结果。为了安全，只能在<b>兑换时使用的同一设备和浏览器</b>上查询。</p></div>
+  <div class="pcard glass" id="view"></div>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const DEVICE = localStorage.getItem('cdk-device') || (() => { const d = uuid(); localStorage.setItem('cdk-device', d); return d; })();
+GET('/api/public/config').then(c => { Theme.apply(c.theme, true); pubNav(c, 'receipt'); }).catch(() => {});
+function form(err = '') {
+  $('#view').innerHTML = `<h2>输入兑换码</h2><p class="desc">需要完整的兑换码。</p>
+    <input class="code-in" id="code" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="64" spellcheck="false">
+    <div class="err">${esc(err)}</div><button class="btn primary block" id="go">查询</button>`;
+  const inp = $('#code'); inp.focus();
+  inp.oninput = () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); };
+  inp.onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+  $('#go').onclick = async e => { try { result(await run(e.currentTarget, '查询中…', () => POST('/api/public/receipt', { device: DEVICE, code: inp.value }))); } catch (x) { form(x.message); } };
+}
+const LABEL = { completed: '开通成功', processing: '开通中', funding: '准备中', funded: '等待你确认付款', retrying: '自动重试中', paid_pending_delivery: '已付款，等待到账', manual_review: '等待卖家确认', failed: '没有开通成功', expired: '已超时', cancelled: '兑换码已撤销', requires_action: '需要卖家处理', started: '未完成', quoted: '等待你确认', approved: '卖家已确认' };
+function result(r) {
+  const done = r.status === 'completed';
+  $('#view').innerHTML = `<div class="between mb16"><h2>${esc(r.planLabel)}</h2>${badge(r.status)}</div>
+    <div class="kv mb16"><div><span>状态</span><b>${LABEL[r.status] || r.status}</b></div><div><span>兑换码</span><b class="mono">${esc(r.code)}</b></div><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div>
+      <div><span>开通到</span><b>${esc(r.account || '—')}</b></div><div><span>兑换时间</span><b>${new Date(r.createdAt).toLocaleString('zh-CN')}</b></div>
+      ${done ? `<div><span>完成时间</span><b>${new Date(r.completedAt).toLocaleString('zh-CN')}</b></div>` : ''}
+      ${done && r.product === 'gpt' ? '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>' : ''}</div>
+    ${r.message && !done ? `<div class="note mb16">${esc(r.message)}</div>` : ''}
+    ${r.progress.length ? `<div class="tl mb16">${r.progress.map(p => `<div class="it ${p.status === 'failed' ? 'fail' : p.status === 'running' ? 'cur' : 'done'}"><div class="dot">${p.status === 'failed' ? '✕' : p.status === 'running' ? '' : '✓'}</div><div><b>${esc(p.step)}</b>${p.message ? `<p>${esc(p.message)}</p>` : ''}</div></div>`).join('')}</div>` : ''}
+    ${!done && !['failed', 'expired', 'cancelled'].includes(r.status) ? '<a class="btn primary block" href="/redeem">回到兑换页继续</a>' : ''}
+    <button class="backlink" id="back">← 查询其他兑换码</button>`;
+  $('#back').onclick = () => form();
+}
+form();
+</script>
+</body></html>

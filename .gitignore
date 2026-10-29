@@ -1,0 +1,9 @@
+node_modules/
+data/
+data-*/
+.env
+*.log
+cdk-design/prototype/shots/
+myagents_files/
+.claude/plans/myagents/
+backups/

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>主题与品牌 · CDK Console</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+.prev{border-radius:var(--r);overflow:hidden;border:1px solid var(--border);background:var(--bg);position:relative;
+  background-image:radial-gradient(500px 300px at 10% 0%,color-mix(in srgb,var(--a1) calc(var(--glow)*55%),transparent),transparent 65%),radial-gradient(400px 300px at 100% 40%,color-mix(in srgb,var(--a2) calc(var(--glow)*38%),transparent),transparent 65%)}
+.prev .inner{padding:22px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center}
+.prev h1{font-size:30px;line-height:1.15;font-weight:820;letter-spacing:-.02em}
+</style></head>
+<body data-page="theme">
+<div id="page" data-title="主题与品牌 <small>后台与兑换页同时生效</small>" data-crumb="系统">
+  <div class="grid">
+    <section class="card glass s5" style="align-self:start">
+      <div class="form">
+        <div class="f"><label>预设主题</label><div class="presets" id="presets"></div></div>
+        <div class="f"><label>外观</label><div class="seg full" id="modeSeg"><button data-v="dark">☾ 深色</button><button data-v="light">☀ 浅色</button><button data-v="auto">◐ 跟随系统</button></div></div>
+        <div class="f"><label>品牌色</label><div class="colors">
+          <div class="color"><input type="color" data-c="a1"><div>主色<br><span data-cv="a1"></span></div></div>
+          <div class="color"><input type="color" data-c="a2"><div>辅色<br><span data-cv="a2"></span></div></div>
+          <div class="color"><input type="color" data-c="a3"><div>点缀<br><span data-cv="a3"></span></div></div></div></div>
+        <div class="f"><label>圆角 <small id="vR"></small></label><input type="range" min="4" max="28" id="tR"></div>
+        <div class="f"><label>玻璃模糊 <small id="vB"></small></label><input type="range" min="0" max="40" id="tB"></div>
+        <div class="f"><label>背景光晕 <small id="vG"></small></label><input type="range" min="0" max="100" id="tG"></div>
+        <div class="two"><div class="f"><label>品牌名称</label><input class="field" id="tName" maxlength="20"></div><div class="f"><label>Logo 字符 <small>1–2 字</small></label><input class="field" id="tLogo" maxlength="2"></div></div>
+        <div class="f"><label>兑换页标语</label><input class="field" id="tSlogan" maxlength="24"></div>
+        <div class="f"><label>Logo 图片 <small>可选，替代字符</small></label><button class="btn block" style="border-style:dashed" onclick="toast('原型阶段暂不支持上传','info')">⤒ 上传 PNG / SVG</button></div>
+        <div class="row-flex"><button class="btn" id="reset">恢复默认</button><button class="btn" id="exp">导出 JSON</button><button class="btn" id="imp">导入</button><button class="btn primary" style="flex:1" id="save">保存</button></div>
+        <div class="xs faint" id="dirty"></div>
+      </div>
+    </section>
+
+    <section class="s7" style="display:grid;gap:16px;align-self:start">
+      <div class="card glass"><h3>兑换页预览 <a class="link" href="redeem.html" target="_blank">打开完整页 ↗</a></h3>
+        <div class="prev"><div class="inner">
+          <div><div class="brand" style="padding:0 0 14px"><div class="logo" data-bind="logo">C</div><span data-bind="name"></span></div><h1><span data-bind="slogan"></span></h1><p class="sm muted mt8">ChatGPT · X Premium · Telegram</p></div>
+          <div class="glass" style="padding:16px"><div class="member" style="margin-bottom:12px"><small>兑换码有效</small><b>ChatGPT Plus · 1 个月</b><div class="r"><span class="mono">GPTD-7K2Q-••••</span><span>由发行方支付</span></div></div><button class="btn primary block">确认开通</button></div>
+        </div></div></div>
+      <div class="card glass"><h3>组件预览</h3>
+        <div class="row-flex wrap"><button class="btn primary">主按钮</button><button class="btn">次按钮</button><button class="btn danger">危险</button>
+          <span class="badge ok">✓ 成功</span><span class="badge run"><i></i>处理中</span><span class="badge bad">✕ 失败</span><span class="badge warn">⚠ 注意</span><span class="badge idle">○ 未使用</span><span class="badge acc">◎ 已报价</span></div>
+        <div class="grid mt16"><div class="s6"><div class="vcard" style="aspect-ratio:1.7"><div class="chip"></div><div class="no">5319 93•• •••• 4821</div><div class="bt"><div><small>BALANCE</small>$182.40</div><span class="net">VISA</span></div></div></div>
+          <div class="s6"><div class="minis" style="grid-template-columns:1fr 1fr"><div><small>可用余额</small><strong>$9,274</strong></div><div><small>成功率</small><strong class="c-ok">88%</strong></div></div>
+            <div class="toggle mt8"><div>开关示例</div><button class="sw on"></button></div><input class="field mt8" placeholder="输入框焦点态"></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+let T = Theme.get(); const saved = () => JSON.stringify(Theme.get()) === JSON.stringify(T);
+$('#presets').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<button class="preset" data-k="${k}"><div class="sw3" style="background:${p.mode === 'dark' ? '#0d0e20' : '#f3f4fa'};background-image:radial-gradient(circle at 20% 30%,${p.a1},transparent 60%),radial-gradient(circle at 85% 40%,${p.a2},transparent 60%),radial-gradient(circle at 50% 120%,${p.a3},transparent 60%)"></div>${p.label}<span class="muted"> · ${p.mode === 'dark' ? '深' : '浅'}</span></button>`).join('');
+function sync() {
+  Theme.apply(T);
+  $$('.preset').forEach(p => p.classList.toggle('on', p.dataset.k === T.preset));
+  $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === T.mode));
+  ['a1', 'a2', 'a3'].forEach(k => { $(`[data-c=${k}]`).value = T[k]; $(`[data-cv=${k}]`).textContent = T[k]; });
+  $('#tR').value = T.r; $('#vR').textContent = T.r + 'px'; $('#tB').value = T.blur; $('#vB').textContent = T.blur + 'px'; $('#tG').value = T.glow; $('#vG').textContent = T.glow + '%';
+  ['Name', 'Logo', 'Slogan'].forEach(k => { const el = $('#t' + k); if (document.activeElement !== el) el.value = T[k.toLowerCase()]; });
+  $('#dirty').innerHTML = saved() ? '' : '<span class="c-warn">● 有未保存的修改，离开页面会还原</span>';
+}
+$$('.preset').forEach(b => b.onclick = () => { const p = PRESETS[b.dataset.k]; Object.assign(T, { preset: b.dataset.k, mode: p.mode, a1: p.a1, a2: p.a2, a3: p.a3 }); sync(); });
+$$('#modeSeg button').forEach(b => b.onclick = () => { T.mode = b.dataset.v; sync(); });
+$$('[data-c]').forEach(i => i.oninput = () => { T[i.dataset.c] = i.value; T.preset = 'custom'; sync(); });
+$('#tR').oninput = e => { T.r = +e.target.value; sync(); }; $('#tB').oninput = e => { T.blur = +e.target.value; sync(); }; $('#tG').oninput = e => { T.glow = +e.target.value; sync(); };
+['Name', 'Logo', 'Slogan'].forEach(k => $('#t' + k).oninput = e => { T[k.toLowerCase()] = e.target.value; sync(); });
+$('#save').onclick = () => { Theme.save(T); sync(); toast('主题已保存，后台与兑换页已生效'); };
+$('#reset').onclick = () => { T = { ...THEME_DEFAULT }; sync(); };
+$('#exp').onclick = () => copy(JSON.stringify(T, null, 2), '主题 JSON 已复制');
+$('#imp').onclick = () => { const m = modal(`<h2>导入主题 <button class="iconbtn" data-close>×</button></h2><textarea class="field" id="j" placeholder='{"a1":"#8b7cff",...}'></textarea><div class="foot"><button class="btn" data-close>取消</button><button class="btn primary" id="ok">导入</button></div>`);
+  $('#ok', m.el).onclick = () => { try { T = { ...THEME_DEFAULT, ...JSON.parse($('#j', m.el).value) }; sync(); m.close(); toast('已导入，记得保存'); } catch { toast('JSON 格式不正确', 'bad'); } }; };
+window.addEventListener('beforeunload', () => { if (!saved()) Theme.apply(); });
+swInit($('.toggle .sw'));
+sync();
+</script>
+</body></html>

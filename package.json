@@ -1,0 +1,32 @@
+{
+  "name": "avanfinity-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CDK 兑换系统 · 对接 Avanfinity 卡台",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --no-warnings server/main.ts",
+    "dev": "node --no-warnings --watch server/main.ts",
+    "mock": "node --no-warnings server/mock/avan-mock.ts",
+    "admin:create": "node --no-warnings scripts/create-admin.ts",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node --no-warnings scripts/e2e.ts",
+    "test": "node --no-warnings scripts/test-all.ts",
+    "backup": "node --no-warnings scripts/backup.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.17",
+    "hono": "^4.13.14",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/nodemailer": "^6.4.24",
+    "jsqr": "^1.4.0",
+    "puppeteer-core": "^23.11.1",
+    "typescript": "^5.9.3"
+  }
+}

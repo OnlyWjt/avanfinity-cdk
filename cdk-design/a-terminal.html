@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 A · Midnight Terminal</title>
+<style>
+  :root{
+    --bg:#0b0d0c; --panel:#111413; --line:#1f2422; --muted:#6b756f; --text:#dfe6e1;
+    --lime:#c6f432; --amber:#ffb547; --red:#ff5d5d; --cyan:#5ee6d0;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+    --sans:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;padding:32px;display:flex;gap:28px;align-items:flex-start;min-width:1560px}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+  /* ---------- Admin ---------- */
+  .admin{width:1120px;border:1px solid var(--line);background:var(--panel);display:grid;grid-template-columns:200px 1fr;min-height:780px}
+  .side{border-right:1px solid var(--line);padding:20px 0}
+  .logo{font-family:var(--mono);font-weight:700;font-size:15px;padding:0 20px 22px;color:var(--lime)}
+  .logo span{color:var(--text)}
+  .nav a{display:flex;justify-content:space-between;padding:9px 20px;color:var(--muted);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+  .nav a.on{color:var(--text);border-left-color:var(--lime);background:#151a17}
+  .nav .k{font-family:var(--mono);font-size:11px}
+  .nav h6{font-family:var(--mono);font-weight:500;font-size:10px;color:#3f4743;letter-spacing:.12em;padding:18px 20px 6px}
+  .main{padding:22px 26px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+  .top h1{font-size:18px;font-weight:600}
+  .top .env{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .top .env b{color:var(--lime);font-weight:500}
+  .kpis{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;border:1px solid var(--line);margin-bottom:20px}
+  .kpi{padding:16px 18px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .l{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em}
+  .kpi .v{font-family:var(--mono);font-size:26px;margin-top:8px;letter-spacing:-.02em}
+  .kpi .v small{font-size:13px;color:var(--muted)}
+  .kpi .d{font-family:var(--mono);font-size:11px;margin-top:6px;color:var(--lime)}
+  .kpi .d.warn{color:var(--amber)}
+  .spark{display:flex;gap:2px;align-items:flex-end;height:22px;margin-top:8px}
+  .spark i{width:6px;background:#2b332f}
+  .spark i.h{background:var(--lime)}
+  .row{display:grid;grid-template-columns:1fr 330px;gap:20px}
+  .box{border:1px solid var(--line)}
+  .box-h{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line)}
+  .box-h b{font-size:13px;font-weight:600}
+  .tabs{display:flex;gap:2px;font-family:var(--mono);font-size:11px}
+  .tabs span{padding:4px 9px;color:var(--muted);border:1px solid var(--line)}
+  .tabs span.on{color:#0b0d0c;background:var(--lime);border-color:var(--lime)}
+  table{width:100%;border-collapse:collapse}
+  th{font-family:var(--mono);font-weight:500;font-size:10px;color:var(--muted);text-align:left;padding:9px 14px;letter-spacing:.08em;border-bottom:1px solid var(--line)}
+  td{padding:10px 14px;border-bottom:1px solid #171b19;font-size:12.5px}
+  td.m{font-family:var(--mono)}
+  .st{font-family:var(--mono);font-size:11px;display:inline-flex;align-items:center;gap:6px}
+  .st:before{content:"";width:6px;height:6px;background:currentColor}
+  .ok{color:var(--lime)} .run{color:var(--cyan)} .idle{color:var(--muted)} .bad{color:var(--red)} .wa{color:var(--amber)}
+  .gen{padding:16px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;margin-bottom:6px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line)}
+  .seg span{padding:9px 0;text-align:center;font-size:12px;color:var(--muted);border-right:1px solid var(--line)}
+  .seg span:last-child{border-right:0}
+  .seg span.on{color:var(--text);background:#1a201d;box-shadow:inset 0 -2px 0 var(--lime)}
+  .input{border:1px solid var(--line);padding:9px 11px;font-family:var(--mono);display:flex;justify-content:space-between}
+  .input .u{color:var(--muted)}
+  .chk{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+  .chk i{width:14px;height:14px;border:1px solid var(--lime);display:inline-block;position:relative}
+  .chk i:after{content:"";position:absolute;inset:3px;background:var(--lime)}
+  .sum{border-top:1px dashed var(--line);margin-top:14px;padding-top:12px;font-family:var(--mono);font-size:12px}
+  .sum div{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted)}
+  .sum div b{color:var(--text);font-weight:500}
+  .btn{margin-top:14px;width:100%;background:var(--lime);color:#0b0d0c;border:0;font-family:var(--mono);font-weight:700;font-size:13px;padding:12px;letter-spacing:.05em}
+  .btn2{margin-top:8px;width:100%;background:transparent;color:var(--text);border:1px solid var(--line);font-family:var(--mono);font-size:12px;padding:10px}
+  /* ---------- Redeem ---------- */
+  .redeem{width:400px;border:1px solid var(--line);background:var(--panel);padding:26px 24px}
+  .r-brand{font-family:var(--mono);color:var(--lime);font-weight:700;margin-bottom:26px;display:flex;justify-content:space-between}
+  .r-brand span{color:var(--muted);font-weight:400;font-size:11px}
+  .r-title{font-size:22px;font-weight:600;line-height:1.3}
+  .r-sub{color:var(--muted);margin:6px 0 20px}
+  .code{border:1px solid var(--lime);padding:14px;font-family:var(--mono);font-size:18px;letter-spacing:.12em;color:var(--lime);background:#0e120f}
+  .code span{animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+  .plan{margin-top:16px;border:1px solid var(--line);padding:14px;display:grid;grid-template-columns:1fr auto;gap:4px}
+  .plan .n{font-size:15px;font-weight:600}
+  .plan .p{font-family:var(--mono);font-size:15px;color:var(--lime)}
+  .plan .s{color:var(--muted);font-size:11.5px;font-family:var(--mono)}
+  .steps{margin-top:22px;border-left:1px solid var(--line);padding-left:18px}
+  .step{position:relative;padding-bottom:16px}
+  .step:before{content:"";position:absolute;left:-23px;top:3px;width:9px;height:9px;background:var(--bg);border:1px solid var(--muted)}
+  .step.ok:before{background:var(--lime);border-color:var(--lime)}
+  .step.run:before{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 0 4px rgba(94,230,208,.15)}
+  .step b{font-weight:500;color:var(--text);font-size:13px}
+  .step.idle b{color:var(--muted)}
+  .step p{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px}
+  .foot{font-family:var(--mono);font-size:10.5px;color:#3f4743;margin-top:10px}
+</style>
+</head>
+<body>
+<div>
+  <div class="tag">A · Midnight Terminal — 管理后台</div>
+  <div class="admin">
+    <aside class="side">
+      <div class="logo">▍cdk<span>.console</span></div>
+      <nav class="nav">
+        <a class="on" href="#">总览 <span class="k">⌘1</span></a>
+        <a href="#">CDK 发行 <span class="k">⌘2</span></a>
+        <a href="#">兑换记录 <span class="k">⌘3</span></a>
+        <a href="#">库存与售价 <span class="k">⌘4</span></a>
+        <h6>卡台</h6>
+        <a href="#">钱包 <span class="k">$</span></a>
+        <a href="#">虚拟卡 <span class="k">142</span></a>
+        <a href="#">资金操作</a>
+        <h6>系统</h6>
+        <a href="#">Webhook</a>
+        <a href="#">API 密钥</a>
+      </nav>
+    </aside>
+    <section class="main">
+      <div class="top">
+        <h1>总览</h1>
+        <div class="env">api.avanfinity <b>● connected</b> · req 3a91f0 · 14:22:07</div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="l">WALLET BALANCE</div><div class="v">$12,480.<small>36</small></div>
+          <div class="spark"><i style="height:40%"></i><i style="height:55%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:62%"></i><i style="height:80%"></i><i style="height:74%"></i><i class="h" style="height:92%"></i></div></div>
+        <div class="kpi"><div class="l">CDK ISSUED · 30D</div><div class="v">1,284</div><div class="d">▲ 18.2%</div></div>
+        <div class="kpi"><div class="l">REDEEMED</div><div class="v">1,051</div><div class="d">81.9% rate</div></div>
+        <div class="kpi"><div class="l">FUNDS RESERVED</div><div class="v">$3,206</div><div class="d warn">233 未兑换</div></div>
+      </div>
+      <div class="row">
+        <div class="box">
+          <div class="box-h"><b>最近 CDK</b>
+            <div class="tabs"><span class="on">ALL</span><span>GPT</span><span>X</span><span>TG</span></div></div>
+          <table>
+            <tr><th>CODE</th><th>产品</th><th>套餐</th><th>状态</th><th>创建</th></tr>
+            <tr><td class="m">GPTD-7K2Q-••••</td><td>ChatGPT</td><td>Plus</td><td><span class="st ok">REDEEMED</span></td><td class="m">2m</td></tr>
+            <tr><td class="m">XCDK-M91A-••••</td><td>X</td><td>Premium+ 12M</td><td><span class="st run">PAYING</span></td><td class="m">6m</td></tr>
+            <tr><td class="m">TGCD-P0LX-••••</td><td>Telegram</td><td>6 个月</td><td><span class="st idle">UNUSED</span></td><td class="m">14m</td></tr>
+            <tr><td class="m">GPTD-Z3RE-••••</td><td>ChatGPT</td><td>Pro 20x</td><td><span class="st bad">FAILED</span></td><td class="m">31m</td></tr>
+            <tr><td class="m">GPTD-A88W-••••</td><td>ChatGPT</td><td>Go</td><td><span class="st ok">REDEEMED</span></td><td class="m">1h</td></tr>
+            <tr><td class="m">XCDK-Q2NV-••••</td><td>X</td><td>Premium 1M</td><td><span class="st wa">REVOKED</span></td><td class="m">2h</td></tr>
+            <tr><td class="m">TGCD-HH4T-••••</td><td>Telegram</td><td>12 个月</td><td><span class="st ok">REDEEMED</span></td><td class="m">3h</td></tr>
+            <tr><td class="m">GPTD-L0C1-••••</td><td>ChatGPT</td><td>Plus</td><td><span class="st idle">UNUSED</span></td><td class="m">5h</td></tr>
+          </table>
+        </div>
+        <div class="box">
+          <div class="box-h"><b>生成 CDK</b><span class="tag" style="margin:0">POST /cdks/generate</span></div>
+          <div class="gen">
+            <div class="field"><label>PRODUCT</label><div class="seg"><span class="on">ChatGPT</span><span>X</span><span>Telegram</span></div></div>
+            <div class="field"><label>PLAN</label><div class="input">plus <span class="u">▾  $19.80 / 库存 412</span></div></div>
+            <div class="field"><label>QUANTITY · 1–50</label><div class="input">20 <span class="u">张</span></div></div>
+            <div class="chk"><i></i> forceNewCard · 每码独立开卡</div>
+            <div class="sum">
+              <div>单价 <b>$19.80</b></div>
+              <div>开卡费 <b>$0.50 × 20</b></div>
+              <div>预计总成本 <b>$406.00</b></div>
+            </div>
+            <button class="btn">GENERATE ⏎</button>
+            <button class="btn2">导出上一批 (.csv)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div>
+  <div class="tag">A · 用户兑换页</div>
+  <div class="redeem">
+    <div class="r-brand">▍redeem <span>v1 · secure</span></div>
+    <div class="r-title">输入兑换码<br>开通你的会员</div>
+    <div class="r-sub">支持 ChatGPT · X Premium · Telegram Premium</div>
+    <div class="code">GPTD-7K2Q-F9WM-3TXA<span>_</span></div>
+    <div class="plan">
+      <div class="n">ChatGPT Plus · 1 个月</div><div class="p">✓ 有效</div>
+      <div class="s">user@mail.com · 预检报价已锁定</div><div class="s">exp 09:58</div>
+    </div>
+    <div class="steps">
+      <div class="step ok"><b>校验兑换码</b><p>preview · 0.3s</p></div>
+      <div class="step ok"><b>账号与报价预检</b><p>preflight · plan=plus · US</p></div>
+      <div class="step run"><b>正在支付</b><p>card ••4821 · attempt 1</p></div>
+      <div class="step idle"><b>开通完成</b><p>等待中</p></div>
+    </div>
+    <button class="btn">查看凭证</button>
+    <div class="foot">device 5e0c…a1 · 请勿关闭页面，终态后自动停止轮询</div>
+  </div>
+</div>
+</body>
+</html>

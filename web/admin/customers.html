@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>客户 · CDK Console</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body data-page="customers">
+<div id="page" data-title="客户" data-crumb="商城">
+  <section class="card glass p0">
+    <div class="toolbar"><div class="seg" id="typeSeg"><button class="on" data-v="">全部 <span class="ct" data-n="all"></span></button><button data-v="normal">普通用户 <span class="ct" data-n="normal"></span></button><button data-v="agent">代理 <span class="ct" data-n="agent"></span></button><button data-v="pending">待审核 <span class="ct" data-n="pending"></span></button></div><div class="fsearch">⌕<input id="q" placeholder="邮箱 / 昵称"></div><span class="xs faint">只列出注册用户；免注册订单在「商城订单」里按邮箱搜索</span><button class="btn sm primary" id="addCust" data-role="admin" style="margin-left:auto">＋ 新建客户</button></div>
+    <div class="tblwrap"><table class="tbl stack">
+      <thead><tr><th>客户</th><th>类型</th><th class="num">余额</th><th class="num">订单</th><th class="num">累计消费</th><th>注册 / 最近登录</th><th>状态</th><th></th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="8"><div class="empty"><span class="spin"></span></div></td></tr></tbody></table></div>
+    <div class="pager" id="pager"></div>
+  </section>
+</div>
+<script src="/assets/app.js"></script>
+<script>
+const yuan = c => (Number(c) < 0 ? '-¥' : '¥') + (Math.abs(Number(c || 0)) / 100).toFixed(2);
+let S = { q: qs('q') || '', type: qs('type') || '', page: 1 }, t, LIST = [], LEVELS = [];
+const AST = { active: ['acc', '代理'], disabled: ['idle', '代理 · 已停用'], pending: ['warn', '代理申请中'], rejected: ['idle', '普通用户'] };
+/** 用户类型标签：普通用户 / 代理（带等级） / 申请中 */
+const typeBadge = c => { if (!c.agent_status || c.agent_status === 'rejected') return '<span class="badge idle">普通用户</span>'; const [k, t] = AST[c.agent_status]; return `<span class="badge ${k}">${t}${c.agent_status === 'active' && c.level_name ? ' · ' + esc(c.level_name) : ''}</span>`; };
+ready(() => {
+  $('#addCust').onclick = create;
+  segSet($('#typeSeg'), S.type); segInit($('#typeSeg'), v => { S.type = v; S.page = 1; load(); });
+  GET('/api/admin/shop/levels').then(r => { LEVELS = r.list; }).catch(() => {}); $('#q').value = S.q; $('#q').oninput = () => { clearTimeout(t); t = setTimeout(() => { S.q = $('#q').value.trim(); S.page = 1; load(); }, 250); }; load(); });
+async function load() {
+  const r = await GET('/api/admin/shop/customers?' + new URLSearchParams({ page: S.page, size: 30, ...(S.q && { q: S.q }), ...(S.type && { type: S.type }) }));
+  LIST = r.list;
+  $$('#typeSeg [data-n]').forEach(e => { e.textContent = r.counts[e.dataset.n] || ''; });
+  $('#tbody').innerHTML = r.list.map(c => `<tr class="click" data-id="${c.id}">
+    <td class="t"><b>${esc(c.email)}</b><p>${esc(c.name || '')}</p></td>
+    <td>${typeBadge(c)}${c.agent_status && c.agent_status !== 'rejected' ? `<div class="xs mt8"><a class="link" href="agents.html?id=${c.id}">${esc(c.shop_name || '')} · /s/${esc(c.slug)}</a></div>` : ''}</td>
+    <td class="num"><b>${yuan(c.balance)}</b></td><td class="num">${c.orders}</td><td class="num">${yuan(c.spent)}</td>
+    <td class="xs faint nowrap">${fmtTime(c.created_at)}<br>${c.last_login_at ? ago(c.last_login_at) : '—'}</td>
+    <td>${c.disabled ? '<span class="badge idle">已停用</span>' : '<span class="badge ok">正常</span>'}</td>
+    <td class="acts nowrap"><button class="btn sm" data-adj="${c.id}" data-role="admin">调整余额</button><button class="btn sm ghost" data-dis="${c.id}" data-role="admin">${c.disabled ? '启用' : '停用'}</button></td></tr>`).join('') || '<tr><td colspan="8"><div class="empty"><div class="ic">☺</div>没有客户</div></td></tr>';
+  pager($('#pager'), r.total, S.page, 30, n => { S.page = n; load(); });
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.closest('button,a')) return; detail(+tr.dataset.id); });
+  $$('[data-adj]').forEach(b => b.onclick = () => adjust(LIST.find(c => c.id === +b.dataset.adj)));
+  $$('[data-dis]').forEach(b => b.onclick = async () => {
+    const c = LIST.find(x => x.id === +b.dataset.dis);
+    if (!c.disabled && !(await confirmBox({ title: `停用 ${esc(c.email)}？`, body: '停用后不能登录，已登录的会话会被踢下线；余额和订单保留。', ok: '停用', danger: true }))) return;
+    await POST(`/api/admin/shop/customers/${c.id}/disable`, { disabled: !c.disabled }); toast(c.disabled ? '已启用' : '已停用'); load();
+  });
+  applyRoles();
+}
+const OST = { pending: '待付款', paid: '待发货', delivered: '已完成', closed: '已关闭', refunded: '已退款' };
+const LT = { topup: '充值', spend: '消费', refund: '退款', adjust: '后台调整', from_earnings: '代理收益转入' };
+async function detail(id) {
+  const r = await GET('/api/admin/shop/customers/' + id), c = r.customer;
+  sheet({ title: esc(c.email), sub: `${esc(c.name || '')} 注册于 ${fmtTime(c.createdAt)}${c.disabled ? ' · 已停用' : ''}`,
+    body: `<div class="sec"><h4>账户</h4><div class="kv"><div><span>类型</span><b>${r.agent && r.agent.status !== 'rejected' ? (AST[r.agent.status] || ['', '代理'])[1] : '普通用户'}</b></div><div><span>当前余额</span><b>${yuan(c.balance)}</b></div></div></div>
+      ${r.agent && r.agent.status !== 'rejected' ? `<div class="sec"><h4>代理 <a class="link" href="agents.html?id=${c.id}">代理管理 →</a></h4><div class="kv"><div><span>店铺</span><b>${esc(r.agent.shopName)} · <a class="link" href="/s/${esc(r.agent.slug)}" target="_blank">/s/${esc(r.agent.slug)}</a></b></div><div><span>等级</span><b>${esc(r.agent.levelName || '默认')}</b></div><div><span>可提现 / 冻结</span><b>${yuan(r.agent.earnings)} / ${yuan(r.agent.frozen)}</b></div></div></div>` : ''}
+      <div class="sec"><h4>最近订单 <a class="link" href="shop-orders.html?q=${encodeURIComponent(c.email)}">全部 →</a></h4><div class="kv">${r.orders.map(o => `<div><span class="xs"><a class="link mono" href="shop-orders.html?no=${o.no}">${esc(o.no)}</a><br>${esc(o.title)}${o.kind === 'topup' ? '' : ' × ' + o.quantity}</span><b class="xs">${yuan(o.total)}<br><span class="faint">${OST[o.status] || o.status} · ${fmtTime(o.created_at)}</span></b></div>`).join('') || '<div><span>还没有订单</span><b></b></div>'}</div></div>
+      <div class="sec"><h4>余额明细</h4><div class="kv">${r.ledger.map(l => `<div><span class="xs">${LT[l.type] || esc(l.type)}<br><span class="faint">${esc(l.note || '')}</span></span><b class="xs ${l.amount > 0 ? 'c-ok' : ''}">${l.amount > 0 ? '+' : ''}${(l.amount / 100).toFixed(2)}<br><span class="faint">余额 ${(l.balance_after / 100).toFixed(2)} · ${fmtTime(l.created_at)}</span></b></div>`).join('') || '<div><span>暂无记录</span><b></b></div>'}</div></div>`,
+    actions: [...(can('admin') ? [{ label: '调整余额', onClick: () => { adjust(LIST.find(x => x.id === id) || { ...c, balance: c.balance }); } }, { label: '重置密码', onClick: () => { resetPw(c); } }, ...(!r.agent || r.agent.status === 'rejected' || r.agent.status === 'pending' ? [{ label: r.agent?.status === 'pending' ? '直接设为代理' : '设为代理', onClick: () => { setTimeout(() => makeAgent(c, r.agent), 200); } }] : [])] : []), { label: '关闭', kind: 'ghost' }] });
+}
+const randPw = () => { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789', r = crypto.getRandomValues(new Uint8Array(12)); return [...r].map(x => a[x % a.length]).join(''); };
+/** 把登录信息给管理员复制，转发给客户 */
+function credBox(title, email, pw) {
+  const text = `登录地址：${location.origin}/account/\n邮箱：${email}\n密码：${pw}`;
+  dialog({ title, tone: 'ok', size: 'sm', body: `<div class="dlg-text">把登录信息发给客户，建议对方登录后修改密码。</div><div class="kv mt12"><div><span>登录地址</span><b class="mono xs">${esc(location.origin)}/account/</b></div><div><span>邮箱</span><b class="mono">${esc(email)}</b></div><div><span>密码</span><b class="mono">${esc(pw)}</b></div></div>`,
+    actions: [{ label: '复制登录信息', onClick: () => { copy(text, '登录信息已复制'); return false; } }, { label: '完成', kind: 'primary' }] });
+}
+/** 后台手动开户：适合线下收款、老客户迁移、给代理开账号 */
+function create() {
+  const d = dialog({ title: '新建客户', sub: '不受「允许买家注册」开关限制；客户用邮箱和这里的密码登录', size: 'md',
+    body: `<div class="form">
+      <div class="two"><div class="f"><label for="ne">邮箱</label><input class="field" id="ne" type="email" autocomplete="off"></div><div class="f"><label for="nn">昵称 <small>选填</small></label><input class="field" id="nn" maxlength="30"></div></div>
+      <div class="f"><label for="np">初始密码 <small>至少 8 位</small></label><div class="inputgrp"><input id="np" class="mono" value="${randPw()}"><button type="button" class="btn ghost sm" id="regen" style="border-radius:0">换一个</button></div></div>
+      <div class="two"><div class="f"><label for="nb">初始余额（元） <small>选填</small></label><input class="field mono" id="nb" inputmode="decimal" placeholder="0"></div><div class="f"><label for="nno">余额说明 <small>客户可见</small></label><input class="field" id="nno" maxlength="60" placeholder="例如：线下转账充值"></div></div>
+      <div class="toggle"><div>同时开通代理<p>不需要客户申请，创建后直接是代理</p></div><button class="sw" id="nag"></button></div>
+      <div id="agBox" class="hidden">${agentFields()}</div></div>`,
+    actions: [{ label: '取消' }, { label: '创建', kind: 'primary', onClick: async () => {
+      const email = $('#ne', d.el).value.trim(), pw = $('#np', d.el).value;
+      const bal = Number($('#nb', d.el).value || 0);
+      if (!(bal >= 0)) throw new Error('初始余额不能是负数');
+      const agent = $('#nag', d.el).classList.contains('on') ? agentBody(d.el) : undefined;
+      await POST('/api/admin/shop/customers', { email, password: pw, name: $('#nn', d.el).value, balance: bal, note: $('#nno', d.el).value, agent });
+      load(); setTimeout(() => credBox('客户已创建', email, pw), 200);
+    } }] });
+  $('#regen', d.el).onclick = () => { $('#np', d.el).value = randPw(); };
+  swInit($('#nag', d.el), on => $('#agBox', d.el).classList.toggle('hidden', !on));
+  slugInput(d.el);
+}
+/* 设为代理：店铺名、店铺地址、等级 */
+const agentFields = (a = {}) => `<div class="two"><div class="f"><label for="asn">店铺名称</label><input class="field" id="asn" maxlength="30" value="${esc(a.shopName || '')}" placeholder="例如：小明会员小铺"></div>
+  <div class="f"><label for="alv">代理等级</label><select class="field" id="alv">${LEVELS.map(l => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${esc(l.name)} · 进货 ${l.wholesale_pct}% · 佣金 ${l.commission_pct}%</option>`).join('')}</select></div></div>
+  <div class="f"><label for="asl">店铺地址 <small>3–24 位小写字母、数字或横线</small></label><div class="inputgrp"><span>${esc(location.host)}/s/</span><input id="asl" maxlength="24" value="${esc(a.slug || '')}" placeholder="mystore"></div></div>`;
+const agentBody = el => ({ shopName: $('#asn', el).value.trim(), slug: $('#asl', el).value.trim().toLowerCase(), levelId: $('#alv', el).value });
+const slugInput = el => { const i = $('#asl', el); if (i) i.oninput = () => { i.value = i.value.toLowerCase().replace(/[^a-z0-9-]/g, ''); }; };
+function makeAgent(c, a) {
+  const d = dialog({ title: `把 ${esc(c.email)} 设为代理`, sub: a?.status === 'pending' ? '对方已经提交过申请，可以直接按下面的信息开通' : '不需要客户申请，保存后立即生效', size: 'md',
+    body: `<div class="form">${agentFields(a || {})}</div>`,
+    actions: [{ label: '取消' }, { label: '设为代理', kind: 'primary', onClick: async () => {
+      await POST(`/api/admin/shop/customers/${c.id}/agent`, agentBody(d.el));
+      toast('已设为代理'); load();
+    } }] });
+  slugInput(d.el);
+}
+function resetPw(c) {
+  const pw = randPw();
+  confirmBox({ title: `重置 ${esc(c.email)} 的密码？`, body: `新密码：<b class="mono">${pw}</b><br>重置后客户已登录的设备会被登出。`, ok: '重置' }).then(async yes => {
+    if (!yes) return;
+    try { await POST(`/api/admin/shop/customers/${c.id}/password`, { password: pw }); setTimeout(() => credBox('密码已重置', c.email, pw), 200); } catch (e) { toast(e.message, 'bad'); }
+  });
+}
+function adjust(c) {
+  const d = dialog({ title: '调整余额', sub: `${esc(c.email)} · 当前 ${yuan(c.balance)}`, size: 'sm',
+    body: `<div class="form"><div class="f"><label>金额（元） <small>正数加款，负数扣款</small></label><input class="field mono" id="aa" inputmode="decimal" placeholder="例如 100 或 -20"></div>
+      <div class="f"><label>说明 <small>客户可在余额明细里看到</small></label><input class="field" id="an" maxlength="100" placeholder="例如：线下转账充值"></div></div>`,
+    actions: [{ label: '取消' }, { label: '确认调整', kind: 'primary', onClick: async () => {
+      const amount = Number($('#aa', d.el).value);
+      if (!amount) throw new Error('请填写金额');
+      await POST(`/api/admin/shop/customers/${c.id}/adjust`, { amount, note: $('#an', d.el).value });
+      toast('余额已调整'); load();
+    } }] });
+}
+</script>
+</body></html>

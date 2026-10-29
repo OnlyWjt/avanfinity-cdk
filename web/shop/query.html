@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>查询订单</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top" id="shopTop" data-on="query"></header>
+<div class="pub">
+  <div class="hero"><h1>查询<br><span class="grad-text">我的订单</span></h1>
+    <p class="lead">输入下单时填写的<b>邮箱</b>或<b>订单号</b>，以及当时设置的查询密码。注册用户请 <a class="link" href="/account/">登录</a> 后在「我的订单」查看。</p></div>
+  <div class="pcard glass">
+    <h2>查询订单</h2><p class="desc">找回兑换码、查看发货状态。</p>
+    <div class="form">
+      <div class="f"><label for="key">邮箱或订单号</label><input class="field" id="key" autocomplete="email" placeholder="you@example.com 或 S2610…"></div>
+      <div class="f"><label for="pw">查询密码 <small>下单时设置的</small></label><input class="field" id="pw" type="password" autocomplete="current-password"></div>
+      <div class="err" id="err"></div>
+      <button class="btn primary block" id="go">查询</button>
+    </div>
+    <div id="res" class="mt16"></div>
+    <div id="recent" class="mt16"></div>
+  </div>
+</div>
+<script src="/assets/app.js"></script>
+<script src="/assets/shop.js"></script>
+<script>
+const row = o => `<a class="lrow" href="${orderUrl(o.no, o.token || o.t)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;background:var(--inset);text-decoration:none;color:inherit;margin-bottom:8px">
+  <div style="min-width:0"><b style="font-size:13px">${esc(o.title || '订单')}${o.quantity ? ` × ${o.quantity}` : ''}</b><div class="xs faint mono">${esc(o.no)} · ${o.createdAt ? fmtTime(o.createdAt) : ago(new Date(o.at).toISOString())}</div></div>
+  <div class="right nowrap">${o.total != null ? `<b>${yuan(o.total)}</b><br>` : ''}${o.status ? oBadge(o.status) : '<span class="link sm">查看 →</span>'}</div></a>`;
+$('#go').onclick = async e => {
+  $('#err').textContent = '';
+  const key = $('#key').value.trim(), password = $('#pw').value;
+  if (!key || !password) { $('#err').textContent = '请填写邮箱 / 订单号和查询密码'; return; }
+  try {
+    const r = await busy(e.currentTarget, '查询中…', () => POST('/api/shop/query', { key, password }));
+    if (r.list.length === 1) { location.href = orderUrl(r.list[0].no, r.list[0].token); return; }
+    $('#res').innerHTML = `<div class="flabel">找到 ${r.list.length} 个订单</div>` + r.list.map(row).join('');
+  } catch (x) { $('#err').textContent = x.message; }
+};
+$('#pw').onkeydown = $('#key').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+if (qs('key')) $('#key').value = qs('key');
+const rec = Recent.list();
+if (rec.length) $('#recent').innerHTML = `<div class="flabel">这台设备上最近的订单 <small>无需密码</small></div>` + rec.slice(0, 5).map(row).join('');
+</script>
+</body></html>

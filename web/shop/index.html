@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>商城</title>
+<script src="/assets/boot.js"></script>
+<link rel="expect" href="#boot-end" blocking="render">
+<link rel="stylesheet" href="/assets/app.css"></head>
+<body>
+<header class="pub-top" id="shopTop" data-on="shop"></header>
+<main class="shop">
+  <section class="sh-hero">
+    <div class="sh-copy">
+      <p class="eyebrow" id="eyebrow">ChatGPT · X Premium · Telegram Premium</p>
+      <h1 id="title"><span class="grad-text" data-bind="slogan"></span></h1>
+      <p class="sh-lead" id="lead" data-bind="tagline">付款后自动发货，几秒钟拿到兑换码</p>
+      <div class="sh-cta"><a class="btn primary" href="#shelf">挑选会员</a><a class="btn" href="/redeem">已有兑换码，去兑换</a></div>
+      <ul class="sh-facts" id="facts"></ul>
+    </div>
+    <div class="deck" aria-hidden="true">
+      <div class="pass gpt d1"><div class="pp-top"><span class="pp-mark">G</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">ChatGPT<br><b>Plus</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">AVF-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
+      <div class="pass x d2"><div class="pp-top"><span class="pp-mark">𝕏</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">X<br><b>Premium</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">XP-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
+      <div class="pass tg d3"><div class="pp-top"><span class="pp-mark">✈</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">Telegram<br><b>Premium</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">TG-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
+    </div>
+  </section>
+  <div id="notice"></div>
+
+  <section class="shelf" id="shelf">
+    <div class="shelf-head"><h2>选一张会员</h2><div class="cats seg" id="cats"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button></div></div>
+    <div class="subcats hidden" id="subcats"></div>
+    <div class="prods" id="prods"><div class="prod-skel"></div><div class="prod-skel"></div><div class="prod-skel"></div></div>
+  </section>
+
+  <section class="how" id="how">
+    <h2>拿到会员只要三步</h2>
+    <ol>
+      <li><b>选会员，付款</b><span id="howPay">不注册也能买</span></li>
+      <li><b>收到兑换码</b><span id="howMail">付款后几秒钟，订单页直接显示兑换码</span></li>
+      <li><b>打开兑换页开通</b><span>点「去兑换」，按提示填账号，会员直接开到你的账号上</span></li>
+    </ol>
+  </section>
+
+  <section class="faq">
+    <h2>常见问题</h2>
+    <details><summary>付款后多久能拿到兑换码？</summary><p>通常几秒钟。订单页会自动刷新显示兑换码；如果遇到延迟，系统会自动重试发货，不需要重复购买。</p></details>
+    <details><summary>没注册的话怎么找回兑换码？</summary><p>在「查订单」里输入下单邮箱（或订单号）和你设置的查询密码，就能看到这笔订单的兑换码。</p></details>
+    <details><summary>兑换码可以送人吗？</summary><p>可以。兑换码在兑换之前不绑定任何账号，转给谁，谁就能开通。</p></details>
+    <details><summary>开通失败了怎么办？</summary><p>兑换失败时兑换码不会作废，可以重新兑换；也可以联系客服处理。</p></details>
+  </section>
+
+  <footer class="shop-foot" id="foot"></footer>
+</main>
+<script src="/assets/app.js"></script>
+<script src="/assets/shop.js"></script>
+<script>
+let PRODUCTS = [], CAT = '', CATS = [], TOP = '', SUB = '';
+const PNAME2 = { gpt: 'ChatGPT', x: 'X', tg: 'Telegram' };
+const MARK = { gpt: 'G', x: '𝕏', tg: '✈' };
+
+(async () => {
+  let c, p;
+  try { [c, p] = await Promise.all([cfgReady, GET('/api/shop/products' + (STORE ? '?store=' + STORE : ''))]); }
+  catch (e) { $('#prods').innerHTML = `<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">!</div>${e.status === 404 ? '商城服务暂不可用（服务端可能还是旧版本，请管理员重启服务）' : esc(e.message)}<br><button class="link mt8" onclick="location.reload()">重新加载</button></div></div>`; return; }
+  $('#cats').classList.toggle('hidden', !!c.storeMissing);
+  if (c.storeMissing) { $('#prods').innerHTML = '<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">⌂</div>这个店铺不存在或已暂停营业<br><a class="link" href="/shop/">去主站看看 →</a></div></div>'; return; }
+  document.title = (c.store ? c.store.name : c.shop.title) + ' · 商城';
+  if (c.store) { $('#title').innerHTML = `<span class="grad-text">${esc(c.store.name)}</span>`; $('#eyebrow').textContent = '会员小店'; }
+  if (c.shop.notice) $('#notice').innerHTML = `<div class="shop-notice glass"><b>公告</b><div>${esc(c.shop.notice)}</div></div>`;
+  const contact = c.store?.contact || c.redeem.contact;
+  $('#foot').innerHTML = `<span>${esc(c.store ? c.store.name : c.shop.title)}</span>${contact ? `<span>客服 ${esc(contact)}</span>` : ''}<a href="/shop/query.html">查订单</a><a href="/redeem">兑换</a>`;
+  // 只承诺真的能做到的：没配邮件就不说「邮件送达」；后台填了副标题就用后台的
+  if (!c.theme.tagline) $('#lead').textContent = c.shop.mail ? '付款后自动发货，兑换码同时发送到你的邮箱' : '付款后自动发货，几秒钟拿到兑换码';
+  $('#facts').innerHTML = ['<li>付款后自动发货</li>', c.shop.mail ? '<li>兑换码同步发到邮箱</li>' : '<li>凭邮箱和查询密码随时找回</li>', '<li>开通失败，兑换码不作废</li>'].join('');
+  const names = payNames();
+  $('#howPay').textContent = names.length ? `支持${names.join('、')}，不注册也能买` : '不注册也能买';
+  if (c.shop.mail) $('#howMail').textContent = '付款后几秒钟，订单页显示兑换码，同时发到你的邮箱';
+  if (!c.shop.enabled) { $('#prods').innerHTML = '<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">⚙</div>商城暂停营业，请稍后再来</div></div>'; return; }
+  PRODUCTS = p.list; CATS = p.categories || [];
+  if (CATS.length) catNav();
+  else {
+    // 后台没建分类：按产品线筛选
+    const cats = new Set(PRODUCTS.map(x => x.product));
+    $$('#cats button').forEach(b => b.classList.toggle('hidden', !!b.dataset.v && !cats.has(b.dataset.v)));
+    if (cats.size < 2) $('#cats').classList.add('hidden');
+    segInit($('#cats'), v => { CAT = v; render(); });
+  }
+  render();
+  const want = qs('p');
+  if (want) { const x = PRODUCTS.find(y => y.id === want); if (!x) toast('这个商品已下架', 'warn'); else if (x.soldOut) toast('这个商品已售罄', 'warn'); else buy(x); }
+})();
+
+/* 两级分类：一级是顶部页签，选中后下面出现它的二级分类 */
+const subOf = id => CATS.filter(c => c.parentId === id);
+function catNav() {
+  const tops = CATS.filter(c => !c.parentId);
+  const uncat = PRODUCTS.some(p => !p.categoryId);
+  $('#cats').innerHTML = `<button class="${TOP === '' ? 'on' : ''}" data-v="">全部</button>` + tops.map(c => `<button data-v="${c.id}" class="${String(TOP) === String(c.id) ? 'on' : ''}">${c.icon ? esc(c.icon) + ' ' : ''}${esc(c.name)}</button>`).join('') + (uncat ? `<button data-v="none" class="${TOP === 'none' ? 'on' : ''}">其他</button>` : '');
+  $('#cats').classList.toggle('hidden', tops.length + (uncat ? 1 : 0) < 2 && !tops.some(t => subOf(t.id).length));
+  segInit($('#cats'), v => { TOP = v; SUB = ''; subNav(); render(); });
+  subNav();
+}
+function subNav() {
+  const subs = TOP && TOP !== 'none' ? subOf(+TOP) : [];
+  $('#subcats').classList.toggle('hidden', !subs.length);
+  $('#subcats').innerHTML = `<button class="chipopt ${SUB === '' ? 'on' : ''}" data-v="">全部</button>` + subs.map(c => `<button class="chipopt ${String(SUB) === String(c.id) ? 'on' : ''}" data-v="${c.id}">${c.icon ? esc(c.icon) + ' ' : ''}${esc(c.name)}</button>`).join('');
+  $$('#subcats button').forEach(b => b.onclick = () => { SUB = b.dataset.v; subNav(); render(); });
+}
+/** 当前筛选条件下的商品：按分类（两级）或产品线 */
+function visible() {
+  if (!CATS.length) return PRODUCTS.filter(p => !CAT || p.product === CAT);
+  if (TOP === '') return PRODUCTS;
+  if (TOP === 'none') return PRODUCTS.filter(p => !p.categoryId);
+  const ids = SUB ? [+SUB] : [+TOP, ...subOf(+TOP).map(c => c.id)];
+  return PRODUCTS.filter(p => ids.includes(p.categoryId));
+}
+/** 商品卡：每个产品一种通行证材质，价格在票根上 */
+function render() {
+  const list = visible();
+  $('#prods').innerHTML = list.map(p => {
+    const stock = p.soldOut ? '已售罄' : p.available == null ? '' : p.available <= 5 ? `仅剩 ${p.available} 张` : `库存 ${p.available}`;
+    return `<button class="prod pass ${p.product} ${p.soldOut ? 'sold' : ''}" data-id="${p.id}" ${p.soldOut ? 'disabled' : ''} aria-label="${esc(p.title)}，${yuan(p.price)}">
+      <div class="pp-top"><span class="pp-mark">${MARK[p.product]}</span><span class="pp-kind">${PNAME2[p.product]}</span>${p.badge ? `<span class="pp-badge">${esc(p.badge)}</span>` : ''}</div>
+      <h3 class="pp-title">${esc(p.title)}</h3>
+      <p class="pp-sub">${esc(p.subtitle || '')}</p>
+      <div class="pp-cut"></div>
+      <div class="pp-stub"><span class="price pp-price"><small>¥</small>${yuanN(p.price)}</span><span class="pp-buy">${p.soldOut ? '已售罄' : '购买'}</span></div>
+      ${stock ? `<span class="pp-stock ${!p.soldOut && p.available <= 5 ? 'low' : ''}">${stock}</span>` : ''}
+    </button>`;
+  }).join('') || '<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">✦</div>这个分类还没有商品</div></div>';
+  $$('#prods [data-id]').forEach(b => b.onclick = () => buy(PRODUCTS.find(p => p.id === b.dataset.id)));
+}
+
+function buy(p) {
+  const me = MEC, max = Math.min(p.maxPerOrder, p.available ?? 99);
+  let qty = 1, coupon = null;
+  const d = dialog({
+    title: esc(p.title), sub: esc(p.subtitle || PNAME2[p.product]), icon: PIC[p.product], size: 'md',
+    body: `
+      <div class="form">
+        ${p.description ? `<details class="pdesc"><summary>商品说明</summary><p>${esc(p.description)}</p></details>` : ''}
+        <div class="between"><div class="flabel" style="margin:0;gap:8px">数量 <small>每单最多 ${max}</small></div>
+          <div class="stepper"><button type="button" id="dec" aria-label="减少">−</button><input id="qty" value="1" inputmode="numeric" aria-label="购买数量"><button type="button" id="inc" aria-label="增加">＋</button></div></div>
+        ${me ? `<div class="note">使用账号 <b>${esc(me.email)}</b> 购买，${CFG.shop.mail ? '兑换码会发到这个邮箱，' : ''}也可以在「我的」订单里查看。</div>` : `
+        <div class="f"><label for="email">邮箱 <small>${CFG.shop.mail ? '兑换码会发到这个邮箱' : '用来查询订单'}</small></label><input class="field" id="email" type="email" autocomplete="email" placeholder="you@example.com" autofocus></div>
+        <div class="two">
+          <div class="f"><label for="qpw">查询密码 <small>4–32 位，请记住</small></label><input class="field" id="qpw" type="password" autocomplete="new-password" placeholder="用来查询订单"></div>
+          <div class="f"><label for="contact">联系方式 <small>选填</small></label><input class="field" id="contact" maxlength="60" placeholder="QQ / TG / 微信"></div>
+        </div>
+        <div class="xs faint">已有账号？<a class="link" href="/account/?next=${encodeURIComponent(location.pathname + '?p=' + p.id)}">登录</a> 后购买可直接用余额，订单自动保存。</div>`}
+        ${CFG.store ? '' : `<div class="f"><label>优惠券 <small>选填</small></label><div class="inputgrp"><input id="cpn" placeholder="输入券码" aria-label="优惠券码" autocomplete="off" style="text-transform:uppercase"><button type="button" class="btn ghost sm" id="cpnBtn" style="border-radius:0">使用</button></div><div class="fhelp" id="cpnMsg"></div></div>`}
+        <div class="f"><label>支付方式</label><div id="pm"></div></div>
+        <div class="sum" id="sum"></div>
+      </div>`,
+    actions: [{ label: '取消' }, { label: '立即支付', kind: 'primary', id: 'payBtn', busyLabel: '正在创建订单…', onClick: submit }],
+  });
+  const pick = payPicker($('#pm', d.el), { balance: me ? me.balance : null, total: p.price });
+  const noPay = !(CFG?.payMethods || []).length && !me;
+  if (noPay) { $('#payBtn', d.el).disabled = true; $('#pm', d.el).innerHTML = `<div class="note warn">暂时没有可用的在线支付方式${contactText() ? '，请联系客服：' + esc(contactText()) : '，请稍后再来'}</div>`; }
+  const sum = () => {
+    const sub = p.price * qty, dis = coupon ? coupon.discount : 0;
+    pick.setTotal(sub - dis);
+    $('#sum', d.el).innerHTML = `<div><span>单价</span><b>${yuan(p.price)}</b></div><div><span>数量</span><b>× ${qty}</b></div>${dis ? `<div><span>优惠（${esc(coupon.name)}）</span><b class="c-ok">− ${yuan(dis)}</b></div>` : ''}<div class="total"><span>应付</span><b>${yuan(sub - dis)}</b></div>`;
+    $('#payBtn', d.el).textContent = `立即支付 ${yuan(sub - dis)}`;
+    if (noPay) $('#payBtn', d.el).disabled = true;
+  };
+  const setQty = n => { qty = Math.max(1, Math.min(max, Math.floor(Number(n)) || 1)); $('#qty', d.el).value = qty; if (coupon) applyCoupon(true); sum(); };
+  $('#dec', d.el).onclick = () => setQty(qty - 1);
+  $('#inc', d.el).onclick = () => setQty(qty + 1);
+  $('#qty', d.el).onchange = e => setQty(e.target.value);
+  const applyCoupon = async silent => {
+    const code = $('#cpn', d.el).value.trim().toUpperCase();
+    if (!code) { coupon = null; $('#cpnMsg', d.el).textContent = ''; return sum(); }
+    try {
+      coupon = { code, ...(await POST('/api/shop/coupon', { code, productId: p.id, quantity: qty, email: $('#email', d.el)?.value || '' })) };
+      $('#cpnMsg', d.el).innerHTML = `<span class="c-ok">已使用：${esc(coupon.name)}，减 ${yuan(coupon.discount)}</span>`;
+    } catch (e) { coupon = null; $('#cpnMsg', d.el).innerHTML = `<span class="c-bad">${esc(e.message)}</span>`; if (!silent) toast(e.message, 'bad'); }
+    sum();
+  };
+  if ($('#cpnBtn', d.el)) { $('#cpnBtn', d.el).onclick = () => applyCoupon(); $('#cpn', d.el).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); applyCoupon(); } }; }
+  sum();
+
+  async function submit() {
+    const pm = pick();
+    if (!pm) throw new Error('暂无可用的支付方式');
+    const body = { productId: p.id, quantity: qty, payMethod: pm.method, paySub: pm.sub, device: DEVICE, store: STORE || undefined, ref: STORE ? undefined : refSlug(CFG.shop.refDays) || undefined, coupon: coupon?.code };
+    if (!me) {
+      Object.assign(body, { email: $('#email', d.el).value.trim(), queryPassword: $('#qpw', d.el).value, contact: $('#contact', d.el).value.trim() });
+      if (!/^\S+@\S+\.\S+$/.test(body.email)) throw new Error('请填写正确的邮箱');
+      if (body.queryPassword.length < 4) throw new Error('请设置 4 位以上的查询密码');
+    }
+    const r = await POST('/api/shop/orders', body);
+    Recent.add({ no: r.no, t: r.token, title: p.title });
+    afterPay(r.no, r.token, r.pay);
+    return false;
+  }
+}
+</script>
+</body></html>
