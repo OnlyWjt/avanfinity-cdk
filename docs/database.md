@@ -44,7 +44,7 @@ await tx(async () => {
 - **所有数据库调用都要 `await`**。事务结束时还有没完成的操作会报错并整体回滚；事务结束后才执行的操作会直接报错，不会悄悄在事务外生效
 - 事务在进程内**排队执行**（互斥）：资金相关的「先检查、再写入」（额度预留、余额扣减、优惠券占用、账号名额）依赖这一点。所以系统只能跑一个进程（PostgreSQL / MySQL 上启动时会拿数据库锁，第二个实例起不来）
 - **互斥只管事务和事务之间**。PostgreSQL / MySQL 上，事务外的单条写入不会等事务结束，可以插在事务的「检查」和「写入」之间（SQLite 只有一个连接，事务外的语句会等，所以本地用 SQLite 测不出来）。因此：
-  - 参与「先检查、再写入」的数据，**所有写入都要放进 `tx`**（例如 `direct_spend` 只在 `reserve()` 的事务里插入）
+  - 参与「先检查、再写入」的数据，**所有写入都要放进 `tx`**（例如优惠券占用、余额扣减都在下单 / 退款的事务里）
   - 或者写成带条件的单条语句，靠 `changes` 判断抢没抢到：`UPDATE customers SET balance = balance - ? WHERE id = ? AND balance >= ?`
   - 不要在事务外 `SELECT` 检查、再在事务外 `UPDATE`
 - 每条查询有超时（`DB_QUERY_TIMEOUT_MS`，默认 30 秒）：超时报错，事务回滚，那个连接作废。事务是排队的，一个卡住会挡住所有写入，所以事务要短；`/healthz` 在事务超过 60 秒时返回 503，超过 5 分钟进程退出重启
@@ -90,7 +90,7 @@ await tx(async () => {
 
   ```ts
   export const LATER_MIGRATIONS: Record<Dialect, string>[] = [
-    /* 9 */ {
+    /* 10 */ {
       sqlite: `ALTER TABLE orders ADD COLUMN memo TEXT;`,
       pg:     `ALTER TABLE orders ADD COLUMN memo TEXT;`,
       mysql:  `ALTER TABLE orders ADD COLUMN memo LONGTEXT;`,
@@ -99,6 +99,7 @@ await tx(async () => {
   ```
 
   不要再往 `SQLITE_MIGRATIONS` 里加（否则 PG / MySQL 那边对不上）。
+- 数据状态不满足时不能升级的（例如删表前表里还有没处理完的数据），在 `MIGRATION_CHECKS` 里按版本号写检查：抛错会让启动失败，数据库不变（第 9 版的检查就是一个例子）
 - 迁移在启动时自动执行。SQLite / PostgreSQL 的迁移在事务里，失败会回滚；MySQL 的 DDL 会自动提交，迁移失败可能停在一半，所以 MySQL 上升级前一定要备份
 
 ## 测试

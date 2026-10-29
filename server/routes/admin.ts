@@ -9,9 +9,8 @@ import * as B from '../services/batches.ts';
 import * as R from '../services/redeem.ts';
 import * as W from '../services/webhook.ts';
 import * as ST from '../services/stats.ts';
-import * as D from '../services/direct.ts';
 import { getSetting, setSetting, patchSetting, avanCredentials, saveAvanCredentials, mask } from '../services/settings.ts';
-import { gptOffers, gptDirectEstimate, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, GPT_DIRECT_PLAN_KEYS } from '../services/catalog.ts';
+import { gptOffers, gptSalePrice, catalogUsd, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, isCredits } from '../services/catalog.ts';
 import { createUser } from '../services/auth.ts';
 import { encryptOpt } from '../crypto.ts';
 import { sendTelegram, dailyReportText } from '../services/notify.ts';
@@ -67,9 +66,15 @@ admin.post('/codes/revoke', requireRole('operator'), async c => {
 
 admin.get('/catalog', requireRole('support'), async c => {
   const [offers, xp, tp] = await Promise.all([gptOffers(), socialPlans('x'), socialPlans('tg')]);
-  const directCost = Object.fromEntries(await Promise.all(GPT_DIRECT_PLAN_KEYS.map(async k => [k, await gptDirectEstimate(k)] as const)));
+  // 点数没有 CDK 售价和库存（兑换时按点数报价扣费）：成本按套餐目录估算，能估出来就算可生成
+  const gpt = await Promise.all(planKeys('gpt').map(async k => {
+    const o = offers.val?.find(x => x.plan === k);
+    // fee：服务费，自定义点数在页面上按「单价 × 点数 + 服务费」估算，和后端 gptSalePrice 的算法一致
+    if (isCredits(k) && !o?.salePrice) { const est = await gptSalePrice(k); return { key: k, label: fullPlanLabel('gpt', k), credits: true, enabled: est != null, cost: est, fee: (await catalogUsd(k))?.fee ?? 0, stock: null, status: est != null ? 'ESTIMATE' : 'WAITING_QUOTE' }; }
+    return { key: k, label: fullPlanLabel('gpt', k), credits: isCredits(k), enabled: !!o?.enabled, cost: o?.salePrice ? Number(o.salePrice) : null, stock: o?.stock ?? null, status: o?.pricingStatus ?? null };
+  }));
   return c.json({
-    gpt: planKeys('gpt').map(k => { const o = offers.val?.find(x => x.plan === k); return { key: k, label: fullPlanLabel('gpt', k), direct: GPT_DIRECT_PLAN_KEYS.includes(k), directCost: directCost[k] ?? null, enabled: !!o?.enabled, cost: o?.salePrice ? Number(o.salePrice) : null, stock: o?.stock ?? null, status: o?.pricingStatus ?? null }; }),
+    gpt,
     x: planKeys('x').map(k => { const p = xp.val?.plans.find(x => x.key === k); return { key: k, label: fullPlanLabel('x', k), enabled: p?.enabled ?? true, serviceFee: p ? Number(p.serviceFee) : null }; }),
     tg: planKeys('tg').map(k => { const p = tp.val?.plans.find(x => x.key === k); return { key: k, label: fullPlanLabel('tg', k), enabled: p?.enabled ?? true, serviceFee: p ? Number(p.serviceFee) : null }; }),
     socialDefaults: getSetting('socialDefaults'), fx: getSetting('fx').usdCny,
@@ -154,46 +159,9 @@ admin.get('/redemptions/:id', requireRole('support'), async c => {
   if (!r) throw notFound('记录不存在');
   const txs = (await q.all<any>('SELECT id, auth_time, data FROM transactions WHERE redemption_id = ? ORDER BY auth_time', [r.id])).map(t => ({ id: t.id, at: t.auth_time, ...parse(t.data, {}) }));
   return c.json({ ...redView(r), quote: parse(r.quote, null), progress: parse(r.progress, []), invoiceUrls: parse(r.invoice_urls, []), orderId: r.order_id,
-    clientRequestId: r.client_request_id, directTaskId: r.direct_task_id, hasSession: R.hasSession(r.id), transactions: txs,
-    directSpend: await q.all('SELECT id, idem_key idemKey, task_id taskId, reserved_usd reservedUsd, actual_usd actualUsd, status, cost_verified costVerified, cost_note costNote, created_at createdAt FROM direct_spend WHERE redemption_id = ? ORDER BY id', [r.id]) });
+    clientRequestId: r.client_request_id, hasSession: R.hasSession(r.id), transactions: txs });
 });
 
-/* ================= GPT 直充资金护栏 ================= */
-admin.get('/direct/guard', requireRole('support'), async c => c.json(await D.guardView()));
-admin.put('/direct/guard', requireRole('admin'), async c => { const b = await body<any>(c); await D.saveGuard(b); await audit(c, 'direct.guard', '', getSetting('directGuard')); return c.json(await D.guardView()); });
-/**
- * 直充就绪检查：只做只读检查，不会下单。
- * 写权限（GPT 直充写、自动开卡）没法在不花钱的情况下验证，单独标出来，上线前用 Go 套餐真实下一单确认
- */
-admin.get('/direct/readiness', requireRole('admin'), async c => {
-  const checks: { name: string; ok: boolean | 'warn'; detail: string }[] = [];
-  try {
-    const p = await avan.gptPlans();
-    const usable = (p.plans || []).filter(x => GPT_DIRECT_PLAN_KEYS.includes(x.key) && x.enabled);
-    checks.push({ name: '直充套餐目录', ok: Number.isInteger(p.version) && usable.length > 0, detail: usable.length ? `可用：${usable.map(x => x.label || x.key).join('、')}（版本 ${p.version}）` : '没有可用的直充套餐' });
-    checks.push({ name: '结账地区', ok: true, detail: p.checkoutCountries?.length ? p.checkoutCountries.map(r => `${r.country}/${r.currency}`).join('、') : '卡台未返回地区列表，按默认地区' });
-  } catch (e) { checks.push({ name: '直充套餐目录', ok: false, detail: e instanceof AvanError ? `${e.status} ${e.message}` : String(e) }); }
-  try { const b = await avan.balance(); checks.push({ name: '钱包余额', ok: Number.isFinite(Number(b.balance)), detail: `可用 $${Number(b.balance).toFixed(2)}` }); }
-  catch (e) { checks.push({ name: '钱包余额', ok: false, detail: e instanceof AvanError ? `${e.status} ${e.message}（检查 API Key 是否有余额读取权限）` : String(e) }); }
-  const pc = getSetting('payment').productCode;
-  checks.push({ name: '自动开卡通道', ok: !!pc, detail: pc ? `已选择 ${pc}` : '还没在「付款通道」里选择，卡台自动开卡时会失败' });
-  checks.push({ name: 'Webhook 签名密钥', ok: !!avanCredentials().webhookSecret ? true : 'warn', detail: avanCredentials().webhookSecret ? '已配置，直充结果会实时推送' : '未配置：只能靠轮询，「需要卖家处理」的单最多 5 分钟才更新' });
-  checks.push({ name: '写权限', ok: 'warn', detail: 'API Key 需要 GPT 直充写权限和自动开卡权限。只读检查无法验证，上线前请用 Go 套餐真实直充一单确认' });
-  return c.json({ ready: checks.every(x => x.ok !== false), checks });
-});
-
-/** 直充人工核对：登记卡台上查到的结果，兑换状态、兑换码、额度账本一起更新 */
-admin.post('/redemptions/:id/resolve-direct', requireRole('admin'), async c => {
-  const b = await body<any>(c);
-  const v = await R.adminResolveDirect(c.req.param('id'), { outcome: oneOf(b.outcome, '核对结果', ['completed', 'failed', 'attach'] as const), actualUsd: b.actualUsd, taskId: b.taskId, note: str(b.note, '核对依据', { max: 200 }) });
-  await audit(c, 'direct.resolve', c.req.param('id'), b);
-  return c.json({ ok: true, status: v.status });
-});
-admin.post('/direct/guard/:action{pause|resume}', requireRole('admin'), async c => {
-  if (c.req.param('action') === 'pause') await D.pause(`管理员 ${c.get('user').name} 手动暂停`); else await D.resume();
-  await audit(c, `direct.${c.req.param('action')}`);
-  return c.json(await D.guardView());
-});
 admin.post('/redemptions/:id/:action{approve|reject|retry|release}', requireRole('operator'), async c => {
   const id = c.req.param('id'), action = c.req.param('action');
   if (action === 'approve') await R.adminApprove(id);

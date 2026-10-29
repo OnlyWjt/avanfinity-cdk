@@ -96,7 +96,7 @@ function editCat(c, parentId) {
 function render() {
   const list = LIST.filter(p => (!P || p.product === P) && (CSEL === '' || (CSEL === 'none' ? !p.category_id : catIds(+CSEL).includes(p.category_id))));
   $('#tbody').innerHTML = list.map(p => {
-    const s = STRATS.find(x => x.id === p.strategy_id), plan = CAT[p.product].find(x => x.key === p.plan);
+    const s = STRATS.find(x => x.id === p.strategy_id), plan = planInfo(p.product, p.plan);
     return `<tr class="click" data-id="${p.id}">
       <td class="t"><div class="row-flex">${PICXS[p.product]}<div><b>${esc(p.title)}</b>${p.badge ? ` <span class="badge acc">${esc(p.badge)}</span>` : ''}<p>${esc(p.subtitle || '')}</p></div></div></td>
       <td class="xs">${p.category_id ? esc(catPath(p.category_id)) : '<span class="faint">未分类</span>'}</td>
@@ -117,7 +117,15 @@ function render() {
   applyRoles();
 }
 /** 卡台成本折合人民币（分）；X / TG 下单时才知道实际扣款，返回 null */
-const costCny = p => { if (p.product !== 'gpt') return null; const c = CAT.gpt.find(x => x.key === p.plan)?.cost; return c == null ? null : Math.round(c * (CAT.fx || 7.2) * 100); };
+/** 自定义点数 credits_N 不在目录列表里：标签和成本按最接近的固定面额估算 */
+const isCr = k => /^credits_\d+$/.test(k || '');
+function planInfo(product, key) {
+  const p = CAT[product].find(x => x.key === key);
+  if (p || product !== 'gpt' || !isCr(key)) return p;
+  const n = Number(key.slice(8)), t = CAT.gpt.filter(x => x.credits && x.cost != null).sort((a, b) => Math.abs(Number(a.key.slice(8)) - n) - Math.abs(Number(b.key.slice(8)) - n))[0];
+  return { key, label: `ChatGPT ${n.toLocaleString('en-US')} 点数`, credits: true, cost: t ? Math.ceil(((t.cost - (t.fee || 0)) / Number(t.key.slice(8)) * n + (t.fee || 0)) * 100) / 100 : null, stock: null };
+}
+const costCny = p => { if (p.product !== 'gpt') return null; const c = planInfo('gpt', p.plan)?.cost; return c == null ? null : Math.round(c * (CAT.fx || 7.2) * 100); };
 const form = p => ({ product: p.product, plan: p.plan, title: p.title, subtitle: p.subtitle, description: p.description, badge: p.badge, price: (p.price / 100).toFixed(2), agentPrice: (p.agent_price / 100).toFixed(2), strategyId: p.strategy_id, stockLimit: p.stock_limit ?? '', maxPerOrder: p.max_per_order, sort: p.sort, enabled: !!p.enabled, categoryId: p.category_id ?? '' });
 
 function edit(p) {
@@ -126,11 +134,12 @@ function edit(p) {
     title: p ? '编辑商品' : '新建商品', sub: p ? `已售 ${p.sold}` : '买家付款后自动生成兑换码发货',
     body: `<div class="form">
       <div class="f"><label>产品</label><div class="seg" id="ep"><button data-v="gpt">ChatGPT</button><button data-v="x">X Premium</button><button data-v="tg">Telegram</button></div></div>
-      <div class="f"><label>套餐</label><select class="field" id="eplan"></select><div class="help" id="costHelp"></div></div>
+      <div class="f"><label>套餐</label><select class="field" id="eplan"></select>
+        <input class="field mono mt8 hidden" id="ecr" inputmode="numeric" placeholder="点数，250–9999999" aria-label="自定义点数"><div class="help" id="costHelp"></div></div>
       <div class="f"><label>发货策略 <small>生成兑换码时使用</small></label><select class="field" id="estr"></select></div>
       <div class="f"><label>分类 <small>商城按分类展示</small></label><select class="field" id="ecat"><option value="">未分类</option>${kids(null).map(t => `<option value="${t.id}" ${v.categoryId === t.id ? 'selected' : ''}>${esc(t.name)}</option>${kids(t.id).map(k => `<option value="${k.id}" ${v.categoryId === k.id ? 'selected' : ''}>　└ ${esc(k.name)}</option>`).join('')}`).join('')}</select></div>
       <div class="f"><label>商品名称 <small>留空用套餐名</small></label><input class="field" id="et" maxlength="60" value="${esc(v.title)}"></div>
-      <div class="two"><div class="f"><label>副标题</label><input class="field" id="es" maxlength="80" value="${esc(v.subtitle)}" placeholder="例如：官方直充 · 自动关闭续费"></div>
+      <div class="two"><div class="f"><label>副标题</label><input class="field" id="es" maxlength="80" value="${esc(v.subtitle)}" placeholder="例如：官方渠道 · 自动关闭续费"></div>
         <div class="f"><label>角标 <small>选填</small></label><input class="field" id="eb" maxlength="12" value="${esc(v.badge)}" placeholder="热销 / 推荐"></div></div>
       <div class="two"><div class="f"><label>零售价（元）</label><input class="field mono" id="epr" inputmode="decimal" value="${esc(v.price)}"></div>
         <div class="f"><label>代理基础价（元） <small>≤ 零售价</small></label><input class="field mono" id="eap" inputmode="decimal" value="${esc(v.agentPrice)}"></div></div>
@@ -145,7 +154,7 @@ function edit(p) {
       ...(p ? [{ label: '删除', kind: 'ghost', onClick: async () => { if (!(await confirmBox({ title: '删除这个商品？', body: '已经有订单的商品不能删除，可以下架。', ok: '删除', danger: true }))) return false; await DEL('/api/admin/shop/products/' + p.id); toast('已删除'); load(); } }] : []),
       { label: '取消' },
       { label: '保存', kind: 'primary', onClick: async () => {
-        const body = { product: v.product, plan: $('#eplan', d.el).value, strategyId: $('#estr', d.el).value, categoryId: $('#ecat', d.el).value, title: $('#et', d.el).value, subtitle: $('#es', d.el).value, badge: $('#eb', d.el).value,
+        const body = { product: v.product, plan: planKey(), strategyId: $('#estr', d.el).value, categoryId: $('#ecat', d.el).value, title: $('#et', d.el).value, subtitle: $('#es', d.el).value, badge: $('#eb', d.el).value,
           price: $('#epr', d.el).value, agentPrice: $('#eap', d.el).value || $('#epr', d.el).value, stockLimit: $('#esl', d.el).value, maxPerOrder: $('#emx', d.el).value, description: $('#ed', d.el).value, sort: $('#eso', d.el).value, enabled: $('#een', d.el).classList.contains('on') };
         if (p) await PUT('/api/admin/shop/products/' + p.id, body); else await POST('/api/admin/shop/products', body);
         toast('已保存'); load();
@@ -154,22 +163,28 @@ function edit(p) {
   });
   swInit($('#een', d.el));
   const fill = () => {
-    $('#eplan', d.el).innerHTML = CAT[v.product].map(x => `<option value="${x.key}" ${x.key === v.plan ? 'selected' : ''}>${esc(x.label)}${x.enabled === false ? '（卡台未开放）' : ''}</option>`).join('');
+    const custom = v.product === 'gpt' && isCr(v.plan) && !CAT.gpt.find(x => x.key === v.plan);
+    $('#eplan', d.el).innerHTML = CAT[v.product].map(x => `<option value="${x.key}" ${x.key === v.plan ? 'selected' : ''}>${esc(x.label)}${x.enabled === false ? '（卡台未开放）' : ''}</option>`).join('')
+      + (v.product === 'gpt' ? `<option value="__cr" ${custom ? 'selected' : ''}>自定义点数…</option>` : '');
+    $('#ecr', d.el).value = custom ? v.plan.slice(8) : '';
     const ss = STRATS.filter(s => s.prod.includes(v.product));
     $('#estr', d.el).innerHTML = ss.map(s => `<option value="${s.id}" ${s.id === v.strategyId || (!v.strategyId && s.isDefault) ? 'selected' : ''}>${esc(s.name)} · ${s.mode === 'own' ? '自有码' : '托管码'}</option>`).join('') || '<option value="">没有适用的策略</option>';
     Dropdown.scan(d.el); hint();
   };
+  /** 选中的套餐 key：「自定义点数」用输入的点数拼成 credits_N（格式由后端校验） */
+  const planKey = () => $('#eplan', d.el).value === '__cr' ? 'credits_' + $('#ecr', d.el).value.trim() : $('#eplan', d.el).value;
   const hint = () => {
-    const plan = CAT[v.product].find(x => x.key === $('#eplan', d.el).value);
+    $('#ecr', d.el).classList.toggle('hidden', $('#eplan', d.el).value !== '__cr');
+    const plan = planInfo(v.product, planKey());
     const fx = CAT.fx || 7.2, cost = v.product === 'gpt' && plan?.cost != null ? plan.cost * fx : null;
-    $('#costHelp', d.el).textContent = v.product === 'gpt' ? (plan?.cost != null ? `卡台售价 $${plan.cost.toFixed(2)} ≈ ¥${cost.toFixed(2)}（汇率 ${fx}），库存 ${plan.stock ?? '—'}` : '卡台暂未报价') : `成本按兑换时实际扣款计算，服务费 $${plan?.serviceFee ?? '—'}`;
+    $('#costHelp', d.el).textContent = v.product === 'gpt' ? (plan?.cost != null ? `${plan.credits ? '预估成本（兑换时按点数报价扣费）' : '卡台售价'} $${plan.cost.toFixed(2)} ≈ ¥${cost.toFixed(2)}（汇率 ${fx}）${plan.credits ? ' · 点数只能用自有码策略' : `，库存 ${plan.stock ?? '—'}`}` : '卡台暂未报价') : `成本按兑换时实际扣款计算，服务费 $${plan?.serviceFee ?? '—'}`;
     const pr = Number($('#epr', d.el).value), ap = Number($('#eap', d.el).value || pr);
     const warn = cost != null && pr > 0 && (pr < cost || ap < cost);
     $('#margin', d.el).innerHTML = pr > 0 ? `${cost != null ? `每单毛利 <b class="${pr - cost < 0 ? 'c-bad' : 'c-ok'}">${(pr - cost).toFixed(2)}</b> 元 · ` : ''}代理每单最多赚 <b>${(pr - ap).toFixed(2)}</b> 元${warn ? '<div class="note bad mt8">⚠ 价格低于卡台成本，每卖一单都会亏钱</div>' : ''}` : '';
   };
   segSet($('#ep', d.el), v.product);
   segInit($('#ep', d.el), x => { v.product = x; v.plan = ''; v.strategyId = ''; fill(); });
-  $('#eplan', d.el).onchange = hint; $('#epr', d.el).oninput = hint; $('#eap', d.el).oninput = hint;
+  $('#eplan', d.el).onchange = hint; $('#ecr', d.el).oninput = hint; $('#epr', d.el).oninput = hint; $('#eap', d.el).oninput = hint;
   fill();
   lockForm(d);
 }

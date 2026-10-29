@@ -18,10 +18,10 @@ if (FROM === TO) { console.error('源库和目标库相同'); process.exit(1); }
 const TABLES = [
   'users', 'sessions', 'audit', 'settings', 'strategies', 'batches', 'codes', 'upstream_codes', 'redemptions', 'attempts', 'webhook_events', 'transactions',
   'shop_categories', 'shop_products', 'customers', 'customer_sessions', 'agent_levels', 'agents', 'agent_prices', 'coupons', 'coupon_uses', 'orders', 'order_codes',
-  'payments', 'ledger', 'withdrawals', 'mail_log', 'direct_spend',
+  'payments', 'ledger', 'withdrawals', 'mail_log',
 ];
 /** 有自增 id 的表（PostgreSQL 复制后要把序列调到最大 id 之后） */
-const AUTO_ID = ['users', 'audit', 'attempts', 'shop_categories', 'customers', 'agent_levels', 'coupons', 'coupon_uses', 'ledger', 'withdrawals', 'mail_log', 'direct_spend'];
+const AUTO_ID = ['users', 'audit', 'attempts', 'shop_categories', 'customers', 'agent_levels', 'coupons', 'coupon_uses', 'ledger', 'withdrawals', 'mail_log'];
 
 // 两边都拿实例锁（PostgreSQL / MySQL）：应用还连着源库或目标库时直接拒绝，不等待
 process.env.DB_LOCK_WAIT_S = '0';

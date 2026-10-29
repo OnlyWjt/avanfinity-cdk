@@ -14,7 +14,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { resolve } from 'node:path';
 import { config } from './config.ts';
 import type { Driver, Conn, Param, Dialect } from './db/driver.ts';
-import { SQLITE_MIGRATIONS, BASE_VERSION, LATER_MIGRATIONS, baseSchema } from './db/schema.ts';
+import { SQLITE_MIGRATIONS, BASE_VERSION, LATER_MIGRATIONS, MIGRATION_CHECKS, baseSchema } from './db/schema.ts';
 
 let driver: Driver | null = null;
 export let dialect: Dialect = 'sqlite';
@@ -250,6 +250,7 @@ async function migrate() {
   let cur = Number((await q.get<{ v: number | null }>('SELECT MAX(version) v FROM _migrations'))?.v ?? 0);
   // MySQL 的 DDL 会隐式提交，放进事务也没用；SQLite / PostgreSQL 的 DDL 可以回滚
   const step = async (version: number, sql: string) => {
+    await MIGRATION_CHECKS[version]?.(s => q.get(s));
     const body = async () => { await script(sql); await q.run('INSERT INTO _migrations (version, at) VALUES (?, ?)', [version, now()]); };
     if (dialect === 'mysql') await body(); else await tx(body);
     console.log(`[db] migration ${version} applied`);

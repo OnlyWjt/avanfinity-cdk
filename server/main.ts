@@ -17,7 +17,6 @@ import { verify, receive, syncTransactions } from './services/webhook.ts';
 import { tick } from './services/redeem.ts';
 import { avanCredentials } from './services/settings.ts';
 import { startNotifier } from './services/notify.ts';
-import { startDirectGuard } from './services/direct.ts';
 import { shop, payNotify } from './routes/shop.ts';
 import { adminShop } from './routes/admin-shop.ts';
 import { tickShop, markPaid } from './services/shop.ts';
@@ -140,7 +139,6 @@ setInterval(async () => {
 setInterval(() => { const u = getSetting('pay').usdt; if (u.enabled && u.address) scanUsdt(r => markPaid(r, 'usdt')).catch(e => console.warn('[usdt]', e.message)); }, Number(process.env.USDT_SCAN_MS) || 15e3).unref();
 
 startNotifier();
-startDirectGuard();
 
 // 看门狗：事务卡住太久（查询都有超时，这时多半是程序卡在事务里），退出交给 Docker / systemd 重启，
 // 数据库会回滚这个没提交的事务。Docker Compose 不会因为健康检查失败自动重启容器，所以由进程自己退出

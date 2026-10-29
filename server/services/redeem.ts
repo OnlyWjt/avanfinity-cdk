@@ -21,23 +21,17 @@
  */
 import { q, tx, now, json, parse } from '../db.ts';
 import { encrypt, decryptOpt, lookupHash, normalizeCode, hex, uuid } from '../crypto.ts';
-import { avan, AvanError, type SocialKind, type SocialPublicData, type GptAutoTask, type GptAutoInput } from '../avan/client.ts';
+import { avan, AvanError, type SocialKind, type SocialPublicData } from '../avan/client.ts';
 import { normalizeGptPublic, type GptPublicView } from '../avan/normalize.ts';
 import { HttpError, bad } from '../http.ts';
 import { getStrategy, checkGates, checkAccount, checkPrice, type Strategy, type AccountInfo } from './strategy.ts';
 import { getSetting } from './settings.ts';
 import { gptSalePrice, gptPlans, fullPlanLabel } from './catalog.ts';
-import { autoCard, deliveryOf, cdkRegionArg, type BatchParams } from './batches.ts';
-import * as direct from './direct.ts';
+import { autoCard, cdkRegionArg, type BatchParams } from './batches.ts';
 
 const IN_FLIGHT = ['processing', 'funding', 'retrying', 'paid_pending_delivery'];
 const OPEN = ['started', 'quoted', 'blocked', 'approved', 'funded', 'requires_action', ...IN_FLIGHT, 'manual_review'];
 const STALE_MIN = 30;
-/** 直充「需要处理」时的慢速查询间隔 */
-const DIRECT_SLOW_POLL = Number(process.env.DIRECT_SLOW_POLL_MS) || 5 * 60e3;
-/** 直充任务停在 requires_action 时也要继续查询（等卖家在卡台处理 / 买家补交 Session） */
-const POLLABLE_SQL = `(status IN (${IN_FLIGHT.map(s => `'${s}'`).join(',')}) OR (status = 'requires_action' AND direct_task_id IS NOT NULL))`;
-const pollable = (r: Red) => IN_FLIGHT.includes(r.status) || (r.status === 'requires_action' && !!r.direct_task_id);
 
 /* ---------- Session 只存内存（不落库），供重试 / 审核通过后继续使用 ---------- */
 const sessions = new Map<string, { s: string; exp: number }>();
@@ -60,7 +54,7 @@ interface Red {
   redemption_token_enc: string | null; preflight_token_enc: string | null; quote: string | null; cost_usd: string | null; rule: string | null;
   attempts: number; error_code: string | null; error_msg: string | null; order_id: string | null; card_last4: string | null;
   progress: string | null; invoice_urls: string | null; review: string | null; next_poll_at: string | null; created_at: string; updated_at: string; completed_at: string | null;
-  direct_task_id: string | null; poll_started_at: string | null;
+  poll_started_at: string | null;
 }
 interface CodeRow { id: string; batch_id: string; product: 'gpt' | 'x' | 'tg'; plan: string; mode: 'own' | 'hosted'; strategy_id: string; code_enc: string | null; status: string; upstream_id: string | null; redemption_id: string | null; expires_at: string | null; created_at: string }
 
@@ -68,9 +62,6 @@ interface CodeRow { id: string; batch_id: string; product: 'gpt' | 'x' | 'tg'; p
 const DECIMAL = /^\d{1,9}(\.\d{1,6})?$/;
 const toCents = (s: string) => Math.round(Number(s) * 100);
 const getRed = async (id: string) => await q.get<Red>('SELECT * FROM redemptions WHERE id = ?', [id]);
-const paramsOf = async (code: CodeRow) => parse<BatchParams>((await q.get<{ params: string }>('SELECT params FROM batches WHERE id = ?', [code.batch_id]))?.params, {});
-/** GPT 自有码且批次交付方式是直充：不经过卡台 CDK，直接调用卡台自动直充 */
-const isDirect = async (code: CodeRow) => code.product === 'gpt' && code.mode === 'own' && deliveryOf(await paramsOf(code)) === 'direct';
 const UPSTREAM_SHORT = new Set(['error_code', 'order_id', 'card_last4', 'account']);
 async function upd(id: string, f: Partial<Record<keyof Red, unknown>>) {
   const keys = Object.keys(f);
@@ -203,12 +194,9 @@ export async function start(rawCode: string, ctx: Ctx) {
   // 校验卡台侧状态（只读，不扣款）
   try {
     if (code.product === 'gpt') {
-      // 直充不需要卡台码，输码阶段只在本地检查
-      if (!await isDirect(code)) {
-        const up = await upstreamCodeFor(code, red);
-        const v = normalizeGptPublic(await avan.gptPublic('preview', { code: up.code }, red.device));
-        await upd(red.id, { redemption_token_enc: v.redemptionToken ? encrypt(v.redemptionToken) : null });
-      }
+      const up = await upstreamCodeFor(code, red);
+      const v = normalizeGptPublic(await avan.gptPublic('preview', { code: up.code }, red.device));
+      await upd(red.id, { redemption_token_enc: v.redemptionToken ? encrypt(v.redemptionToken) : null });
     } else {
       const up = await upstreamCodeFor(code, red);
       const d = await avan.socialPublic(code.product, 'preview', { code: up.code, deviceToken: red.device });
@@ -276,9 +264,8 @@ async function gptAccount(red: Red, code: CodeRow, s: Strategy, session: string,
   if (!sess.userId && !sess.email) acc.key = null;
 
   // 账号次数先在本地判断，不浪费卡台预检
-  const pre = await checkAccount(s, 'gpt', acc, red.id);
+  const pre = await checkAccount(s, 'gpt', acc, red.id, code.plan);
   if (!pre.ok) return block(red, code, 'account', pre.rule!, pre.userMsg!, acc);
-  if (await isDirect(code)) return directAccount(red, code, s, session, acc, approved);
 
   let v: GptPublicView;
   try {
@@ -297,7 +284,7 @@ async function gptAccount(red: Red, code: CodeRow, s: Strategy, session: string,
   acc.currentPlan = v.currentPlan;
   if (v.email) acc.display = v.email;
 
-  const full = await checkAccount(s, 'gpt', acc, red.id);
+  const full = await checkAccount(s, 'gpt', acc, red.id, code.plan);
   if (!full.ok) return block(red, code, 'account', full.rule!, full.userMsg!, acc);
 
   const batch = (await q.get<{ cost_usd: string | null }>('SELECT cost_usd FROM batches WHERE id = ?', [code.batch_id]))!;
@@ -317,206 +304,6 @@ async function gptAccount(red: Red, code: CodeRow, s: Strategy, session: string,
   await upd(red.id, { ...common, status: 'quoted', stage: 'quoted', rule: null });
   if (approved) return confirmGpt((await getRed(red.id))!, code);
   return view((await getRed(red.id))!);
-}
-
-/* ==================================================================
-   GPT 直充：预检 → 资金护栏 → 卡台自动直充（选卡、注资、换卡重试都由卡台完成）
-   ================================================================== */
-
-async function directAccount(red: Red, code: CodeRow, s: Strategy, session: string, acc: AccountInfo, approved: boolean) {
-  const params = await paramsOf(code);
-  let pf, plans;
-  try {
-    // 目录直接取最新的：下单要原样回传 pricingVersion 和服务费，缓存里的旧版本会被卡台拒绝
-    plans = await avan.gptPlans();
-    const region = params.country ? plans.checkoutCountries?.find(r => r.country === params.country) : undefined;
-    pf = await avan.gptPreflight({ session, paymentCountry: params.country || undefined, paymentCurrency: region?.currency });
-  } catch (e) {
-    const msg = e instanceof AvanError && e.status === 422 ? `账号检查没通过：${e.message}` : explain(e);
-    await upd(red.id, { error_code: e instanceof AvanError ? e.code ?? String(e.status) : null, error_msg: msg });
-    throw userErr(msg, 'PREFLIGHT_FAILED');
-  }
-  acc.currentPlan = pf.currentPlan;
-  if (pf.email) acc.display = pf.email;
-  const full = await checkAccount(s, 'gpt', acc, red.id);
-  if (!full.ok) return block(red, code, 'account', full.rule!, full.userMsg!, acc);
-
-  const plan = plans.plans?.find(p => p.key === code.plan);
-  const usd = pf.quoteEstimatesUsd?.[code.plan];
-  // 金额要原样回传给卡台，也决定额度预算：格式不对就拒绝，不能把异常值当成 0 继续付款
-  const malformed = !Number.isInteger(plans.version) || plans.version < 1 || !DECIMAL.test(String(plan?.customerServiceFee ?? '')) || !DECIMAL.test(String(usd ?? ''));
-  if (!plan?.enabled || malformed || !(Number(usd) > 0)) {
-    if (plan?.enabled && usd && malformed) console.warn('[direct] 卡台报价数据格式异常', { version: plans.version, fee: plan?.customerServiceFee, usd });
-    const msg = pf.quoteError ? `暂时拿不到官方报价：${pf.quoteError}` : '这个套餐暂时无法开通，请稍后再试。';
-    await upd(red.id, { error_code: malformed && usd ? 'BAD_QUOTE' : 'NO_QUOTE', error_msg: msg });
-    throw userErr(msg, 'PREFLIGHT_FAILED');
-  }
-  // 当前成本 = 官方金额的美元估算 + 服务费（按分计算），和批次生成时的成本快照比较（价格保护）
-  const cur = (toCents(usd!) + toCents(plan.customerServiceFee)) / 100;
-  const batch = (await q.get<{ cost_usd: string | null }>('SELECT cost_usd FROM batches WHERE id = ?', [code.batch_id]))!;
-  // 批次成本快照不是直充口径（目录不是美元时退回了 CDK 售价）就不比较，避免两种口径互相比
-  const base = params.costBasis === 'direct' && batch.cost_usd ? Number(batch.cost_usd) : null;
-  const price = approved ? { ok: true } as const : checkPrice(s, base, cur);
-  putSession(red.id, session, price.ok ? STALE_MIN : 180);
-  const qt = pf.quotes?.[code.plan];
-  const common = {
-    account: acc.display, account_key: acc.key, redemption_token_enc: null, preflight_token_enc: null,
-    quote: json({
-      country: pf.paymentCountry, currency: pf.paymentCurrency, amountMinor: qt?.amountMinor, amountMajor: qt?.amountMajor, currentPlan: pf.currentPlan,
-      usd, fee: plan.customerServiceFee, version: plans.version, salePrice: cur, expiresAt: pf.preflightExpiresAt || new Date(Date.now() + 10 * 60e3).toISOString(),
-    }),
-    error_code: null, error_msg: null,
-  };
-  if (!price.ok && price.action === 'manual') {
-    await upd(red.id, { ...common, status: 'manual_review', stage: 'price', review: 'pending', rule: price.rule, error_msg: price.userMsg });
-    return view((await getRed(red.id))!);
-  }
-  if (!price.ok) return block(red, code, 'price', price.rule!, price.userMsg!, acc);
-  await upd(red.id, { ...common, status: 'quoted', stage: 'quoted', rule: null });
-  if (approved) return confirmDirect((await getRed(red.id))!, code);
-  return view((await getRed(red.id))!);
-}
-
-/** 被资金护栏拦下：转人工，码不消耗；Session 多留一段时间，方便卖家通过后直接继续 */
-async function holdForGuard(red: Red, rule: string, userMsg = direct.HOLD_MSG) {
-  const sess = getSession(red.id);
-  if (sess) putSession(red.id, sess, 180);
-  await upd(red.id, { status: 'manual_review', stage: 'guard', review: 'pending', rule: `资金护栏 · ${rule}`, error_msg: userMsg, next_poll_at: null });
-}
-
-async function confirmDirect(red: Red, code: CodeRow) {
-  const qt = parse<any>(red.quote, {});
-  if (qt.expiresAt && qt.expiresAt < now()) {
-    await upd(red.id, { status: 'started', stage: 'code', error_msg: '报价已过期，请重新检查账号。' });
-    throw userErr('报价已过期，请重新检查账号。', 'QUOTE_EXPIRED');
-  }
-  const session = getSession(red.id);
-  if (!session) {
-    await upd(red.id, { status: 'started', stage: 'code', error_msg: '登录信息已过期，请重新粘贴 Session。' });
-    throw userErr('登录信息已过期，请重新粘贴 Session。', 'SESSION_EXPIRED');
-  }
-  const params = await paramsOf(code);
-  // 名额复查、额度预留、改成「处理中」在同一个事务里：并发的确认请求不会穿插进来
-  const r = await tx(async () => {
-    if (await accountTaken(red, code)) return 'taken' as const;
-    const n = (await q.get<{ n: number }>('SELECT COUNT(*) n FROM direct_spend WHERE redemption_id = ?', [red.id]))!.n;
-    const idem = `ao-${red.id}-${n + 1}`;
-    const g = await direct.reserve({ redemptionId: red.id, codeId: code.id, accountKey: red.account_key, idemKey: idem, plan: code.plan, estimateUsd: Number(qt.salePrice) || 0 });
-    if (!g.ok) { await holdForGuard(red, g.rule, g.userMsg); return 'held' as const; }
-    // 请求体里会变的部分在这里快照：结果未知时必须用同一个幂等键和完全相同的请求体重放
-    const snap = { maxUsd: g.maxUsd, forceNewCard: !!params.forceNewCard, productCode: getSetting('payment').productCode || undefined };
-    await upd(red.id, { client_request_id: idem, direct_task_id: null, quote: json({ ...qt, direct: snap }), status: 'processing', stage: 'submitting', next_poll_at: new Date(Date.now() + 5000).toISOString() });
-    return 'go' as const;
-  });
-  if (r !== 'go') return view((await getRed(red.id))!);
-  return submitDirect((await getRed(red.id))!, code, session);
-}
-
-function autoBody(red: Red, code: CodeRow, session: string): GptAutoInput {
-  const qt = parse<any>(red.quote, {});
-  return {
-    credential: { mode: 'session', session }, plan: code.plan, paymentCountry: qt.country, paymentCurrency: qt.currency,
-    expectedAmountUsd: String(qt.usd), expectedCustomerServiceFee: String(qt.fee), pricingVersion: Number(qt.version), maxTotalDebitUsd: qt.direct.maxUsd,
-    forceNewCard: qt.direct.forceNewCard, ...(qt.direct.productCode && { productCode: qt.direct.productCode }),
-  };
-}
-
-/**
- * 提交（或原样重放）一次自动直充。三种结果分开处理：
- *   - 卡台明确拒绝（4xx，带错误码）：没有受理，释放这次的额度预留
- *   - 结果未知（网络中断、超时、5xx、响应读不完 / 解析不了、本地异常）：保留预留和幂等键，之后用原键原样重放
- *   - 已受理（拿到任务 ID）：之后只查这个任务；本地后续处理出错也不会回到「重新下单」
- */
-async function submitDirect(red: Red, code: CodeRow, session: string) {
-  const idem = red.client_request_id!;
-  let t: GptAutoTask | undefined;
-  try {
-    t = await avan.gptAutoOrder(autoBody(red, code, session), idem);
-  } catch (e) {
-    if (!(e instanceof AvanError) || e.uncertain) {
-      if (!(e instanceof AvanError)) console.warn('[direct] 下单时本地异常，按结果未知处理', red.id, e instanceof Error ? e.message : e);
-      await upd(red.id, { status: 'processing', stage: 'uncertain', next_poll_at: new Date(Date.now() + 5000).toISOString() });
-      return view((await getRed(red.id))!);
-    }
-    await direct.settle(idem, 'cancelled', 0);
-    const ec = e.code || '';
-    if (/BALANCE_INSUFFICIENT|INSUFFICIENT_BALANCE/.test(ec)) {
-      void direct.alertInsufficient(e.message);
-      await holdForGuard(red, `卡台可用余额不足（${ec}）`);
-      return view((await getRed(red.id))!);
-    }
-    if (/PRICE_CHANGED|PREFLIGHT_REQUIRED|QUOTE_(CHANGED|EXPIRED)/.test(ec)) {
-      await upd(red.id, { status: 'started', stage: 'code', error_msg: '官方报价已更新，请重新检查账号。' });
-      throw userErr('官方报价已更新，请重新检查账号。', 'QUOTE_EXPIRED');
-    }
-    await upd(red.id, { status: 'quoted', stage: 'quoted', next_poll_at: null, error_code: ec || String(e.status), error_msg: explain(e) });
-    throw userErr(explain(e), 'REDEEM_FAILED');
-  }
-  // 成功状态但拿不到任务 ID：卡台可能已经受理，按结果未知处理
-  if (!t || typeof t.id !== 'string' || !t.id) {
-    console.warn('[direct] 下单响应缺少任务 ID，按结果未知处理', red.id);
-    await upd(red.id, { status: 'processing', stage: 'uncertain', next_poll_at: new Date(Date.now() + 5000).toISOString() });
-    return view((await getRed(red.id))!);
-  }
-  await direct.attachTask(idem, t.id);
-  await upd(red.id, { direct_task_id: t.id, stage: 'submitted' });
-  try { await applyDirect((await getRed(red.id))!, t); }
-  catch (e) {
-    // 已受理：后续处理失败只是晚点再查同一个任务，绝不重新下单
-    console.warn('[direct] 已受理，处理任务状态时出错，稍后重新查询', red.id, e instanceof Error ? e.message : e);
-    await upd(red.id, { next_poll_at: new Date(Date.now() + 5000).toISOString() });
-  }
-  return view((await getRed(red.id))!);
-}
-
-/** 自动直充任务状态 → 兑换状态 */
-async function applyDirect(red: Red, t: GptAutoTask) {
-  if (!Array.isArray(t.attempts)) t.attempts = []; // 卡台返回结构异常时不让后面崩掉
-  const last = t.attempts[t.attempts.length - 1];
-  const f: Partial<Red> = { progress: json(direct.taskProgress(t)), card_last4: last?.cardLastFour ?? red.card_last4, order_id: last?.orderId ?? red.order_id };
-  const idem = red.client_request_id!;
-  const order = f.order_id && ['completed', 'requires_action'].includes(t.status) ? await avan.gptOrder(f.order_id).then(r => r.order, () => null) : null;
-  if (t.status === 'completed') {
-    const qt = parse<any>(red.quote, {});
-    // 汇总所有尝试的费用；明细还没结清时先按已知金额记、标记待核对，后台对账会补齐（期间额度按预算计）
-    const c = await direct.taskCost(t, Number(qt.usd) || 0);
-    await direct.settle(idem, 'spent', c.usd, { verified: c.verified, note: c.note ?? undefined });
-    if (order?.invoiceUrls?.length) f.invoice_urls = json(order.invoiceUrls);
-    // 自动取消续费取决于卡台 API Key 的设置：以订单实际返回为准，拿不到就是 null（完成页显示「待确认」，对账时补上）
-    return complete(red, { ...f, cost_usd: (c.usd > 0 ? c.usd : Number(qt.salePrice) || 0).toFixed(4), quote: json({ ...qt, willRenew: c.willRenew }) });
-  }
-  if (t.status === 'failed') {
-    // 失败也可能花了钱（开卡费等）：按费用明细核对；核对不了先按预算计入额度
-    const c = await direct.taskCost(t, 0);
-    await direct.settle(idem, 'released', c.usd, { verified: c.verified, note: c.note ?? undefined });
-    // 错误码只记在后台（error_code），不给买家看
-    await upd(red.id, { ...f, error_code: t.failureCode ?? null });
-    return afterFailure((await getRed(red.id))!, '这次没有开通成功');
-  }
-  if (t.status === 'requires_action') {
-    // 只有「补交 Session」用户自己能处理；其他情况（核对原付款等）需要卖家到卡台处理
-    const needSession = order?.nextAction === 'submit_session';
-    await upd(red.id, {
-      // 继续慢速查询：卖家在卡台处理好、或买家补交 Session 后，这里能自动跟上
-      ...f, status: 'requires_action', stage: needSession ? 'submit_session' : 'seller_action', next_poll_at: new Date(Date.now() + DIRECT_SLOW_POLL).toISOString(),
-      error_msg: needSession ? order?.recoveryMessage || 'ChatGPT 登录状态已过期，请重新粘贴 Session 继续。' : '需要卖家处理，请联系卖家。兑换码不会作废。',
-    });
-    return;
-  }
-  await upd(red.id, { ...f, status: 'processing', stage: last?.status || t.status, next_poll_at: nextPoll(red) });
-}
-
-/** 轮询直充：有任务 ID 查任务；没有（下单时结果未知）就用原幂等键重放 */
-async function pollDirect(red: Red, code: CodeRow) {
-  if (red.direct_task_id) return applyDirect(red, await avan.gptAutoTask(red.direct_task_id));
-  if (!red.client_request_id) return;
-  const session = getSession(red.id);
-  if (!session) {
-    // 没有 Session 就无法原样重放；不能换键重下，交给卖家到卡台核对
-    await upd(red.id, { status: 'requires_action', stage: 'seller_action', next_poll_at: null, error_msg: '开通结果需要卖家核对，请联系卖家。兑换码不会作废。', rule: `直充下单结果未知，幂等键 ${red.client_request_id}，请到卡台核对` });
-    return;
-  }
-  await submitDirect(red, code, session);
 }
 
 async function socialAccount(red: Red, code: CodeRow, s: Strategy, recipientRaw: string, approved: boolean) {
@@ -584,7 +371,7 @@ export async function confirm(rid: string, device: string) {
     const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
     if (red.product === 'gpt') {
       if (red.status !== 'quoted') return view(red);
-      return await isDirect(code) ? await confirmDirect(red, code) : await confirmGpt(red, code);
+      return await confirmGpt(red, code);
     }
     if (red.status === 'quoted' || red.status === 'funded') return confirmSocial(red, code);
     return view(red);
@@ -599,7 +386,7 @@ export async function confirm(rid: string, device: string) {
 /** 账号名额已经被别的兑换占了：拦下这一条（码不消耗），返回 true。调用方负责放在事务里 */
 async function accountTaken(red: Red, code: CodeRow) {
   if (!red.account_key) return false;
-  const v = await checkAccount(await getStrategy(red.strategy_id), red.product, { key: red.account_key, display: red.account || '', currentPlan: parse<any>(red.quote, {}).currentPlan }, red.id);
+  const v = await checkAccount(await getStrategy(red.strategy_id), red.product, { key: red.account_key, display: red.account || '', currentPlan: parse<any>(red.quote, {}).currentPlan }, red.id, red.plan);
   if (v.ok) return false;
   await block(red, code, 'account', v.rule!, v.userMsg!);
   return true;
@@ -750,8 +537,7 @@ async function failSocial(red: Red, f: Partial<Red>, d: SocialPublicData) {
 async function afterFailure(red: Red, msg: string, socialRetryable = true) {
   const s = await getStrategy(red.strategy_id);
   const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
-  // 直充：卡台自动直充内部已经换卡重试过（最多 2 张卡），这里不再叠加，避免重复付开卡费
-  const canAuto = code.mode === 'own' && s.failAct === 'retry' && red.attempts <= s.retryN && !await isDirect(code) &&
+  const canAuto = code.mode === 'own' && s.failAct === 'retry' && red.attempts <= s.retryN &&
     (red.product === 'gpt' ? !!getSession(red.id) : socialRetryable);
   if (canAuto) {
     await upd(red.id, { status: 'retrying', stage: 'retry', attempts: red.attempts + 1, error_msg: `${msg}，正在自动重试（第 ${red.attempts} 次）` });
@@ -774,12 +560,7 @@ export async function retry(rid: string) {
     const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
     const s = await getStrategy(red.strategy_id);
     try {
-      if (red.product === 'gpt' && await isDirect(code)) {
-        // 直充重试：重新预检再下单（新幂等键），同样要过资金护栏；价格已由管理员确认，不再做价格保护
-        const session = getSession(rid);
-        if (!session) throw new Error('Session 已过期');
-        return await gptAccount((await getRed(rid))!, code, s, session, true);
-      } else if (red.product === 'gpt') {
+      if (red.product === 'gpt') {
         const session = getSession(rid);
         if (!session) throw new Error('Session 已过期');
         const params = parse<BatchParams>((await q.get<{ params: string }>('SELECT params FROM batches WHERE id = ?', [code.batch_id]))!.params, {});
@@ -810,11 +591,10 @@ export async function retry(rid: string) {
 export async function poll(rid: string) {
   return locked(rid, async () => {
     const red = await getRed(rid);
-    if (!red || !pollable(red)) return;
+    if (!red || !IN_FLIGHT.includes(red.status)) return;
     try {
       if (red.product === 'gpt') {
         const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
-        if (await isDirect(code)) return await pollDirect(red, code);
         if (!red.redemption_token_enc) return;
         await applyGpt(red, normalizeGptPublic(await avan.gptPublic('result', { redemptionToken: decryptOpt(red.redemption_token_enc) }, red.device)));
       } else {
@@ -839,7 +619,7 @@ export async function status(rid: string, device: string) {
 export async function resubmitSession(rid: string, device: string, session: string) {
   return locked(rid, async () => {
     const red = await mine(rid, device);
-    if (red.status !== 'requires_action' || red.product !== 'gpt' || !red.order_id || red.stage === 'seller_action') throw userErr('当前不需要补交。', 'BAD_STATE');
+    if (red.status !== 'requires_action' || red.product !== 'gpt' || !red.order_id) throw userErr('当前不需要补交。', 'BAD_STATE');
     parseGptSession(session);
     try { await avan.gptOrderSession(red.order_id, session); } catch (e) { throw userErr(explain(e), 'SESSION_FAILED'); }
     putSession(rid, session);
@@ -850,7 +630,7 @@ export async function resubmitSession(rid: string, device: string, session: stri
 
 /** 后台循环：推进进行中的兑换、清理超时的兑换 */
 export async function tick() {
-  const due = await q.all<{ id: string }>(`SELECT id FROM redemptions WHERE ${POLLABLE_SQL} AND (next_poll_at IS NULL OR next_poll_at <= ?) ORDER BY next_poll_at LIMIT 20`, [now()]);
+  const due = await q.all<{ id: string }>(`SELECT id FROM redemptions WHERE status IN (${IN_FLIGHT.map(() => '?').join(',')}) AND (next_poll_at IS NULL OR next_poll_at <= ?) ORDER BY next_poll_at LIMIT 20`, [...IN_FLIGHT, now()]);
   await Promise.allSettled(due.map(r => poll(r.id)));
   const stale = new Date(Date.now() - STALE_MIN * 60e3).toISOString();
   for (const r of await q.all<Red>("SELECT * FROM redemptions WHERE status IN ('started','quoted') AND updated_at < ?", [stale])) {
@@ -862,7 +642,7 @@ export async function tick() {
 /** Webhook 收到 CDK / 订单事件后立即刷新相关兑换 */
 export async function nudgeByUpstream(cdkId?: string, orderId?: string) {
   const rows = await q.all<{ id: string }>(`SELECT r.id FROM redemptions r LEFT JOIN codes c ON c.id = r.code_id
-    WHERE (r.status IN (${IN_FLIGHT.map(() => '?').join(',')}) OR (r.status = 'requires_action' AND r.direct_task_id IS NOT NULL)) AND (r.upstream_code_id = ? OR c.upstream_id = ? OR r.order_id = ?)`, [...IN_FLIGHT, cdkId || '-', cdkId || '-', orderId || '-']);
+    WHERE r.status IN (${IN_FLIGHT.map(() => '?').join(',')}) AND (r.upstream_code_id = ? OR c.upstream_id = ? OR r.order_id = ?)`, [...IN_FLIGHT, cdkId || '-', cdkId || '-', orderId || '-']);
   for (const r of rows) poll(r.id).catch(() => {});
   return rows.length;
 }
@@ -891,7 +671,6 @@ export async function adminApprove(rid: string) {
 export async function adminReject(rid: string, reason = '卖家拒绝了这次兑换') {
   const red = await getRed(rid);
   if (!red || !['manual_review', 'approved', 'requires_action'].includes(red.status)) throw bad('当前状态不能拒绝');
-  if (await direct.pendingDirect(red.code_id)) throw bad(direct.PENDING_MSG);
   await upd(rid, { status: 'blocked', stage: 'review', review: 'rejected', rule: `管理员拒绝：${reason}`, error_msg: '暂时无法兑换，请稍后再试或联系卖家。兑换码仍然有效。' });
   await releaseIfCurrent(red);
   sessions.delete(rid);
@@ -907,62 +686,9 @@ export async function adminRetry(rid: string) {
 export async function adminRelease(rid: string) {
   const red = await getRed(rid);
   if (!red || IN_FLIGHT.includes(red.status) || red.status === 'completed') throw bad('进行中或已完成的兑换不能释放');
-  if (await direct.pendingDirect(red.code_id)) throw bad(direct.PENDING_MSG);
   await upd(rid, { status: 'failed', error_msg: '卖家已释放兑换码，可以重新兑换。', next_poll_at: null });
   await releaseIfCurrent(red);
 }
-/**
- * 直充人工核对：结果未知又没法自动重放（例如重启后 Session 没了），或卡台要求卖家处理时，
- * 卖家到卡台查清楚后在这里登记结果。兑换状态、兑换码、额度账本在同一个事务里一起改：
- *   completed 已开通：兑换完成、码记为已兑换，按填写的实际花费结算
- *   failed    没开通：兑换失败、码释放可重兑，按填写的实际花费（例如开卡费，没有就填 0）结算
- *   attach    找到了卡台任务 ID：关联上去，之后自动查询，不需要填金额
- * 「是否开通」和「花了多少钱」分开填：开卡费扣了但会员没开通的情况很常见，不能用金额推断结果
- */
-export async function adminResolveDirect(rid: string, p: { outcome: 'completed' | 'failed' | 'attach'; actualUsd?: number; taskId?: string; note: string }) {
-  return locked(rid, async () => {
-    const red = await getRed(rid);
-    if (!red) throw bad('记录不存在');
-    const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
-    if (!await isDirect(code)) throw bad('这条不是直充兑换');
-    const open = await direct.reservedOf(rid);
-    if (!open.length) throw bad('这条兑换没有待核对的直充');
-    // 已经关联了任务、还在正常查询中的，不需要人工介入（等系统自己查到结果）
-    if (red.status !== 'requires_action' && !(red.status === 'processing' && !red.direct_task_id)) throw bad('这条直充还在正常处理中，不需要人工核对');
-    const note = p.note.trim().slice(0, 200);
-    if (!note) throw bad('请写明核对依据（例如卡台订单号、查看到的状态）');
-    const last = open[open.length - 1];
-
-    if (p.outcome === 'attach') {
-      const taskId = String(p.taskId || '').trim();
-      if (!/^[0-9a-f-]{36}$/i.test(taskId)) throw bad('任务 ID 格式不正确');
-      // 先确认这个任务真的存在、属于当前 API Key，再关联
-      try { await avan.gptAutoTask(taskId); } catch (e) { throw bad(`卡台查不到这个任务：${explain(e)}`); }
-      await tx(async () => {
-        await direct.attachTask(last.idem_key, taskId);
-        await upd(rid, { direct_task_id: taskId, status: 'processing', stage: 'submitted', rule: `人工关联任务：${note}`, next_poll_at: now() });
-      });
-      setImmediate(() => poll(rid).catch(() => {}));
-      return view((await getRed(rid))!);
-    }
-
-    const amt = Number(p.actualUsd);
-    if (!(Number.isFinite(amt) && amt >= 0 && amt < 100000)) throw bad('请填写实际花费（USD），没有扣款填 0');
-    const qt = parse<any>(red.quote, {});
-    await tx(async () => {
-      // 同一条兑换如果有多笔没结束的下单，金额记在最后一笔，其余记 0（都已人工确认）
-      for (const r of open) await direct.settle(r.idem_key, p.outcome === 'completed' ? 'spent' : 'released', r === last ? amt : 0, { verified: true, note: `人工核对：${note}` });
-      if (p.outcome === 'completed') {
-        await complete(red, { cost_usd: amt.toFixed(4), rule: `人工核对：已开通。${note}`, quote: json({ ...qt, willRenew: qt.willRenew ?? null }) });
-      } else {
-        await upd(rid, { status: 'failed', stage: 'failed', next_poll_at: null, rule: `人工核对：没有开通。${note}`, error_msg: '这次没有开通成功。兑换码已释放，可以重新兑换。' });
-        await releaseIfCurrent(red);
-      }
-    });
-    return view((await getRed(rid))!);
-  });
-}
-
 /** 只有当这条记录是兑换码当前的兑换时才释放码，避免历史记录影响进行中的兑换 */
 async function releaseIfCurrent(red: Red) {
   await q.run("UPDATE codes SET status = 'unused' WHERE id = ? AND redemption_id = ? AND status IN ('in_use','unused')", [red.code_id, red.id]);
@@ -980,21 +706,20 @@ async function mine(rid: string, device: string): Promise<Red> {
 }
 
 export async function view(red: Red) {
-  const code = (await q.get<{ display: string; status: string; mode: string; params: string }>('SELECT c.display, c.status, c.mode, b.params FROM codes c JOIN batches b ON b.id = c.batch_id WHERE c.id = ?', [red.code_id]))!;
+  const code = (await q.get<{ display: string; status: string }>('SELECT display, status FROM codes WHERE id = ?', [red.code_id]))!;
   const quote = parse<any>(red.quote, null);
   const needs =
     ['started', 'approved'].includes(red.status) || (red.status === 'blocked' && red.stage === 'account') || (red.status === 'failed' && code.status === 'unused' && red.stage !== 'code')
       ? (red.product === 'gpt' ? 'session' : 'recipient')
       : red.status === 'quoted' ? 'confirm'
       : red.status === 'funded' ? 'pay'
-      : red.status === 'requires_action' && red.product === 'gpt' && red.order_id && red.stage !== 'seller_action' ? 'resubmit'
+      : red.status === 'requires_action' && red.product === 'gpt' && red.order_id ? 'resubmit'
       : null;
   return {
     rid: red.id, product: red.product, plan: red.plan, planLabel: fullPlanLabel(red.product, red.plan), code: code.display,
     status: red.status, stage: red.stage, needs, account: red.account,
     quote: quote && { currency: quote.currency, amountMinor: quote.amountMinor, currentPlan: quote.currentPlan, expiresAt: quote.expiresAt },
-    willRenew: quote?.willRenew ?? null, // 直充订单返回的自动续费状态；卡台 CDK 流程没有这个字段
-    direct: red.product === 'gpt' && code.mode === 'own' && deliveryOf(parse<BatchParams>(code.params, {})) === 'direct',
+    willRenew: quote?.willRenew ?? null,
     message: red.error_msg, codeReusable: code.status === 'unused',
     progress: parse<any[]>(red.progress, []), attempts: red.attempts,
     invoiceUrls: red.product === 'gpt' ? [] : parse<string[]>(red.invoice_urls, []), // GPT 的 Stripe 账单是卖家账号的，不给用户

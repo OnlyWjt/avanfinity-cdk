@@ -5,15 +5,13 @@ import { avan, AvanError, type SocialKind } from '../avan/client.ts';
 import { bad, HttpError, notFound } from '../http.ts';
 import { getStrategy, type Strategy } from './strategy.ts';
 import { getSetting } from './settings.ts';
-import { pendingDirect } from './direct.ts';
-import { gptSalePrice, gptDirectEstimate, gptPlans, planKeys, socialPlans, fullPlanLabel, GPT_DIRECT_PLAN_KEYS } from './catalog.ts';
+import { gptSalePrice, gptPlans, validPlan, isCredits, socialPlans, fullPlanLabel } from './catalog.ts';
 
 export type Product = 'gpt' | 'x' | 'tg';
 
 export interface SocialParams { maxWalletDebitUsd: string; maxOfficialAmountMinor: number; currency: string; fundingAmountUsd: string }
 /** delivery / country 只对 GPT 有意义；旧批次没有这两个字段，按卡台 CDK、默认地区处理 */
-export interface BatchParams { forceNewCard?: boolean; social?: SocialParams; delivery?: 'cdk' | 'direct'; country?: string; costBasis?: 'direct' | 'cdk' }
-export const deliveryOf = (p: BatchParams) => (p.delivery === 'direct' ? 'direct' : 'cdk');
+export interface BatchParams { forceNewCard?: boolean; social?: SocialParams; country?: string }
 
 /** 生成卡台 GPT CDK 时要不要带地区：卡台明确支持选地区才带，否则省略（旧版卡台会拒绝未知字段） */
 export async function cdkRegionArg(country?: string): Promise<{ paymentCountry?: string }> {
@@ -58,7 +56,7 @@ export function autoCard() {
  */
 export async function generateBatch(p: { product: Product; plan: string; quantity: number; strategyId: string; memo?: string; idemKey: string; social?: Partial<SocialParams>; userId: number }) {
   if (!['gpt', 'x', 'tg'].includes(p.product)) throw bad('产品不正确');
-  if (!planKeys(p.product).includes(p.plan)) throw bad('套餐不正确');
+  if (!validPlan(p.product, p.plan)) throw bad('套餐不正确');
   if (!Number.isInteger(p.quantity) || p.quantity < 1 || p.quantity > 50) throw bad('数量 1–50');
   if (!/^[!#-~]{8,128}$/.test(p.idemKey)) throw bad('幂等键不正确');
   const replay = await q.get<{ id: string }>('SELECT id FROM batches WHERE idem_key = ?', [p.idemKey]);
@@ -67,25 +65,19 @@ export async function generateBatch(p: { product: Product; plan: string; quantit
   const s = await getStrategy(p.strategyId);
   if (!s.on) throw bad('这条策略已停用');
   if (!s.prod.includes(p.product)) throw bad(`策略「${s.name}」不适用于这个产品`);
+  // 点数 CDK 只能由卡台为自己的账户生成（自有码在兑换时生成）；托管码是从卡台库存买的，没有点数
+  if (p.product === 'gpt' && isCredits(p.plan) && s.mode !== 'own') throw bad(`点数只能用自有码策略生成，策略「${s.name}」是卡台托管码`);
 
   const params: BatchParams = {};
   let costUsd: string | null = null;
   if (p.product === 'gpt') {
     params.forceNewCard = s.payMode === 'own';
-    params.delivery = s.mode === 'own' ? s.delivery : 'cdk';
     if (s.country) {
       params.country = s.country;
       const regions = (await gptPlans()).val?.checkoutCountries;
       if (regions?.length && !regions.some(r => r.country === s.country)) throw bad(`卡台当前不支持结账地区 ${s.country}（可选：${regions.map(r => r.country).join('、')}）`);
     }
-    let price: number | null;
-    if (params.delivery === 'direct') {
-      if (!GPT_DIRECT_PLAN_KEYS.includes(p.plan)) throw bad(`直充暂不支持 ${fullPlanLabel('gpt', p.plan)}，请换一条走卡台 CDK 的策略`);
-      // 成本快照：直充按「目录预期金额 + 服务费」估算；目录不是美元时退回 CDK 售价，只作统计参考，兑换时不拿它做价格保护
-      const est = await gptDirectEstimate(p.plan);
-      params.costBasis = est != null ? 'direct' : 'cdk';
-      price = est ?? (await gptSalePrice(p.plan));
-    } else price = await gptSalePrice(p.plan);
+    const price = await gptSalePrice(p.plan);
     if (price == null) throw new HttpError(409, '这个套餐当前没有有效报价，暂时不能生成', 'WAITING_QUOTE');
     costUsd = usd(price);
   } else {
@@ -207,7 +199,6 @@ export async function revokeCodes(ids: string[]) {
     if (!r) { results.push({ id, ok: false, msg: '不存在' }); continue; }
     if (r.status === 'revoked') { results.push({ id, ok: true, msg: '已是撤销状态' }); continue; }
     if (r.status === 'redeemed') { results.push({ id, ok: false, msg: '已兑换，不能撤销' }); continue; }
-    if (await pendingDirect(r.id)) { results.push({ id, ok: false, msg: '有一笔直充还没有结果，不能撤销' }); continue; }
     if (r.status === 'in_use') {
       const red = r.redemption_id && await q.get<any>('SELECT status FROM redemptions WHERE id = ?', [r.redemption_id]);
       if (red && ['processing', 'funding', 'funded', 'paid_pending_delivery'].includes(red.status)) { results.push({ id, ok: false, msg: '正在付款，不能撤销' }); continue; }

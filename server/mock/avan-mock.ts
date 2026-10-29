@@ -31,6 +31,13 @@ const later = (ms: number, fn: () => void) => setTimeout(fn, ms / SPEED);
 /* ---------------- 状态 ---------------- */
 const GPT_PRICES: Record<string, string | null> = { go: '4.90', plus: '19.80', pro_5x: '99.00', pro_20x: '199.00', pro_25x: null };
 const GPT_LABEL: Record<string, string> = { go: 'ChatGPT Go', plus: 'ChatGPT Plus', pro_5x: 'ChatGPT Pro 5x', pro_20x: 'ChatGPT Pro 20x', pro_25x: 'ChatGPT Pro 25x' };
+/** 点数（Credits）：固定面额在套餐目录里；自定义 credits_N 也能生成 CDK。单价 $0.04 / 点，可用 POST /mock/cdk { creditUsd } 改 */
+const CREDIT_TIERS = ['credits_250', 'credits_1000', 'credits_2500', 'credits_5000'];
+const CREDITS_RE = /^credits_(25[0-9]|2[6-9][0-9]|[3-9][0-9]{2}|[1-9][0-9]{3,6})$/;
+const creditsOf = (plan: string) => (CREDITS_RE.test(plan) ? Number(plan.slice(8)) : null);
+/** 兑换时实际扣的美元（订阅 = CDK 售价；点数 = 点数 × 单价） */
+const chargeUsd = (plan: string) => { const n = creditsOf(plan); return n != null ? (n * cdkMock.creditUsd).toFixed(2) : GPT_PRICES[plan]; };
+const gptLabel = (plan: string) => { const n = creditsOf(plan); return n != null ? `ChatGPT ${n} Credits` : GPT_LABEL[plan]; };
 interface GptCdk { id: string; code: string; plan: string; status: string; forceNewCard: boolean; salePrice: string; device?: string; orderId?: string; redemptionToken?: string; email?: string; updatedAt: string }
 interface GptOrder { id: string; cdkId: string; plan: string; status: string; stage: string; email: string; progress: any[]; cardLastFour: string | null; nextAction: string; failure?: any; invoiceUrls: string[]; willRenew: boolean; decline: boolean }
 const gptCdks = new Map<string, GptCdk>();         // by id
@@ -77,8 +84,9 @@ const idemKey = (c: any) => {
 
 /* ---------------- 目录 ---------------- */
 app.get('/api/v1/gpt-direct/cdk-offers', c => c.json(ok0({ offers: Object.entries(GPT_PRICES).map(([plan, p]) => ({ plan, enabled: !!p, salePrice: p, pricingStatus: p ? 'READY' : 'WAITING_QUOTE', stock: p ? 100 + plan.length * 37 : 0 })) })));
-app.get('/api/v1/gpt-direct/plans', c => c.json(ok0({ version: 7, externalCardServiceFee: '1.00', plans: Object.keys(GPT_PRICES).map(k => ({ key: k, label: GPT_LABEL[k], currency: 'usd', enabled: !!GPT_PRICES[k], serviceFeeUsdMinor: 80, customerServiceFee: directMock.badFee ? 'abc' : '0.80', expectedAmountMinor: GPT_PRICES[k] ? Math.round(Number(GPT_PRICES[k]) * 100) : null, minAmountMinor: null, maxAmountMinor: null })),
-  checkoutCountries: [{ country: 'US', currency: 'USD' }, { country: 'PH', currency: 'PHP' }], batchConcurrencyByCountry: { US: 8, PH: 3 }, cdkRegionSelectionEnabled: directMock.regionSelection })));
+app.get('/api/v1/gpt-direct/plans', c => c.json(ok0({ version: 7, externalCardServiceFee: '1.00',
+  plans: [...Object.keys(GPT_PRICES), ...CREDIT_TIERS].map(k => { const usd = chargeUsd(k); return { key: k, label: gptLabel(k), currency: 'usd', enabled: !!usd, serviceFeeUsdMinor: 80, customerServiceFee: '0.80', expectedAmountMinor: usd ? Math.round(Number(usd) * 100) : null, minAmountMinor: null, maxAmountMinor: null }; }),
+  checkoutCountries: [{ country: 'US', currency: 'USD' }, { country: 'PH', currency: 'PHP' }], batchConcurrencyByCountry: { US: 8, PH: 3 }, cdkRegionSelectionEnabled: cdkMock.regionSelection })));
 const X_PLANS = [['premium_3m', 'Premium 3 个月', 'premium', 3, '1.00'], ['premium_6m', 'Premium 6 个月', 'premium', 6, '1.20'], ['premium_12m', 'Premium 12 个月', 'premium', 12, '1.50'], ['premium_plus_3m', 'Premium+ 3 个月', 'premium_plus', 3, '1.50'], ['premium_plus_6m', 'Premium+ 6 个月', 'premium_plus', 6, '2.00'], ['premium_plus_12m', 'Premium+ 12 个月', 'premium_plus', 12, '2.50']] as const;
 const TG_PLANS = [['premium_3m', 'Premium 3 个月', 'premium', 3, '0.60'], ['premium_6m', 'Premium 6 个月', 'premium', 6, '0.80'], ['premium_12m', 'Premium 12 个月', 'premium', 12, '1.00']] as const;
 const OFFICIAL: Record<string, number> = { 'x.premium_3m': 2400, 'x.premium_6m': 4600, 'x.premium_12m': 8400, 'x.premium_plus_3m': 6200, 'x.premium_plus_6m': 11800, 'x.premium_plus_12m': 22900, 'tg.premium_3m': 1199, 'tg.premium_6m': 1599, 'tg.premium_12m': 2899 };
@@ -94,18 +102,22 @@ app.post('/api/v1/gpt-direct/cdks/generate', async c => {
   if (idem.has(key)) return c.json(ok0({ ...(idem.get(key) as any), replayed: true }));
   const b = await c.req.json();
   // 和真实卡台一样：请求体不接受未知字段；不支持选地区时传 paymentCountry 会被拒绝
-  if (b.paymentCountry && !directMock.regionSelection) return err(c, 400, 'unknown field paymentCountry');
-  if (!GPT_PRICES[b.plan]) return err(c, 409, '该套餐等待报价', 'WAITING_QUOTE');
+  if (b.paymentCountry && !cdkMock.regionSelection) return err(c, 400, 'unknown field paymentCountry');
+  const credits = creditsOf(String(b.plan));
+  if (credits == null && !(b.plan in GPT_PRICES)) return err(c, 400, 'plan 不正确');
+  if (credits == null && !GPT_PRICES[b.plan]) return err(c, 409, '该套餐等待报价', 'WAITING_QUOTE');
+  const sale = credits != null ? '0.00' : GPT_PRICES[b.plan]!;
   if (!(b.quantity >= 1 && b.quantity <= 50)) return err(c, 400, 'quantity 1-50');
   const items = Array.from({ length: b.quantity }, () => {
     const id = randomUUID(), code = 'AVF-' + hexs(16).toUpperCase();
-    gptCdks.set(id, { id, code, plan: b.plan, status: 'unused', forceNewCard: !!b.forceNewCard, salePrice: GPT_PRICES[b.plan]!, updatedAt: new Date().toISOString() });
+    gptCdks.set(id, { id, code, plan: b.plan, status: 'unused', forceNewCard: !!b.forceNewCard, salePrice: sale, updatedAt: new Date().toISOString() });
     gptByCode.set(code, id);
     return { saleId: randomUUID(), cdkId: id, code, codePrefix: code.slice(0, 12) };
   });
-  const data = { saleId: items[0].saleId, cdkId: items[0].cdkId, code: items[0].code, codePrefix: items[0].codePrefix, plan: b.plan, salePrice: GPT_PRICES[b.plan], quantity: b.quantity, totalSalePrice: (Number(GPT_PRICES[b.plan]) * b.quantity).toFixed(2), items, balance: '10000.00', replayed: false, generated: true, forceNewCard: !!b.forceNewCard,
+  const data = { saleId: items[0].saleId, cdkId: items[0].cdkId, code: items[0].code, codePrefix: items[0].codePrefix, plan: b.plan, salePrice: sale, quantity: b.quantity, totalSalePrice: (Number(sale) * b.quantity).toFixed(2), items, balance: '10000.00', replayed: false, generated: true, forceNewCard: !!b.forceNewCard,
     checkoutRegion: { country: b.paymentCountry || 'US', currency: b.paymentCountry === 'PH' ? 'PHP' : 'USD' } };
-  if (b.paymentCountry) directMock.cdkRegions.push(b.paymentCountry);
+  if (b.paymentCountry) cdkMock.cdkRegions.push(b.paymentCountry);
+  cdkMock.generated.push(b.plan);
   idem.set(key, data);
   return c.json(ok0(data));
 });
@@ -123,7 +135,7 @@ app.post('/api/public/cdk/preview', async c => {
   if (k.status === 'reserved' && k.device !== dev(c)) return err(c, 409, '兑换码正在被其他设备兑换', 'CDK_RESERVED');
   if (['frozen', 'disabled'].includes(k.status)) return err(c, 409, '兑换码不可用', 'CDK_DISABLED');
   k.device = dev(c); k.redemptionToken = 'rt_' + hexs(16); gptByToken.set(k.redemptionToken, k.id);
-  return c.json(ok0({ redemptionToken: k.redemptionToken, plan: k.plan, planLabel: GPT_LABEL[k.plan], status: k.status }));
+  return c.json(ok0({ redemptionToken: k.redemptionToken, plan: k.plan, planLabel: gptLabel(k.plan), status: k.status }));
 });
 app.post('/api/public/cdk/preflight', async c => {
   const b = await c.req.json();
@@ -135,7 +147,7 @@ app.post('/api/public/cdk/preflight', async c => {
   const pt = 'pf_' + hexs(16);
   preflights.set(pt, { cdkId: k.id, email, decline: email.includes('decline'), exp: Date.now() + 10 * 60e3 });
   const masked = email.replace(/^(.).*(@.*)$/, '$1***$2');
-  const amount = Math.round(Number(GPT_PRICES[k.plan]) * 100) + 20;
+  const amount = Math.round(Number(chargeUsd(k.plan)) * 100) + 20;
   return c.json(ok0({ preflightToken: pt, preflightExpiresAt: new Date(Date.now() + 10 * 60e3).toISOString(), email: masked, currentPlan: s.plan || 'free', plan: k.plan,
     quote: { country: 'US', currency: 'usd', plan: k.plan, amountMinor: amount, amountMajor: (amount / 100).toFixed(2), minorUnitExponent: 2, fetchedAt: Date.now() }, quoteEstimatesUsd: { [k.plan]: (amount / 100).toFixed(2) } }));
 });
@@ -158,14 +170,15 @@ app.post('/api/public/cdk/redeem', async c => {
   later(2600, async () => {
     o.progress[o.progress.length - 1].status = o.decline ? 'failed' : 'done';
     if (o.decline) {
-      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'DECLINED', 'do_not_honor');
+      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', chargeUsd(k.plan)!, 'DECLINED', 'do_not_honor');
       o.status = 'declined'; o.stage = 'payment_declined'; o.nextAction = 'change_card_and_reorder'; o.failure = { code: 'card_declined', message: '支付被拒（do_not_honor）' };
       k.status = 'unused'; k.orderId = undefined; k.device = undefined;
       await emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'declined', order: orderView(o).order });
       await emit('openai.cdk.released', { eventId: randomUUID(), cdkId: k.id, status: 'unused' });
     } else {
-      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', GPT_PRICES[k.plan]!, 'APPROVED');
-      o.progress.push(step('会员已开通'), step('自动续费已关闭'));
+      o.cardLastFour = await addTx('OPENAI *CHATGPT SUBSCR', chargeUsd(k.plan)!, 'APPROVED');
+      // 点数只充值，不改变订阅，也没有自动续费
+      if (creditsOf(k.plan) != null) { o.progress.push(step('点数已到账')); o.willRenew = false; } else o.progress.push(step('会员已开通'), step('自动续费已关闭'));
       o.status = 'completed'; o.stage = 'completed'; o.nextAction = 'none'; o.willRenew = false; o.invoiceUrls = ['https://invoice.stripe.com/i/mock_' + hexs(6)];
       k.status = 'consumed';
       await emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, cdkId: k.id, status: 'completed', order: orderView(o).order });
@@ -192,132 +205,15 @@ app.post('/api/public/cdk/receipt', async c => {
 });
 app.post('/api/public/cdk/cancel-renewal', c => c.json(ok0({ renewalCancel: 'requested' }), 202));
 app.post('/api/v1/gpt-direct/orders/:id/session', c => {
-  // 直充订单补交 Session：继续原订单并完成
-  const d = directOrders.get(c.req.param('id'));
-  if (d && d.status === 'requires_action') {
-    d.status = 'running'; d.nextAction = 'wait';
-    later(800, () => finishDirect(d, true));
-  }
+  // 补交 Session：继续原订单
+  const o = orders.get(c.req.param('id'));
+  if (o && o.status === 'requires_action') { o.status = 'running'; o.nextAction = 'wait'; }
   return c.json(ok0({ accepted: true }), 202);
 });
 
-/* ---------------- GPT 直充（自动选卡） ----------------
- * Session 邮箱约定：含 decline → 两张卡都被拒，任务 failed；含 needsess → requires_action（补交 Session 后完成）
- *                  含 seller → requires_action（需卖家在卡台核对），约 24 秒（按 MOCK_SPEED 缩放）后卡台侧完成；含 renew → 完成后自动续费仍开启
- * 测试开关 POST /mock/direct：{ fail5xxOnce, balance, regionSelection, insufficient }
- */
-/* 故障注入：truncateOnce 受理后响应体传到一半断开；badFee 目录服务费格式错误；detailFail 订单详情接口接下来失败 N 次；heldFees 费用明细停在 held（还没结清） */
-const directMock = { fail5xxOnce: false, truncateOnce: false, badFee: false, detailFail: 0, heldFees: false, balance: '1000.00', regionSelection: true, insufficient: false, cdkRegions: [] as string[] };
-interface DirectOrder { id: string; status: string; stage: string; nextAction: string; cardLastFour: string; email: string; plan: string; amount: number; task?: DirectTask; invoiceUrls: string[] }
-interface DirectTask { id: string; plan: string; forceNewCard: boolean; status: string; failureCode: string | null; maxTotalDebitUsd: string; reservedDebitUsd: string; attempts: any[]; body: string; createdAt: string; updatedAt: string }
-const directPf = new Map<string, { email: string; plan: string }>();
-const directTasks = new Map<string, DirectTask>();
-const directOrders = new Map<string, DirectOrder>();
-const autoByIdem = new Map<string, string>();
-const taskView = (t: DirectTask) => { const { body: _b, ...v } = t; return { ...v, attemptCount: t.attempts.length }; };
-
-app.post('/api/v1/gpt-direct/preflight', async c => {
-  const b = await c.req.json();
-  let s: any = {}; try { s = JSON.parse(b.credential?.session || '{}'); } catch { return err(c, 422, 'Session 格式不正确', 'SESSION_INVALID'); }
-  if (!s.accessToken) return err(c, 422, 'Session 缺少 accessToken', 'SESSION_INVALID');
-  const email: string = s.user?.email || 'user@example.com';
-  if (email.includes('expired')) return err(c, 422, 'Session 已过期，请重新获取', 'SESSION_EXPIRED');
-  const country = b.paymentCountry || 'US', currency = b.paymentCurrency || (country === 'PH' ? 'PHP' : 'USD');
-  const pt = 'dpf_' + hexs(12);
-  directPf.set(pt, { email, plan: '' });
-  const quotes: Record<string, any> = {}, usd: Record<string, string> = {};
-  for (const [k, p] of Object.entries(GPT_PRICES)) if (p && k !== 'pro_25x') {
-    const amt = Math.round(Number(p) * 100) + 20;
-    quotes[k] = { country, currency, plan: k, amountMinor: country === 'PH' ? amt * 56 : amt, amountMajor: ((country === 'PH' ? amt * 56 : amt) / 100).toFixed(2), minorUnitExponent: 2, fetchedAt: Date.now() };
-    usd[k] = (amt / 100).toFixed(2);
-  }
-  return c.json(ok0({ email: email.replace(/^(.).*(@.*)$/, '$1***$2'), currentPlan: s.plan || 'free', credentialMode: 'session', preflightToken: pt, preflightExpiresAt: new Date(Date.now() + 10 * 60e3).toISOString(),
-    paymentCountry: country, paymentCurrency: currency, quotes, quoteError: '', quoteEstimatesUsd: usd }));
-});
-
-async function finishDirect(o: DirectOrder, ok: boolean) {
-  const t = o.task!, a = t.attempts[t.attempts.length - 1];
-  if (ok) {
-    o.status = 'completed'; o.stage = 'completed'; o.nextAction = 'none'; o.invoiceUrls = ['https://invoice.stripe.com/i/mock_' + hexs(6)];
-    a.status = 'completed'; t.status = 'completed';
-    await addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'APPROVED');
-    await emit('openai.direct.completed', { eventId: randomUUID(), orderId: o.id, status: 'completed' });
-  } else {
-    o.status = 'declined'; o.stage = 'payment_declined'; o.nextAction = 'change_card_and_reorder';
-    a.status = 'failed'; a.failureCode = 'card_declined';
-    await addTx('OPENAI *CHATGPT SUBSCR', (o.amount / 100).toFixed(2), 'DECLINED', 'do_not_honor');
-  }
-  t.updatedAt = new Date().toISOString();
-}
-function runAttempt(t: DirectTask, email: string, n: number) {
-  const o: DirectOrder = { id: randomUUID(), status: 'running', stage: 'paying', nextAction: 'wait', cardLastFour: String(4000 + n), email, plan: t.plan, amount: Math.round(Number(GPT_PRICES[t.plan]) * 100) + 20, task: t, invoiceUrls: [] };
-  directOrders.set(o.id, o);
-  t.attempts.push({ attempt: n, newCard: true, cardId: 20000 + n, cardLastFour: o.cardLastFour, orderId: o.id, status: 'funding', failureCode: null, reservedDebitUsd: '0.50' });
-  t.status = 'running';
-  later(500, () => { t.attempts[n - 1].status = 'payment'; });
-  later(1200, async () => {
-    if (email.includes('needsess')) { o.status = 'requires_action'; o.nextAction = 'submit_session'; t.status = 'requires_action'; t.attempts[n - 1].status = 'pending'; return; }
-    if (email.includes('seller')) {
-      o.status = 'requires_action'; o.nextAction = 'reconcile_original_payment'; t.status = 'requires_action'; t.attempts[n - 1].status = 'pending';
-      later(24000, () => finishDirect(o, true)); // 卖家在卡台核对完成
-      return;
-    }
-    const declined = email.includes('decline');
-    await finishDirect(o, !declined);
-    if (declined) {
-      if (n < 2 && !t.forceNewCard) runAttempt(t, email, n + 1);
-      else { t.status = 'failed'; t.failureCode = 'card_declined'; t.reservedDebitUsd = (0.5 * n).toFixed(2); await emit('openai.direct.failed', { eventId: randomUUID(), orderId: o.id, status: 'declined' }); }
-    }
-  });
-}
-app.post('/api/v1/gpt-direct/auto-orders', async c => {
-  const key = idemKey(c), raw = await c.req.text(), b = JSON.parse(raw);
-  const prev = autoByIdem.get(key);
-  if (prev) {
-    const t = directTasks.get(prev)!;
-    if (t.body !== raw) return err(c, 409, '同一幂等键的请求内容不一致', 'IDEMPOTENCY_CONFLICT');
-    return c.json(ok0(taskView(t)), 202);
-  }
-  for (const k of ['plan', 'paymentCountry', 'paymentCurrency', 'expectedAmountUsd', 'expectedCustomerServiceFee', 'pricingVersion', 'maxTotalDebitUsd']) if (b[k] === undefined) return err(c, 400, `缺少 ${k}`);
-  if (!['go', 'plus', 'pro_5x', 'pro_20x'].includes(b.plan)) return err(c, 400, 'plan 不支持');
-  if (b.pricingVersion !== 7) return err(c, 409, '报价已变化', 'PRICE_CHANGED');
-  if (directMock.insufficient) return err(c, 409, '可用余额不足', 'SPENDABLE_BALANCE_INSUFFICIENT');
-  let s: any = {}; try { s = JSON.parse(b.credential?.session || '{}'); } catch { /* 上面预检已校验 */ }
-  const t: DirectTask = { id: randomUUID(), plan: b.plan, forceNewCard: !!b.forceNewCard, status: 'queued', failureCode: null, maxTotalDebitUsd: b.maxTotalDebitUsd, reservedDebitUsd: '0.00', attempts: [], body: raw, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-  directTasks.set(t.id, t); autoByIdem.set(key, t.id);
-  later(300, () => runAttempt(t, s.user?.email || 'user@example.com', 1));
-  // 模拟「卡台已受理，但响应丢了」：调用方必须用同一个幂等键重放
-  if (directMock.fail5xxOnce) { directMock.fail5xxOnce = false; return err(c, 502, 'bad gateway'); }
-  if (directMock.truncateOnce) {
-    directMock.truncateOnce = false;
-    // 响应头 202 已发出，响应体写了一半连接就断了：调用方读响应体会失败
-    const body = new ReadableStream({ start(ctl) { ctl.enqueue(new TextEncoder().encode('{"code":0,"data":{"id":"')); setTimeout(() => ctl.error(new Error('connection reset')), 50); } });
-    return new Response(body, { status: 202, headers: { 'Content-Type': 'application/json' } });
-  }
-  return c.json(ok0(taskView(t)), 202);
-});
-app.get('/api/v1/gpt-direct/auto-orders/:id', c => {
-  const t = directTasks.get(c.req.param('id'));
-  return t ? c.json(ok0(taskView(t))) : err(c, 404, '任务不存在');
-});
-app.get('/api/v1/gpt-direct/orders/:id', c => {
-  if (directMock.detailFail > 0) { directMock.detailFail--; return err(c, 503, '订单详情暂不可用'); }
-  const o = directOrders.get(c.req.param('id'));
-  if (!o) return err(c, 404, '订单不存在');
-  const usd = (o.amount / 100).toFixed(2), done = o.status === 'completed';
-  return c.json(ok0({ order: { id: o.id, status: o.status, stage: o.stage, nextAction: o.nextAction, cardLastFour: o.cardLastFour, maskedEmail: o.email.replace(/^(.).*(@.*)$/, '$1***$2'), invoiceUrls: o.invoiceUrls,
-    recoveryMessage: o.nextAction === 'submit_session' ? 'ChatGPT 登录已过期，请补交 Session' : '',
-    willRenew: o.status === 'completed' ? o.email.includes('renew') : null,
-    // 完成：订阅和服务费已扣款；被拒：订阅没扣、服务费退回、开卡费照扣；进行中：都还在预授权
-    financials: (() => {
-      const declined = ['declined', 'failed'].includes(o.status);
-      const sub = done ? [{ amount: usd, currency: 'usd', status: 'charged', attemptOrderId: o.id }] : declined ? [] : [{ amount: usd, currency: 'usd', status: 'pending', attemptOrderId: o.id }];
-      const fee = { amount: '0.80', currency: 'usd', status: directMock.heldFees || (!done && !declined) ? 'held' : done ? 'charged' : 'released', attemptOrderId: o.id };
-      return { subscriptionPayments: sub, serviceFees: [fee], cardFunding: [], cardOpenFees: [{ amount: '0.50', currency: 'usd', status: 'charged', attemptOrderId: o.id }], cardRechargeFees: [] };
-    })() }, events: [] }));
-});
-app.get('/api/v1/balance', c => c.json(ok0({ balance: directMock.balance, totalBalance: directMock.balance, riskLockedBalance: '0.00' })));
-app.post('/mock/direct', async c => { Object.assign(directMock, await c.req.json()); return c.json({ ...directMock, tasks: directTasks.size }); });
+/* 测试开关 POST /mock/cdk：{ regionSelection, creditUsd }；返回值里 cdkRegions / generated 是生成 CDK 时收到的地区 / 套餐 */
+const cdkMock = { regionSelection: true, creditUsd: 0.04, cdkRegions: [] as string[], generated: [] as string[] };
+app.post('/mock/cdk', async c => { Object.assign(cdkMock, await c.req.json()); return c.json(cdkMock); });
 
 /* ---------------- X / TG CDK ---------------- */
 const issuerItem = (s: SocialCdk, withCode = false) => ({ id: s.id, plan: s.plan, status: s.status, ...(withCode ? { code: s.code } : {}), codePrefix: s.code.slice(0, 9), recipient: s.recipient, maxWalletDebitUsd: s.maxWalletDebitUsd, maxOfficialAmountMinor: s.maxOfficialAmountMinor, currency: s.currency, fundingAmountUsd: s.fundingAmountUsd, serviceFee: s.serviceFee, pricingVersion: 14, totalWalletDebitUsd: (Number(s.fundingAmountUsd) + Number(s.serviceFee) + 0.9).toFixed(4), cardId: null, fundingDispatched: ['funding', 'funded', 'paying', 'completed'].includes(s.status), paymentDispatched: ['paying', 'completed'].includes(s.status), fundingFeeUsd: '0.4000', openFeeUsd: '0.5000', createdAt: s.createdAt });

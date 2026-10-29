@@ -3,7 +3,7 @@
  *   1) scripts/e2e.ts       主流程
  *   2) scripts/e2e-full.ts  安全 / 权限 / 校验 / 审核 / 通知
  *   3) scripts/e2e-shop.ts  商城：支付 / 发货 / 优惠券 / 账户 / 代理 / 退款
- *   4) scripts/e2e-direct.ts GPT 直充 + 资金护栏
+ *   4) scripts/e2e-cdk.ts   GPT 点数（Credits）/ 结账地区
  *   5) scripts/ui-check.ts  浏览器（需要本机 Chrome，可用 SKIP_UI=1 跳过）
  *   npm test（先跑类型检查）
  * 每次使用随机空闲端口和独立的数据目录，可以同时跑多份；全部通过后删除数据目录，失败时保留现场并打印路径
@@ -54,7 +54,7 @@ const stopAll = () => procs.forEach(p => p.kill());
 process.on('exit', stopAll);
 
 start('server/mock/avan-mock.ts', { MOCK_PORT: String(MOCK), MOCK_PUBLIC_URL: `http://localhost:${MOCK}`, MOCK_SPEED: '4', MOCK_WEBHOOK_URL: `http://localhost:${APP}/api/webhooks/avanfinity` });
-const app = start('server/main.ts', { PORT: String(APP), DATA_DIR: DATA, ...(DB_URL && { DATABASE_URL: DB_URL }), PUBLIC_URL: `http://localhost:${APP}`, TELEGRAM_API_BASE: `http://localhost:${MOCK}`, NOTIFY_SCAN_MS: '2000', TRUST_PROXY: '1', SHOP_TICK_MS: '1000', SHOP_QUERY_AFTER_MS: '1500', USDT_SCAN_MS: '1000', BALANCE_SCAN_MS: '1000', DIRECT_SLOW_POLL_MS: '1500', DIRECT_RECONCILE_MS: '1500' });
+const app = start('server/main.ts', { PORT: String(APP), DATA_DIR: DATA, ...(DB_URL && { DATABASE_URL: DB_URL }), PUBLIC_URL: `http://localhost:${APP}`, TELEGRAM_API_BASE: `http://localhost:${MOCK}`, NOTIFY_SCAN_MS: '2000', TRUST_PROXY: '1', SHOP_TICK_MS: '1000', SHOP_QUERY_AFTER_MS: '1500', USDT_SCAN_MS: '1000' });
 
 for (let i = 0; i < 50; i++) {
   try { if ((await fetch(`http://localhost:${APP}/api/public/config`)).ok && (await fetch(`http://localhost:${MOCK}/mock/telegram`)).ok) break; } catch { /* 还没启动 */ }
@@ -67,7 +67,7 @@ const run = (file: string) => new Promise<number>(res => {
   p.on('exit', code => res(code ?? 1));
 });
 const results: [string, number][] = [];
-for (const f of ['scripts/e2e.ts', 'scripts/e2e-full.ts', 'scripts/e2e-shop.ts', 'scripts/e2e-direct.ts', ...(process.env.SKIP_UI ? [] : ['scripts/ui-check.ts'])]) results.push([f, await run(f)]);
+for (const f of ['scripts/e2e.ts', 'scripts/e2e-full.ts', 'scripts/e2e-shop.ts', 'scripts/e2e-cdk.ts', ...(process.env.SKIP_UI ? [] : ['scripts/ui-check.ts'])]) results.push([f, await run(f)]);
 
 const errs = (app as any).log().split('\n').filter((l: string) => /\[error\]|Unhandled|TypeError|ReferenceError/.test(l));
 console.log('\n━━━━━━━━ 结果 ━━━━━━━━');

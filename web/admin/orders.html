@@ -57,7 +57,6 @@ async function load() {
 }
 async function openRed(id) {
   const o = await GET('/api/admin/redemptions/' + id);
-  const SPEND = {"reserved":"进行中 / 待核对","spent":"已扣款","released":"失败","cancelled":"卡台未受理"};
   const ACT_DONE = { approve: '已通过', reject: '已拒绝', retry: '已重新提交', release: '已释放' };
   const act = (key, extra) => async d => {
     let body = {};
@@ -68,21 +67,15 @@ async function openRed(id) {
     }
     if (key === 'approve' && !await confirmBox({ title: o.stage === 'failed' ? '重新提交这笔兑换？' : '通过并提交卡台？', body: `会立即用卡台余额为 <b>${esc(o.account || '')}</b> 开通 ${esc(o.planLabel)}${o.cost ? `，预计费用 <b>$${Number(o.cost).toFixed(2)}</b>` : ''}。提交后无法撤回。`, ok: '确认提交' })) return false;
     if (key === 'release' && !await confirmBox({ title: '释放这张兑换码？', body: '这次兑换会结束，兑换码恢复为未使用，用户可以重新兑换。', ok: '释放' })) return false;
-    const res = await POST(`/api/admin/redemptions/${o.id}/${key}`, body);
-    // 通过后仍被资金护栏拦下（例如直充还在暂停）：明确告诉卖家原因，而不是提示成功
-    if (key === 'approve' && res.status === 'manual_review') toast('仍被拦下：' + (res.rule || ''), 'warn');
-    else toast(ACT_DONE[key]);
+    await POST(`/api/admin/redemptions/${o.id}/${key}`, body);
+    toast(ACT_DONE[key]);
     load(); refreshNav();
   };
-  // 直充还没出结果：钱可能已经付了，不能释放 / 拒绝（服务端也会拒绝），只能等结果或人工核对
-  const pendingDirect = (o.directSpend || []).some(d => d.status === 'reserved');
-  const canResolve = pendingDirect && can('admin') && (o.status === 'requires_action' || (o.status === 'processing' && !o.directTaskId));
   const actions = [];
-  if (canResolve) actions.push({ label: '人工核对结果', kind: 'primary', onClick: () => { resolveDirect(o); return false; } });
   if (can('operator')) {
-    if (o.status === 'manual_review') actions.push({ label: o.stage === 'failed' ? '重新尝试' : o.stage === 'guard' ? '继续开通' : '通过，提交卡台', kind: 'primary', onClick: act('approve') }, { label: '拒绝', kind: 'danger', onClick: act('reject') });
+    if (o.status === 'manual_review') actions.push({ label: o.stage === 'failed' ? '重新尝试' : '通过，提交卡台', kind: 'primary', onClick: act('approve') }, { label: '拒绝', kind: 'danger', onClick: act('reject') });
     if (o.status === 'failed' && o.hasSession && o.mode === 'own') actions.push({ label: '再试一次', kind: 'primary', onClick: act('retry') });
-    if (!pendingDirect && ['blocked', 'manual_review', 'requires_action', 'approved', 'started', 'quoted'].includes(o.status)) actions.push({ label: '释放兑换码', onClick: act('release') });
+    if (['blocked', 'manual_review', 'requires_action', 'approved', 'started', 'quoted'].includes(o.status)) actions.push({ label: '释放兑换码', onClick: act('release') });
   }
   actions.push({ label: '复制记录号', kind: 'ghost', onClick: () => { copy(o.id); return false; } });
   const tl = o.progress.length ? o.progress.map(p => `<div class="it ${p.status === 'failed' ? 'fail' : p.status === 'running' ? 'cur' : 'done'}"><div class="dot">${p.status === 'failed' ? '✕' : p.status === 'running' ? '' : '✓'}</div><div><b>${esc(p.step)}</b>${p.message ? `<p>${esc(p.message)}</p>` : ''}</div><span class="tm">${p.at ? fmtTime(p.at) : ''}</span></div>`).join('') : '<div class="xs faint">暂无卡台进度</div>';
@@ -92,9 +85,8 @@ async function openRed(id) {
     body: `
       <div class="sec">${badge(o.status)}
         ${o.status === 'blocked' ? `<div class="note bad mt8">⛔ 命中规则：${esc(o.rule || '')}<br>用户看到：${esc(o.message || '')}<br>没有提交到卡台，不产生费用。</div>` : ''}
-        ${o.status === 'manual_review' ? `<div class="note warn mt8">⚑ ${esc(o.rule || o.message || '')}<br>${o.stage === 'guard' ? '资金护栏拦下了这一单，没有向卡台下单。先在「设置 → 直充资金护栏」调整或恢复，再点「继续开通」（会重新检查账号和报价）。' : o.stage === 'price' ? '通过后按当前实时报价兑换；拒绝则提示用户稍后再试，兑换码保持可用。' : '兑换失败转人工。可以重新尝试，或释放兑换码让用户自己重兑。'}${o.product === 'gpt' && !o.hasSession ? '<br><b>用户 Session 已过期</b>：通过后用户需要回到兑换页重新粘贴 Session。' : ''}</div>` : ''}
-        ${['failed', 'requires_action', 'approved'].includes(o.status) && o.message ? `<div class="note mt8">${esc(o.message)}${o.status === 'requires_action' && o.stage === 'seller_action' && o.rule ? `<br><span class="xs">${esc(o.rule)}</span>` : ''}</div>` : ''}
-        ${pendingDirect && o.status !== 'processing' ? '<div class="note warn mt8">⚠ 这笔直充还没有结果，钱可能已经付出去了，所以不能释放或拒绝。请到卡台核对后点「人工核对结果」。</div>' : ''}
+        ${o.status === 'manual_review' ? `<div class="note warn mt8">⚑ ${esc(o.rule || o.message || '')}<br>${o.stage === 'price' ? '通过后按当前实时报价兑换；拒绝则提示用户稍后再试，兑换码保持可用。' : '兑换失败转人工。可以重新尝试，或释放兑换码让用户自己重兑。'}${o.product === 'gpt' && !o.hasSession ? '<br><b>用户 Session 已过期</b>：通过后用户需要回到兑换页重新粘贴 Session。' : ''}</div>` : ''}
+        ${['failed', 'requires_action', 'approved'].includes(o.status) && o.message ? `<div class="note mt8">${esc(o.message)}</div>` : ''}
         ${o.status === 'paid_pending_delivery' ? '<div class="note mt8">◷ 已有付款成功证据，等待官方交付。不要重新兑换。</div>' : ''}
       </div>
       <div class="sec"><h4>记录信息</h4><div class="kv">
@@ -111,35 +103,7 @@ async function openRed(id) {
       </div></div>
       ${o.invoiceUrls.length ? `<div class="sec"><h4>官方账单 <small class="c-warn">含访问凭据，勿分享</small></h4>${o.invoiceUrls.map(u => `<div class="copyline mb12">${esc(u.slice(0, 48))}…<a class="link" href="${esc(u)}" target="_blank" rel="noopener">打开</a></div>`).join('')}</div>` : ''}
       ${o.transactions.length ? `<div class="sec"><h4>支付流水</h4><div class="kv">${o.transactions.map(t => `<div><span>${esc(t.merchant || '')}</span><b>${money(t.amount)} ${badge(t.status)}</b></div>`).join('')}</div></div>` : ''}
-      ${o.directSpend?.length ? `<div class="sec"><h4>直充 <small>${o.directTaskId ? `任务 <span class="mono">${esc(o.directTaskId)}</span>` : '没有拿到任务 ID'}</small></h4><div class="kv">${o.directSpend.map((d, i) => `<div title="幂等键 ${esc(d.idemKey)}"><span>第 ${i + 1} 次下单 · ${SPEND[d.status] || esc(d.status)}</span><b>预算 $${esc(d.reservedUsd)}${d.actualUsd != null ? ` · 实际 $${esc(d.actualUsd)}` : ''}${d.costVerified === 0 && d.status !== 'reserved' ? ' <span class="xs c-warn">费用待核对</span>' : ''}</b></div>`).join('')}</div></div>` : ''}
       <div class="sec"><h4>卡台进度 <small>以状态为准，事件可能重复或延迟</small></h4><div class="tl">${tl}</div></div>`,
-  });
-}
-/**
- * 直充人工核对：「是否开通」和「花了多少钱」分开填。开卡费扣了但会员没开通很常见，不能用金额推断结果。
- * 找到了卡台任务 ID 的，直接关联上去让系统自动查询，不需要填金额
- */
-function resolveDirect(o) {
-  const m = dialog({
-    title: '人工核对直充结果', tone: 'warn',
-    sub: '请先到卡台查清这笔直充（幂等键见下方）的实际结果再登记。登记后兑换状态、兑换码和额度会一起更新，不能撤回。',
-    body: `<div class="copyline xs mb12">${esc((o.directSpend.filter(d => d.status === 'reserved').pop() || {}).idemKey || '')}</div>
-      <div class="seg full mb12" id="rsOut"><button data-v="completed">已开通</button><button data-v="failed">没有开通</button><button data-v="attach">找到了任务 ID</button></div>
-      <div class="f" id="rsAmtF"><label>实际花费 <small>卡台扣的全部费用（含开卡费），没有扣款填 0</small></label><div class="inputgrp"><input class="field mono" id="rsAmt" inputmode="decimal"><span>USD</span></div></div>
-      <div class="f hidden" id="rsTaskF"><label>卡台任务 ID</label><input class="field mono" id="rsTask" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-      <div class="f"><label>核对依据 <small>例如卡台订单号、看到的状态</small></label><input class="field" id="rsNote" maxlength="200"></div>`,
-    actions: [{ label: '取消' }, { label: '登记结果', kind: 'primary', onClick: async () => {
-      const outcome = $('#rsOut .on', m.el)?.dataset.v;
-      if (!outcome) { toast('请选择核对结果', 'warn'); return false; }
-      const body = { outcome, note: $('#rsNote', m.el).value.trim(), ...(outcome === 'attach' ? { taskId: $('#rsTask', m.el).value.trim() } : { actualUsd: $('#rsAmt', m.el).value.trim() === '' ? null : Number($('#rsAmt', m.el).value) }) };
-      await POST(`/api/admin/redemptions/${o.id}/resolve-direct`, body);
-      toast(outcome === 'attach' ? '已关联，系统会自动查询结果' : '已登记'); load(); refreshNav(); openRed(o.id);
-    } }],
-  });
-  $$('#rsOut button', m.el).forEach(b => b.onclick = () => {
-    $$('#rsOut button', m.el).forEach(x => x.classList.toggle('on', x === b));
-    $('#rsAmtF', m.el).classList.toggle('hidden', b.dataset.v === 'attach');
-    $('#rsTaskF', m.el).classList.toggle('hidden', b.dataset.v !== 'attach');
   });
 }
 segInit($('#fSeg'), v => { F.f = v; F.page = 1; load(); });

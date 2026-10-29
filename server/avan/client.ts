@@ -68,33 +68,11 @@ export interface GptPlansData {
   /** 以下三个字段新版卡台才有；旧版缺失时按「不支持选地区」处理 */
   checkoutCountries?: CheckoutRegion[]; batchConcurrencyByCountry?: Record<string, number> | null; cdkRegionSelectionEnabled?: boolean;
 }
-export interface GptPreflightData {
-  email: string; currentPlan: string; credentialMode: string; preflightToken: string; preflightExpiresAt: string;
-  paymentCountry: string; paymentCurrency: string; quotes: Record<string, { country: string; currency: string; plan: string; amountMinor: number; amountMajor: string }>;
-  quoteError: string; quoteEstimatesUsd?: Record<string, string>;
-}
-export interface GptAutoInput {
-  credential: { mode: 'session'; session: string }; plan: string; paymentCountry: string; paymentCurrency: string;
-  expectedAmountUsd: string; expectedCustomerServiceFee: string; pricingVersion: number; maxTotalDebitUsd: string; forceNewCard?: boolean; productCode?: string;
-}
-export interface GptAutoAttempt { attempt: number; newCard: boolean; cardId: number | null; cardLastFour: string | null; orderId: string | null; status: 'funding' | 'payment' | 'pending' | 'completed' | 'failed'; failureCode: string | null; reservedDebitUsd: string }
-export interface GptAutoTask {
-  id: string; plan: string; forceNewCard: boolean; status: 'queued' | 'running' | 'pending' | 'requires_action' | 'completed' | 'failed';
-  failureCode: string | null; maxTotalDebitUsd: string; reservedDebitUsd: string; attemptCount: number; attempts: GptAutoAttempt[]; createdAt: string; updatedAt: string;
-}
-export interface GptFinancialEntry { amount: string | null; currency: string | null; status: 'held' | 'released' | 'charged' | 'pending' | 'unknown' }
-export interface GptDirectOrder {
-  id: string; status: string; stage: string; nextAction?: string; publicMessage?: string | null; recoveryMessage?: string; cardLastFour?: string | null; maskedEmail?: string;
-  invoiceUrls?: string[]; progress?: any[]; willRenew?: boolean | null;
-  financials?: Partial<Record<'subscriptionPayments' | 'serviceFees' | 'cardFunding' | 'cardOpenFees' | 'cardRechargeFees', GptFinancialEntry[]>>;
-}
-export interface WalletBalance { balance: string; totalBalance?: string; riskLockedBalance?: string }
 export interface SocialPlan { key: string; label: string; tier?: string; months: number; enabled: boolean; serviceFee: string; pricingVersion: number }
 
 export const avan = {
   gptOffers: () => request<{ offers: CdkOffer[] }>('GET', '/gpt-direct/cdk-offers').then(d => d.offers),
   gptPlans: () => request<GptPlansData>('GET', '/gpt-direct/plans'),
-  balance: () => request<WalletBalance>('GET', '/balance'),
   socialPlans: (k: SocialKind) => request<{ plans: SocialPlan[]; paymentsEnabled: boolean }>('GET', `/${k}-direct/plans`),
   products: () => request<{ list?: any[] } | any[]>('GET', '/products').then(d => (Array.isArray(d) ? d : d.list || (d as any).products || [])),
 
@@ -109,14 +87,6 @@ export const avan = {
     request<any>('POST', `/public/cdk/${step}`, { body, device, publicApi: true }),
   gptOrderSession: (orderId: string, session: string) =>
     request<any>('POST', `/gpt-direct/orders/${orderId}/session`, { body: { credential: { mode: 'session', session } } }),
-
-  /* ---------------- GPT 直充（自动选卡） ---------------- */
-  gptPreflight: (p: { session: string; paymentCountry?: string; paymentCurrency?: string }) =>
-    request<GptPreflightData>('POST', '/gpt-direct/preflight', { body: { credential: { mode: 'session', session: p.session }, ...(p.paymentCountry && { paymentCountry: p.paymentCountry }), ...(p.paymentCurrency && { paymentCurrency: p.paymentCurrency }) } }),
-  /** 受理 202 不代表成功；超时 / 5xx 必须用同一个幂等键和同一个请求体重放 */
-  gptAutoOrder: (p: GptAutoInput, idem: string) => request<GptAutoTask>('POST', '/gpt-direct/auto-orders', { body: p, idem }),
-  gptAutoTask: (id: string) => request<GptAutoTask>('GET', `/gpt-direct/auto-orders/${id}`),
-  gptOrder: (id: string) => request<{ order: GptDirectOrder; events?: unknown[] }>('GET', `/gpt-direct/orders/${id}`),
 
   /* ---------------- X / TG CDK ---------------- */
   socialGenerate: (k: SocialKind, p: { plan: string; quantity: number; maxWalletDebitUsd: string; maxOfficialAmountMinor: number; currency: string; fundingAmountUsd: string; cardId?: number; autoCard?: { productCode: string; firstName: string; lastName: string } }, idem: string) =>

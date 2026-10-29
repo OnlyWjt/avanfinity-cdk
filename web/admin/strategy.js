@@ -1,7 +1,7 @@
 /* 兑换策略页 */
 $('#page').innerHTML = $('#page').innerHTML.replaceAll('${LAYER_OWN}', LAYER.own).replaceAll('${LAYER_GEN}', LAYER.gen).replaceAll('${LAYER_PLAT}', LAYER.platform);
 let list = [], cur = null, dirty = false, readOnly = true;
-const BLANK = { name: '新策略', desc: '', on: false, prio: 10, prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: '', ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '', accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com', priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', delivery: 'cdk', country: '' };
+const BLANK = { name: '新策略', desc: '', on: false, prio: 10, prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: '', ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '', accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com', priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', country: '' };
 
 ready(async () => {
   readOnly = !can('admin');
@@ -17,7 +17,7 @@ async function reload(selectId) {
 function renderList() {
   $('#slist').innerHTML = list.map(s => `<div class="it ${s.id === cur?.id ? 'on' : ''}" data-id="${s.id}">
     <div class="between"><b>${esc(s.name)}</b>${s.on ? '<span class="badge ok">启用</span>' : '<span class="badge idle">停用</span>'}</div>
-    <div class="xs faint mt8">${s.isDefault ? '默认 · ' : ''}${s.mode === 'own' ? '自有码' : '托管码'}${s.mode === 'own' && s.delivery === 'direct' && s.prod.includes('gpt') ? ' · <span class="c-warn">GPT 直充</span>' : ''}${s.mode === 'own' && s.prefix ? ` · 前缀 <span class="mono">${esc(s.prefix)}-</span>` : ''} · 优先级 ${s.prio} · 今日拦截 ${s.hits || 0}</div>
+    <div class="xs faint mt8">${s.isDefault ? '默认 · ' : ''}${s.mode === 'own' ? '自有码' : '托管码'}${s.mode === 'own' && s.prefix ? ` · 前缀 <span class="mono">${esc(s.prefix)}-</span>` : ''} · 优先级 ${s.prio} · 今日拦截 ${s.hits || 0}</div>
     <div class="row-flex mt8">${s.prod.map(p => PICXS[p]).join('')}</div></div>`).join('') + (cur && !cur.id ? `<div class="it on"><b>${esc(cur.name)}</b><div class="xs c-warn mt8">未保存</div></div>` : '');
   $$('#slist .it[data-id]').forEach(el => el.onclick = async () => {
     if (dirty && !await confirmBox({ title: '放弃未保存的修改？', ok: '放弃' })) return;
@@ -42,9 +42,7 @@ function renderEditor() {
       ${rule('兑换码模式', '自有码：买家拿到的是本系统的码，规则不可绕过（推荐）。托管码：直接发卡台码，买家可能绕到卡台兑换。已生成过码的策略不能切换。', 'own',
         `<div class="seg full" id="modeSeg"><button data-v="own" class="${own ? 'on' : ''}">自有码</button><button data-v="hosted" class="${own ? '' : 'on'}">托管码</button></div>`)}
       ${own ? rule('码前缀', '2–6 位字母或数字，例如 TB → TB-7K2Q-F9WM-3TXA', 'own', `<div class="inputgrp"><input data-k="prefix" value="${v('prefix')}" maxlength="6" style="text-transform:uppercase"><span>-XXXX</span></div>`) : ''}
-      ${own && s.prod.includes('gpt') ? rule('GPT 交付方式', '卡台 CDK：兑换时临时生成卡台码再兑换（现状）。直充：不生成卡台码，直接由卡台自动选卡付款；先过「设置 → 直充资金护栏」。不支持 Pro 25x。只影响之后生成的码', 'gen',
-        `<div class="seg full" id="delivery"><button data-v="cdk" class="${s.delivery !== 'direct' ? 'on' : ''}">卡台 CDK</button><button data-v="direct" class="${s.delivery === 'direct' ? 'on' : ''}">直充</button></div>`) : ''}
-      ${s.prod.includes('gpt') ? rule('GPT 结账地区', '国家代码，如 US、PH；留空用卡台默认地区。生成后这一批码的结账地区和币种固定', 'gen', `<input class="field mono" data-k="country" value="${v('country')}" maxlength="2" placeholder="默认" style="text-transform:uppercase;width:90px">`) : ''}
+      ${s.prod.includes('gpt') ? rule('GPT 结账地区', '国家代码，如 US、PH；留空用卡台默认地区。生成后这一批码的结账地区和币种固定（点数也一样）', 'gen', `<input class="field mono" data-k="country" value="${v('country')}" maxlength="2" placeholder="默认" style="text-transform:uppercase;width:90px">`) : ''}
       ${rule('适用产品', '', 'own', `<div class="row-flex">${['gpt', 'x', 'tg'].map(p => `<label class="row-flex sm" style="margin-left:8px"><input type="checkbox" data-prod="${p}" ${s.prod.includes(p) ? 'checked' : ''}>${{ gpt: 'GPT', x: 'X', tg: 'TG' }[p]}</label>`).join('')}</div>`)}
       ${rule('优先级', '数字越小越靠前（只影响列表顺序）', 'own', num('prio', '级'))}
     </div>
@@ -70,7 +68,7 @@ function renderEditor() {
       ${rule('报价有效期', 'GPT 约 10 分钟，X / TG 30 分钟', 'platform', '<span class="xs faint">不可修改</span>')}
     </div>
     <div class="grp"><h4>⑤ 失败处理</h4>
-      ${rule('支付失败后', own && s.delivery === 'direct' ? '直充：卡台内部已经换卡重试（最多 2 张卡），选「自动重试」时 GPT 按释放码处理，不会重复付开卡费；X / TG 照常' : own ? '自有码可以由后端自动换一张新的卡台码重试（GPT 需要用户 Session 仍在 30 分钟内）' : '托管码失败后卡台释放这张码，只能让用户自己重新兑换', own ? 'own' : 'platform',
+      ${rule('支付失败后', own ? '自有码可以由后端自动换一张新的卡台码重试（GPT 需要用户 Session 仍在 30 分钟内）' : '托管码失败后卡台释放这张码，只能让用户自己重新兑换', own ? 'own' : 'platform',
         sel('failAct', own ? [['retry', '自动重试'], ['release', '释放码，让用户重兑'], ['manual', '转人工处理']] : [['release', '释放码，让用户重兑'], ['manual', '转人工处理']]))}
       ${own && s.failAct === 'retry' ? rule('最多自动重试', '超过次数后释放码', 'own', num('retryN', '次')) : ''}
       ${rule('每码独立支付（GPT）', '每次兑换使用独立的付款通道，失败不复用，更稳但每码多一笔通道费', 'gen', `<div class="seg full" id="payMode"><button data-v="shared" class="${s.payMode === 'shared' ? 'on' : ''}">共享</button><button data-v="own" class="${s.payMode === 'own' ? 'on' : ''}">独立</button></div>`)}
@@ -85,8 +83,7 @@ function renderEditor() {
   });
   $$('#editor [data-sw]').forEach(b => b.onclick = () => { cur[b.dataset.sw] = !cur[b.dataset.sw]; dirty = true; renderEditor(); });
   $$('#editor [data-prod]').forEach(c => c.onchange = () => { cur.prod = $$('#editor [data-prod]').filter(x => x.checked).map(x => x.dataset.prod); dirty = true; renderEditor(); });
-  $$('#modeSeg button').forEach(b => b.onclick = () => { cur.mode = b.dataset.v; if (cur.mode === 'hosted') { cur.delivery = 'cdk'; if (cur.failAct === 'retry') cur.failAct = 'release'; } dirty = true; renderEditor(); });
-  $$('#delivery button').forEach(b => b.onclick = () => { cur.delivery = b.dataset.v; dirty = true; renderEditor(); });
+  $$('#modeSeg button').forEach(b => b.onclick = () => { cur.mode = b.dataset.v; if (cur.mode === 'hosted' && cur.failAct === 'retry') cur.failAct = 'release'; dirty = true; renderEditor(); });
   $$('#payMode button').forEach(b => b.onclick = () => { cur.payMode = b.dataset.v; dirty = true; renderEditor(); });
   $('#save').onclick = e => run(e.currentTarget, '保存中…', async () => {
     const r = cur.id ? await PUT('/api/admin/strategies/' + cur.id, cur) : await POST('/api/admin/strategies', cur);

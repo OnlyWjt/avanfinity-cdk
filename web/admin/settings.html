@@ -23,7 +23,7 @@
     <section class="card glass s5">
       <h3>需要在卡台控制台做的事</h3>
       <div class="kv">
-        <div><span>1. 创建 API Key</span><b class="sm">勾选 cdk:read、cdk:purchase、x-direct、tg-direct 权限；用 GPT 直充还要勾选 GPT 直充读写、自动开卡和余额读取</b></div>
+        <div><span>1. 创建 API Key</span><b class="sm">勾选 cdk:read、cdk:purchase、x-direct、tg-direct 权限</b></div>
         <div><span>2. IP 白名单</span><b class="sm">加入本服务器的出口 IP（生成码等写接口必须）</b></div>
         <div><span>3. Webhook</span><b class="sm"><a class="link" href="webhooks.html">接收地址与签名密钥 →</a></b></div>
       </div>
@@ -48,22 +48,6 @@
         <div class="toggle"><div>平台库存不足<p>GPT 套餐库存低于 <input class="field sm mono" id="lowTh" style="width:56px;display:inline-block;padding:2px 6px"> 张时提醒</p></div><button class="sw" data-n="lowStock"></button></div>
         <div class="toggle"><div>每日报告<p>每天 9 点推送前一天的成功、拦截、利润</p></div><button class="sw" data-n="dailyReport"></button></div>
         <div class="row-flex"><button class="btn primary" id="saveNotify">保存</button><button class="btn" id="testNotify">发送测试消息</button></div>
-      </div>
-    </section>
-    <section class="card glass s12" id="direct">
-      <h3>GPT 直充资金护栏 <span id="guardState"></span></h3>
-      <p class="sm muted mb12">直充由本系统直接从卡台钱包付款，每一笔都先过这里的检查；被拦下的兑换会进入「兑换记录 → 待审核」，兑换码不作废。告警通过上面的 Telegram 机器人发送。</p>
-      <div class="kv mb12" id="guardKv"></div>
-      <div class="form">
-        <div class="two"><div class="f"><label>每单预算 <small>= 预估成本 ×(1+余量) + 换卡费用余量；既是额度预留，也是卡台的最大扣款</small></label><div class="row-flex"><div class="inputgrp"><input class="field mono" id="gBuf"><span>%</span></div><span class="faint">+</span><div class="inputgrp"><input class="field mono" id="gFee"><span>USD</span></div></div></div>
-          <div class="f"><label>单笔硬上限 <small>每单预算超过它就转人工</small></label><div class="inputgrp"><input class="field mono" id="gPer"><span>USD</span></div></div></div>
-        <div class="two"><div class="f"><label>每日总额 <small>按业务时区，含进行中的预算</small></label><div class="inputgrp"><input class="field mono" id="gDay"><span>USD</span></div></div>
-          <div class="f"><label>每张码最多直充 <small>失败后买家能重兑，每次都有开卡费；超过转人工，0 不限</small></label><div class="inputgrp"><input class="field mono" id="gCode"><span>次</span></div></div></div>
-        <div class="two"><div class="f"><label>自动熔断 <small>最近几笔都失败、且涉及几个不同账号时暂停全部直充；笔数 0 不启用</small></label><div class="row-flex"><div class="inputgrp"><input class="field mono" id="gTrip"><span>笔</span></div><div class="inputgrp"><input class="field mono" id="gTripAcc"><span>个账号</span></div></div></div>
-          <div class="f"><label>钱包余额告警 <small>可用余额低于它时提醒，0 不提醒</small></label><div class="inputgrp"><input class="field mono" id="gLow"><span>USD</span></div></div></div>
-        <div class="help">自动取消续费由卡台 API Key 的设置决定（默认开启），直充完成页按订单实际返回显示。</div>
-        <div class="row-flex"><button class="btn primary" id="saveGuard">保存</button><button class="btn" id="toggleGuard"></button><button class="btn" id="checkReady">检查直充就绪</button></div>
-        <div id="readyRes"></div>
       </div>
     </section>
   </div>
@@ -174,46 +158,8 @@ ready(async () => {
   $('#tsKey').value = r.turnstileSiteKey; $('#tsSet').textContent = r.turnstileSecretSet ? '已保存' : '未设置';
   swInit($('#rMaint'));
   if (S.avan.appId) loadProducts();
-  loadGuard();
   if (qs('tab')) showTab(qs('tab'));
 });
-/* ---------- GPT 直充资金护栏 ---------- */
-let guardPaused = false;
-const usd = n => n == null ? '—' : '$' + Number(n).toFixed(2);
-function renderGuard(g) {
-  $('#guardState').innerHTML = g.paused ? '<span class="badge bad">已暂停</span>' : g.inUse ? '<span class="badge ok">运行中</span>' : '<span class="badge idle">没有策略在用直充</span>';
-  guardPaused = g.paused;
-  $('#gPer').value = g.perOrderMaxUsd; $('#gDay').value = g.dailyMaxUsd; $('#gTrip').value = g.failTrip; $('#gLow').value = g.lowBalanceUsd;
-  $('#gBuf').value = g.bufferPct; $('#gFee').value = g.feeBufferUsd; $('#gCode').value = g.maxPerCode; $('#gTripAcc').value = g.tripAccounts;
-  $('#guardKv').innerHTML = `<div><span>今日已占用 <small class="faint">含跨天未结束的</small></span><b>${usd(g.usedToday)} / ${usd(g.dailyMaxUsd)}</b></div>
-    <div><span>今日直充</span><b class="sm">${g.today.orders} 笔 · 成功 ${g.today.ok} · 失败 ${g.today.failed} · 进行中 ${g.today.pending}</b></div>
-    <div><span>卡台钱包可用余额</span><b class="${g.balance.available != null && g.balance.available < g.lowBalanceUsd ? 'c-warn' : ''}">${g.balance.available == null ? '<span class="xs faint">获取失败</span>' : usd(g.balance.available)}${g.balance.error && g.balance.fetchedAt ? ` <span class="xs c-warn">（刷新失败，显示的是 ${fmtTime(g.balance.fetchedAt)} 的值）</span>` : ''}</b></div>
-    ${g.unverified ? `<div><span>费用待核对</span><b class="sm c-warn">${g.unverified} 笔已结束的直充还在等卡台费用明细，期间按预算计入额度</b></div>` : ''}
-    ${g.paused ? `<div><span>暂停原因</span><b class="sm c-warn">${esc(g.pausedReason)}${g.pausedAt ? ' · ' + fmtTime(g.pausedAt) : ''}</b></div>` : ''}`;
-  $('#toggleGuard').textContent = g.paused ? '恢复直充' : '暂停直充';
-  $('#toggleGuard').className = 'btn ' + (g.paused ? 'primary' : 'danger');
-}
-$('#checkReady').onclick = e => run(e.currentTarget, '检查中…', async () => {
-  const r = await GET('/api/admin/direct/readiness');
-  const icon = { true: '✓', false: '✕', warn: '⚑' }, cls = { true: 'c-ok', false: 'c-bad', warn: 'c-warn' };
-  $('#readyRes').innerHTML = `<div class="note ${r.ready ? 'ok' : 'bad'} mt8">${r.ready ? '只读检查都通过了。' : '有检查项没通过，直充下单会失败。'}</div>
-    <div class="kv mt8">${r.checks.map(c => `<div><span>${esc(c.name)}</span><b class="sm ${cls[c.ok]}">${icon[c.ok]} ${esc(c.detail)}</b></div>`).join('')}</div>`;
-});
-async function loadGuard() {
-  renderGuard(await GET('/api/admin/direct/guard'));
-  if (location.hash === '#direct') $('#direct').scrollIntoView({ behavior: 'smooth', block: 'start' }); // 从 Telegram 告警点进来
-}
-$('#saveGuard').onclick = e => run(e.currentTarget, '保存中…', async () => {
-  renderGuard(await PUT('/api/admin/direct/guard', { perOrderMaxUsd: Number($('#gPer').value), dailyMaxUsd: Number($('#gDay').value), failTrip: Number($('#gTrip').value), lowBalanceUsd: Number($('#gLow').value),
-    bufferPct: Number($('#gBuf').value), feeBufferUsd: Number($('#gFee').value), maxPerCode: Number($('#gCode').value), tripAccounts: Number($('#gTripAcc').value) }));
-  toast('护栏已保存');
-});
-$('#toggleGuard').onclick = async e => {
-  const paused = guardPaused;
-  if (!paused && !await confirmBox({ title: '暂停全部 GPT 直充？', body: '暂停后新的直充兑换会进入待审核，兑换码不作废；进行中的不受影响。', ok: '暂停', danger: true })) return;
-  run(e.currentTarget, '…', async () => { renderGuard(await POST('/api/admin/direct/guard/' + (paused ? 'resume' : 'pause'))); toast(paused ? '已恢复直充' : '已暂停直充'); });
-};
-
 async function loadProducts() {
   const r = await GET('/api/admin/settings/products');
   const cur = S.payment.productCode;

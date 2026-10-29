@@ -9,7 +9,7 @@ import { q, now, json, parse, sql } from '../db.ts';
 import { config } from '../config.ts';
 import { bad, HttpError } from '../http.ts';
 import { hex } from '../crypto.ts';
-import { GPT_DIRECT_PLAN_KEYS } from './catalog.ts';
+import { isCredits } from './catalog.ts';
 
 export interface StrategyConfig {
   desc: string;
@@ -31,7 +31,6 @@ export interface StrategyConfig {
   failAct: 'retry' | 'release' | 'manual';
   retryN: number;
   payMode: 'shared' | 'own';  // GPT 每码独立支付（forceNewCard）
-  delivery: 'cdk' | 'direct'; // GPT 交付方式：卡台 CDK | 直充（只限自有码），生成时写入批次
   country: string;            // GPT 结账地区（国家代码），空 = 卡台默认；生成时写入批次
 }
 export interface Strategy extends StrategyConfig { id: string; name: string; on: boolean; prio: number; isDefault: boolean; hits?: number }
@@ -40,7 +39,7 @@ const DEFAULT_CFG: StrategyConfig = {
   desc: '所有未指定策略的兑换码', prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: 'CDK',
   ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '',
   accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com, guerrillamail.com',
-  priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', delivery: 'cdk', country: '',
+  priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', country: '',
 };
 
 const row2s = (r: any): Strategy => ({ ...DEFAULT_CFG, ...parse(r.config, {}), id: r.id, name: r.name, on: !!r.enabled, prio: r.priority, isDefault: !!r.is_default });
@@ -79,8 +78,6 @@ async function validate(s: Partial<Strategy>, id?: string): Promise<StrategyConf
   if (!['block', 'manual', 'pass'].includes(c.priceAct)) throw bad('价格保护动作不正确');
   if (!['retry', 'release', 'manual'].includes(c.failAct)) throw bad('失败处理方式不正确');
   if (!['shared', 'own'].includes(c.payMode)) throw bad('支付方式不正确');
-  if (!['cdk', 'direct'].includes(c.delivery)) throw bad('GPT 交付方式不正确');
-  if (c.delivery === 'direct' && c.mode !== 'own') throw bad('直充只能用于自有码策略（托管码本身就是卡台 CDK）');
   c.country = String(c.country || '').trim().toUpperCase();
   if (c.country && !/^[A-Z]{2}$/.test(c.country)) throw bad('结账地区应为 2 位国家代码，如 US');
   c.timeOn = !!c.timeOn; c.freeOnly = !!c.freeOnly;
@@ -98,15 +95,6 @@ export async function saveStrategy(s: Partial<Strategy> & { id?: string }): Prom
     if (old.mode !== v.mode && await q.get('SELECT 1 FROM codes WHERE strategy_id = ? LIMIT 1', [s.id!])) throw bad('这条策略已经生成过兑换码，不能切换码模式；请复制一份新策略');
     if (old.mode === 'own' && old.prefix !== v.prefix && await q.get('SELECT 1 FROM codes WHERE strategy_id = ? LIMIT 1', [s.id!])) throw bad('这条策略已经生成过兑换码，不能修改前缀');
     if (existing.is_default && !v.on) throw bad('默认策略不能停用');
-    // 改成直充前检查商城商品：直充不支持的套餐绑在这条策略上，买家付款后会一直发不出货
-    if (v.mode === 'own' && v.delivery === 'direct') {
-      const bad1 = await q.all<{ title: string }>(`SELECT title FROM shop_products WHERE strategy_id = ? AND product = 'gpt' AND plan NOT IN (${GPT_DIRECT_PLAN_KEYS.map(() => '?').join(',')})`, [s.id!, ...GPT_DIRECT_PLAN_KEYS]);
-      if (bad1.length) throw bad(`商品「${bad1.map(p => p.title).join('」「')}」用的套餐不支持直充，请先给它们换一条策略`);
-      // 未完成的订单在下单时快照了这条策略：商品改绑别的策略也没用，它们发货时仍按这条策略生成码
-      const ph = GPT_DIRECT_PLAN_KEYS.map(() => '?').join(',');
-      const open = await q.all<{ no: string }>(`SELECT no FROM orders WHERE snap_strategy = ? AND snap_product = 'gpt' AND snap_plan NOT IN (${ph}) AND status IN ('pending','paid') LIMIT 5`, [s.id!, ...GPT_DIRECT_PLAN_KEYS]);
-      if (open.length) throw bad(`还有未完成的订单（${open.map(o => o.no).join('、')}）按这条策略发货，套餐不支持直充；请等它们发货或关闭后再改`);
-    }
     await q.run('UPDATE strategies SET name = ?, enabled = ?, priority = ?, config = ?, updated_at = ? WHERE id = ?', [v.name, v.on ? 1 : 0, v.prio, json(cfgOnly(v)), now(), s.id!]);
     return getStrategy(s.id!);
   }
@@ -178,7 +166,8 @@ export async function checkGates(s: Strategy, ctx: { ip: string; device: string;
 export interface AccountInfo { key: string | null; display: string; email?: string; currentPlan?: string }
 
 /** ② 账号规则：预检后检查 */
-export async function checkAccount(s: Strategy, product: string, acc: AccountInfo, excludeRedemption?: string): Promise<Verdict> {
+/** plan：要兑换的套餐。点数充值不改变订阅，「只允许 Free」对它不生效 */
+export async function checkAccount(s: Strategy, product: string, acc: AccountInfo, excludeRedemption?: string, plan?: string): Promise<Verdict> {
   const checks: Verdict['checks'] = [];
   const fail = (rule: string, userMsg: string): Verdict => ({ ok: false, action: 'block', rule, userMsg, checks });
   if (acc.key) {
@@ -188,9 +177,9 @@ export async function checkAccount(s: Strategy, product: string, acc: AccountInf
     checks.push({ name: '账号兑换次数', ok: used < s.accN, detail: `${s.accDays} 天内已兑 ${used} / ${s.accN} 次` });
     if (used >= s.accN) return fail(`账号 ${acc.display} ${s.accDays} 天内已兑换 ${used} 次（上限 ${s.accN}）`, `这个账号已经兑换过（每个账号限 ${s.accN} 次）。请更换其他账号，兑换码仍然有效。`);
   }
-  if (product === 'gpt' && s.freeOnly) {
-    const plan = (acc.currentPlan || '').toLowerCase();
-    const free = !plan || plan === 'free';
+  if (product === 'gpt' && s.freeOnly && !(plan && isCredits(plan))) {
+    const cur = (acc.currentPlan || '').toLowerCase();
+    const free = !cur || cur === 'free';
     checks.push({ name: '只允许 Free', ok: free, detail: `当前 ${acc.currentPlan || '未知'}` });
     if (!free) return fail(`账号当前为 ${acc.currentPlan}，策略只允许 Free 账号`, `这个账号当前已是 ${acc.currentPlan} 会员，不能兑换。请使用未订阅的账号。`);
   }

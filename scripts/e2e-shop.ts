@@ -357,16 +357,17 @@ ok((await order(guest(), { payMethod: 'usdt', paySub: undefined, email: 'off@tes
 await admin('PUT', '/api/admin/shop/settings/pay/usdt', { enabled: true });
 await admin('PUT', '/api/admin/shop/settings/pay/wechat', { apiV3Key: keys.wechat.apiV3Key });
 
-/* ---------- 改成直充前检查未完成订单：订单下单时快照了策略，商品改绑也没用 ---------- */
-const swTag = Date.now() % 1000;
-const swS = (await admin('POST', '/api/admin/strategies', { name: '切换测试' + swTag, prod: ['gpt'], mode: 'own', prefix: 'SW' + swTag, ipH: 5000, devD: 1000, captcha: 1000 })).data;
-const P25 = (await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'pro_25x', title: 'Pro 25x 测试', price: '1500', agentPrice: '1400', strategyId: swS.id })).data;
-const po = await guest()('POST', '/api/shop/orders', { productId: P25.id, quantity: 1, email: 'onlyWjt.555@gmail.com', queryPassword: '1234', payMethod: 'epay', paySub: 'alipay' });
-await admin('PUT', '/api/admin/shop/products/' + P25.id, { ...P25, price: '1500', agentPrice: '1400', strategyId: gptStrat.id, enabled: false });
-const toD = await admin('PUT', `/api/admin/strategies/${swS.id}`, { ...swS, delivery: 'direct' });
-ok(toD.status === 400 && /未完成的订单/.test(toD.data.error), `商品改绑后，原策略仍有未完成的 Pro 25x 订单，不能改成直充 → ${toD.data.error}`);
-await guest()('POST', `/api/shop/orders/${po.data.no}/cancel`, { t: po.data.token });
-ok((await admin('PUT', `/api/admin/strategies/${swS.id}`, { ...swS, delivery: 'direct' })).status === 200, '订单关闭后可以改成直充');
+/* ---------- 点数（Credits）商品：只能绑自有码策略 ---------- */
+const crTag = Date.now() % 1000;
+const hostedS = (await admin('POST', '/api/admin/strategies', { name: '托管测试' + crTag, prod: ['gpt'], mode: 'hosted', ipH: 5000, devD: 1000, captcha: 1000 })).data;
+const ownS = (await admin('POST', '/api/admin/strategies', { name: '自有测试' + crTag, prod: ['gpt'], mode: 'own', prefix: 'CS' + crTag, ipH: 5000, devD: 1000, captcha: 1000 })).data;
+const crBad = await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'credits_1000', title: '1000 点', price: '80', agentPrice: '70', strategyId: hostedS.id });
+ok(crBad.status === 400 && /自有码/.test(crBad.data.error), `点数商品不能绑卡台托管码策略 → ${crBad.data.error}`);
+const crOk = await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'credits_800', price: '70', agentPrice: '60', strategyId: ownS.id, enabled: false });
+ok(crOk.status === 200 && crOk.data.title === 'ChatGPT 800 点数', `自定义点数商品可以上架，默认标题「${crOk.data.title}」${crOk.data.error || ""}`);
+ok((await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'credits_0800', price: '70', agentPrice: '60', strategyId: ownS.id })).status === 400, '点数带前导零被拒绝');
+ok((await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'credits_249', price: '70', agentPrice: '60', strategyId: ownS.id })).status === 400, '点数低于 250 被拒绝');
+await admin('DELETE', '/api/admin/shop/products/' + crOk.data.id);
 
 /* ---------- 主题：新增的外观维度、Logo 图片、自定义 CSS ---------- */
 const th0 = (await admin('GET', '/api/admin/theme')).data;

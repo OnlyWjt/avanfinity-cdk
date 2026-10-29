@@ -391,7 +391,39 @@ export const SQLITE_MIGRATIONS: string[] = [
 export const BASE_VERSION = SQLITE_MIGRATIONS.length;
 
 /** 第 BASE_VERSION 版之后的迁移：每项三种数据库各一份 */
-export const LATER_MIGRATIONS: Record<Dialect, string>[] = [];
+/**
+ * 迁移前检查（按版本号）：数据状态不允许升级时抛错，启动失败、数据库不变。
+ * get 是普通查询（迁移前的结构）
+ */
+export const MIGRATION_CHECKS: Record<number, (get: (sql: string) => Promise<any>) => Promise<void>> = {
+  // 还有没出结果的直充（钱可能已经付出去了）就删掉账本，之后没法核对：先用旧版本处理完再升级
+  9: async get => {
+    // 表已经不在：MySQL 上这次迁移上回做到一半（DDL 不能回滚），接着做完即可
+    const n = Number((await get("SELECT COUNT(*) n FROM direct_spend WHERE status = 'reserved'").catch(() => null))?.n || 0);
+    if (n) throw new Error(`还有 ${n} 笔 GPT 直充没有结果。新版本去掉了直充，升级会删除直充账本：请先用旧版本在「兑换记录」里等它们结束或人工核对，再升级`);
+  },
+};
+
+export const LATER_MIGRATIONS: Record<Dialect, string>[] = [
+  /* 9 去掉 GPT 直充（统一走卡台 CDK）：额度账本、兑换记录上的直充任务 ID、资金护栏设置 */
+  {
+    sqlite: `
+      DROP INDEX IF EXISTS red_direct_task;
+      ALTER TABLE redemptions DROP COLUMN direct_task_id;
+      DROP TABLE IF EXISTS direct_spend;
+      DELETE FROM settings WHERE "key" = 'directGuard';`,
+    pg: `
+      DROP INDEX IF EXISTS red_direct_task;
+      ALTER TABLE redemptions DROP COLUMN IF EXISTS direct_task_id;
+      DROP TABLE IF EXISTS direct_spend;
+      DELETE FROM settings WHERE "key" = 'directGuard';`,
+    // MySQL 的 DDL 不能回滚：每一步都写成可以重复执行的，迁移中途失败后重启能接着做完
+    mysql: `
+      DROP TABLE IF EXISTS direct_spend;
+      DELETE FROM settings WHERE "key" = 'directGuard';
+      ALTER TABLE redemptions DROP COLUMN direct_task_id;`,
+  },
+];
 
 /**
  * PostgreSQL / MySQL 的完整结构（等价于 SQLite 全部迁移）。

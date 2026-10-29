@@ -14,11 +14,10 @@ import { bad, notFound, HttpError } from '../http.ts';
 import { getSetting } from './settings.ts';
 import { getStrategy } from './strategy.ts';
 import { generateBatch, revokeCodes } from './batches.ts';
-import { fullPlanLabel, planKeys, GPT_DIRECT_PLAN_KEYS } from './catalog.ts';
+import { fullPlanLabel, validPlan, isCredits } from './catalog.ts';
 import { channel, channels, notifyUrl } from './pay/index.ts';
 import type { PayAction, PayResult, PaymentRow } from './pay/types.ts';
 import * as coupons from './coupons.ts';
-import { pendingDirect } from './direct.ts';
 import * as agents from './agents.ts';
 import * as customers from './customers.ts';
 import { sendMail, mailConfigured, layout, button, esc, siteUrl } from './mail.ts';
@@ -45,13 +44,13 @@ export async function listProducts(all = false) {
 export async function saveProduct(b: any, id?: string) {
   const product = String(b.product);
   if (!['gpt', 'x', 'tg'].includes(product)) throw bad('产品不正确');
-  if (!planKeys(product).includes(b.plan)) throw bad('套餐不正确');
+  if (!validPlan(product, b.plan)) throw bad('套餐不正确');
   const price = Math.round(Number(b.price) * 100), agentPrice = Math.round(Number(b.agentPrice ?? b.price) * 100);
   if (!(price > 0 && price < 1e8)) throw bad('零售价不正确');
   if (!(agentPrice > 0 && agentPrice <= price)) throw bad('代理进货价必须大于 0 且不高于零售价');
   const s = await getStrategy(String(b.strategyId));
   if (!s.prod.includes(product as any)) throw bad(`策略「${s.name}」不适用于这个产品`);
-  if (product === 'gpt' && s.mode === 'own' && s.delivery === 'direct' && !GPT_DIRECT_PLAN_KEYS.includes(b.plan)) throw bad(`策略「${s.name}」是直充，不支持 ${fullPlanLabel(product, b.plan)}，买家付款后会发不出货；请选走卡台 CDK 的策略`);
+  if (product === 'gpt' && isCredits(b.plan) && s.mode !== 'own') throw bad(`点数只能用自有码策略发货，策略「${s.name}」是卡台托管码`);
   const stock = b.stockLimit === '' || b.stockLimit == null ? null : Math.max(0, Math.floor(Number(b.stockLimit)));
   const maxPer = Math.max(1, Math.min(50, Math.floor(Number(b.maxPerOrder) || 10)));
   const title = String(b.title || fullPlanLabel(product, b.plan)).trim().slice(0, 60);
@@ -386,8 +385,6 @@ async function doRefund(no: string, note: string, force: boolean) {
   if (!o) throw notFound('订单不存在');
   if (!['paid', 'delivered'].includes(o.status)) throw bad('只有已付款的订单可以退款');
   const codes = await q.all<{ id: string; status: string; mode: string; product: string }>('SELECT c.id, c.status, c.mode, c.product FROM order_codes oc JOIN codes c ON c.id = oc.code_id WHERE oc.order_no = ?', [no]);
-  // 有直充还没出结果：钱可能已经付出去了，强制退款也不行，等结果确定或人工核对后再退
-  if ((await Promise.all(codes.map(c => pendingDirect(c.id)))).some(Boolean)) throw new HttpError(409, '订单里有兑换码的直充还没有结果（可能已经付款），请先在兑换记录里核对结果，再退款', 'DIRECT_PENDING');
   const used = codes.filter(c => c.status === 'redeemed' || c.status === 'in_use').length;
   const hostedGpt = codes.filter(c => c.status === 'unused' && c.mode === 'hosted' && c.product === 'gpt').length;
   if ((used || hostedGpt) && !force) {

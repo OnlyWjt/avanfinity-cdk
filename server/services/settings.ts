@@ -46,20 +46,6 @@ export interface PaySettings {
   alipay: { enabled: boolean; appId: string; privateKeyEnc: string | null; alipayPublicKey: string; gateway: string; mode: 'precreate' | 'page' };
   wechat: { enabled: boolean; mchId: string; appId: string; serialNo: string; privateKeyEnc: string | null; apiV3KeyEnc: string | null; publicKeyId: string; publicKey: string; api: string };
 }
-/** GPT 直充资金护栏（金额 USD） */
-export interface DirectGuard {
-  perOrderMaxUsd: number;      // 单笔硬上限：这一单的预算（见下）超过它就转人工
-  bufferPct: number;           // 每单预算 = 预估成本 ×(1 + bufferPct%) + feeBufferUsd，同时作为卡台的 maxTotalDebitUsd
-  feeBufferUsd: number;        // 预算里给开卡 / 换卡费用留的余量
-  dailyMaxUsd: number;         // 每日总额（业务时区）
-  maxPerCode: number;          // 同一张码最多直充几次（失败后买家可以重兑），超过转人工
-  failTrip: number;            // 最近几笔都失败就自动暂停，0 不启用
-  tripAccounts: number;        // 而且这几笔至少涉及几个不同账号（防止一个人故意失败让全站停摆）
-  lowBalanceUsd: number;       // 钱包可用余额低于它时告警，0 不提醒
-  paused: boolean;             // 暂停全部直充（手动或熔断）
-  pausedReason: string; pausedAt: string;
-  dailyAlertDay: string;       // 当日额度告警已发的日期，每天只发一次
-}
 export interface MailSettings { enabled: boolean; host: string; port: number; secure: boolean; user: string; passEnc: string | null; from: string; fromName: string }
 
 const DEFAULTS = {
@@ -95,7 +81,6 @@ const DEFAULTS = {
     wechat: { enabled: false, mchId: '', appId: '', serialNo: '', privateKeyEnc: null, apiV3KeyEnc: null, publicKeyId: '', publicKey: '', api: 'https://api.mch.weixin.qq.com' },
   } as PaySettings,
   mail: { enabled: false, host: '', port: 465, secure: true, user: '', passEnc: null, from: '', fromName: '' } as MailSettings,
-  directGuard: { perOrderMaxUsd: 250, bufferPct: 15, feeBufferUsd: 2, dailyMaxUsd: 1000, maxPerCode: 3, failTrip: 5, tripAccounts: 3, lowBalanceUsd: 100, paused: false, pausedReason: '', pausedAt: '', dailyAlertDay: '' } as DirectGuard,
   notify: { failAlert: true, shopAlert: true, lowStock: true, dailyReport: false, autoCancelRenewal: true, lowStockThreshold: 20, tgTokenEnc: null, tgChatId: '', lastReportDay: '' } as Notify,
 };
 type Defaults = typeof DEFAULTS;
