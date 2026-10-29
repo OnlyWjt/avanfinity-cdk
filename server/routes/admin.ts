@@ -339,8 +339,8 @@ admin.put('/theme', requireRole('admin'), async c => {
     preset: str(b.preset ?? t.preset, 'preset', { max: 20 }), mode: ['dark', 'light', 'auto'].includes(b.mode) ? b.mode : t.mode,
     a1: color(b.a1, t.a1), a2: color(b.a2, t.a2), a3: color(b.a3, t.a3), r: num(b.r, 4, 28, t.r), blur: num(b.blur, 0, 40, t.blur), glow: num(b.glow, 0, 100, t.glow),
     name: str(b.name ?? t.name, '品牌名称', { min: 1, max: 20 }), logo: str(b.logo ?? t.logo, 'Logo', { min: 1, max: 2 }), slogan: str(b.slogan ?? t.slogan, '标语', { opt: true, max: 24 }),
-    bg: pickOne(b.bg, ['aurora', 'mesh', 'grid', 'dots', 'plain'], t.bg || 'aurora'), font: pickOne(b.font, ['modern', 'rounded', 'serif', 'tech'], t.font || 'modern'),
-    card: pickOne(b.card, ['glass', 'solid', 'outline', 'neo'], t.card || 'glass'), btn: pickOne(b.btn, ['gradient', 'solid', 'glow'], t.btn || 'gradient'), shape: pickOne(b.shape, ['round', 'pill', 'square'], t.shape || 'round'),
+    bg: pickOne(b.bg, ['paper', 'aurora', 'mesh', 'grid', 'dots', 'plain'], t.bg || 'paper'), font: pickOne(b.font, ['stub', 'modern', 'rounded', 'serif', 'tech'], t.font || 'stub'),
+    card: pickOne(b.card, ['paper', 'glass', 'solid', 'outline', 'neo'], t.card || 'paper'), btn: pickOne(b.btn, ['gradient', 'solid', 'glow'], t.btn || 'solid'), shape: pickOne(b.shape, ['round', 'pill', 'square'], t.shape || 'round'),
     motion: b.motion === undefined ? t.motion ?? true : !!b.motion,
     logoImg: logoImg(b.logoImg ?? t.logoImg ?? ''), tagline: str(b.tagline ?? t.tagline ?? '', '副标题', { opt: true, max: 60 }),
     // 自定义 CSS 只给管理员填；去掉能跳出 <style> 的写法

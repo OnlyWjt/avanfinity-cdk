@@ -6,7 +6,14 @@
 <link rel="stylesheet" href="/assets/app.css"></head>
 <body>
 <header class="pub-top" id="shopTop" data-on="query"></header>
-<div class="shop"><div class="ocard glass" id="view"><div class="empty"><span class="spin"></span> 加载订单…</div></div><div id="netErr" class="xs c-warn hidden" style="text-align:center;margin-top:10px">网络异常，正在重试…</div></div>
+<main class="rd">
+  <div class="vwrap"><div class="voucher glass">
+    <div class="v-stub"><h2>订单</h2><span class="v-no" id="vno"></span></div>
+    <div class="v-perf"></div>
+    <div class="v-body" id="view"><div class="empty"><span class="spin"></span> 加载订单…</div></div>
+  </div></div>
+  <div id="netErr" class="xs c-warn hidden" style="text-align:center;margin-top:10px">网络异常，正在重试…</div>
+</main>
 <script src="/assets/app.js"></script>
 <script src="/assets/qr.js"></script>
 <script src="/assets/shop.js"></script>
@@ -34,6 +41,7 @@ async function load() {
     return;
   }
   if (T) Recent.add({ no: O.no, t: O.token, title: O.title });
+  $('#vno').textContent = 'No. ' + O.no;
   // 轮询时状态没变就不重绘（避免二维码、倒计时闪动）
   const key = JSON.stringify([O.status, O.pay, O.codes.length, O.deliverError]);
   if (key !== lastKey) { lastKey = key; render(); }

@@ -60,6 +60,8 @@ const quiet = p => p.catch(() => {});
 
 /* ---------------- 主题 ---------------- */
 const PRESETS = {
+  // 默认：票根。墨蓝主色 + 票面蓝 + 印泥红，纸面卡片，得意黑标题
+  stub:     { label: '票根', mode: 'light', a1: '#15233f', a2: '#3d6e9e', a3: '#d3382b', bg: 'paper', font: 'stub', card: 'paper', btn: 'solid', shape: 'round', r: 14, blur: 0, glow: 0 },
   // 深色
   aurora:   { label: '极光', mode: 'dark', a1: '#8b7cff', a2: '#4fd8ff', a3: '#ff7ac6', bg: 'aurora', font: 'modern', card: 'glass', btn: 'gradient', shape: 'round', r: 18, blur: 24, glow: 60 },
   nebula:   { label: '星云', mode: 'dark', a1: '#b06bff', a2: '#ff6bcb', a3: '#5b8cff', bg: 'mesh', font: 'modern', card: 'glass', btn: 'glow', shape: 'pill', r: 22, blur: 28, glow: 80 },
@@ -79,26 +81,33 @@ const PRESETS = {
   glacier:  { label: '冰川', mode: 'light', a1: '#2b8cff', a2: '#38d6e0', a3: '#7a8cff', bg: 'aurora', font: 'modern', card: 'glass', btn: 'glow', shape: 'round', r: 16, blur: 30, glow: 55 },
   mono:     { label: '素白', mode: 'light', a1: '#2c2f4a', a2: '#5b6bff', a3: '#22c3a6', bg: 'plain', font: 'modern', card: 'solid', btn: 'solid', shape: 'round', r: 12, blur: 0, glow: 10 },
 };
-const THEME_DEFAULT = { preset: 'aurora', mode: 'dark', a1: '#8b7cff', a2: '#4fd8ff', a3: '#ff7ac6', r: 18, blur: 24, glow: 60, name: 'CDK Console', logo: 'C', slogan: '一码开通你的会员',
-  bg: 'aurora', font: 'modern', card: 'glass', btn: 'gradient', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' };
+const THEME_DEFAULT = { preset: 'stub', mode: 'light', a1: '#15233f', a2: '#3d6e9e', a3: '#d3382b', r: 14, blur: 0, glow: 0, name: 'CDK Console', logo: 'C', slogan: '一码开通你的会员',
+  bg: 'paper', font: 'stub', card: 'paper', btn: 'solid', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' };
 /* 后台主题页用 iframe 预览前台页面时（?preview=1）：只认父页面发来的主题，不写本地缓存、不受个人深浅色影响 */
 const PREVIEW = window.parent !== window && new URLSearchParams(location.search).get('preview') === '1';
 let PREVIEW_THEME = null;
 const Theme = {
   cached() { try { return { ...THEME_DEFAULT, ...JSON.parse(localStorage.getItem('cdk-theme') || '{}') }; } catch { return { ...THEME_DEFAULT }; } },
   lum(hex) { const n = parseInt(hex.slice(1), 16); const c = [n >> 16, n >> 8 & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; },
+  /** 主色很深（比如票根的墨蓝）时，深色模式下提亮，否则按钮会消失在背景里（boot.js 里有同样的逻辑） */
+  ui(hex, mode) {
+    if (mode !== 'dark' || Theme.lum(hex) >= .06) return hex;
+    const n = parseInt(hex.slice(1), 16);
+    return '#' + [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * .86).toString(16).padStart(2, '0')).join('');
+  },
   apply(t = Theme.cached(), persist = false) {
     if (PREVIEW) { if (PREVIEW_THEME) t = PREVIEW_THEME; persist = false; }
     t = { ...THEME_DEFAULT, ...t };
     if (persist) { try { localStorage.setItem('cdk-theme', JSON.stringify(t)); } catch { /* 存满了不影响显示 */ } }
     const root = document.documentElement, s = root.style;
-    ['a1', 'a2', 'a3'].forEach(k => s.setProperty('--' + k, t[k]));
-    s.setProperty('--r', t.r + 'px'); s.setProperty('--blur', t.blur + 'px'); s.setProperty('--glow', t.glow / 100);
-    s.setProperty('--on-a', Theme.lum(t.a1) > .45 ? '#111228' : '#fff');
-    Object.assign(root.dataset, { bg: t.bg, font: t.font, card: t.card, btn: t.btn, shape: t.shape, motion: t.motion ? 'on' : 'off' });
     const local = PREVIEW ? null : localStorage.getItem('cdk-mode');
     const mode = local || t.mode;
     root.dataset.mode = mode === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : mode;
+    const a1 = Theme.ui(t.a1, root.dataset.mode);
+    s.setProperty('--a1', a1); s.setProperty('--a2', t.a2); s.setProperty('--a3', t.a3);
+    s.setProperty('--r', t.r + 'px'); s.setProperty('--blur', t.blur + 'px'); s.setProperty('--glow', t.glow / 100);
+    s.setProperty('--on-a', Theme.lum(a1) > .45 ? '#111228' : '#fff');
+    Object.assign(root.dataset, { bg: t.bg, font: t.font, card: t.card, btn: t.btn, shape: t.shape, motion: t.motion ? 'on' : 'off' });
     $$('[data-bind=name]').forEach(e => e.textContent = t.name || 'CDK Console');
     $$('[data-bind=logo]').forEach(e => { e.classList.toggle('img', !!t.logoImg); e.innerHTML = t.logoImg ? `<img src="${esc(t.logoImg)}" alt="">` : esc(t.logo || 'C'); });
     $$('[data-bind=slogan]').forEach(e => e.textContent = t.slogan || '');

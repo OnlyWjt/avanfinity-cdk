@@ -6,11 +6,13 @@
 <link rel="stylesheet" href="/assets/app.css"></head>
 <body>
 <header class="pub-top" id="shopTop" data-on="query"></header>
-<div class="pub">
-  <div class="hero"><h1>查询<br><span class="grad-text">我的订单</span></h1>
-    <p class="lead">输入下单时填写的<b>邮箱</b>或<b>订单号</b>，以及当时设置的查询密码。注册用户请 <a class="link" href="/account/">登录</a> 后在「我的订单」查看。</p></div>
-  <div class="pcard glass">
-    <h2>查询订单</h2><p class="desc">找回兑换码、查看发货状态。</p>
+<main class="rd">
+  <div class="rd-head"><h1>查询我的订单</h1>
+    <p>找回兑换码、查看发货状态。输入下单时填写的邮箱或订单号，以及当时设置的查询密码。</p></div>
+  <div class="vwrap"><div class="voucher glass">
+    <div class="v-stub"><h2>查订单</h2></div>
+    <div class="v-perf"></div>
+    <div class="v-body">
     <div class="form">
       <div class="f"><label for="key">邮箱或订单号</label><input class="field" id="key" autocomplete="email" placeholder="you@example.com 或 S2610…"></div>
       <div class="f"><label for="pw">查询密码 <small>下单时设置的</small></label><input class="field" id="pw" type="password" autocomplete="current-password"></div>
@@ -19,8 +21,10 @@
     </div>
     <div id="res" class="mt16"></div>
     <div id="recent" class="mt16"></div>
-  </div>
-</div>
+    </div>
+  </div></div>
+  <div class="rd-foot"><span>注册用户请 <a href="/account/">登录</a> 后在「我的订单」查看</span></div>
+</main>
 <script src="/assets/app.js"></script>
 <script src="/assets/shop.js"></script>
 <script>

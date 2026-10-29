@@ -78,7 +78,7 @@ await buyer.type('#sess', JSON.stringify({ user: { id: 'user-ui-' + Date.now(), 
 await buyer.click('#next'); await buyer.waitForSelector('#cd', { timeout: 10000 });
 await buyer.screenshot({ path: `${OUT}/redeem-3.png` });
 await buyer.click('#next');
-await buyer.waitForFunction(() => document.querySelector('.bigicon') && document.body.innerText.includes('开通成功'), { timeout: 20000 }).then(() => console.log('✓ 兑换页 GPT 全流程开通成功'), () => console.log('✗ 兑换页没有等到成功'));
+await buyer.waitForFunction(() => document.querySelector('.seal') && document.body.innerText.includes('开通成功'), { timeout: 20000 }).then(() => console.log('✓ 兑换页 GPT 全流程开通成功'), () => console.log('✗ 兑换页没有等到成功'));
 await buyer.screenshot({ path: `${OUT}/redeem-4.png` });
 current = 'receipt';
 await buyer.goto(BASE + '/receipt.html', { waitUntil: 'networkidle0' });
@@ -438,7 +438,7 @@ await page.goto(`${BASE}/admin/theme.html`, { waitUntil: 'networkidle0' }); awai
 const presetN = await page.$$eval('.pre', e => e.length);
 await page.click('.pre[data-k="cyber"]'); await sleep(900);
 const fr = page.frames().find(f => f.url().includes('preview=1'));
-const pv = fr ? await fr.evaluate(() => ({ bg: document.documentElement.dataset.bg, font: document.documentElement.dataset.font, a1: getComputedStyle(document.documentElement).getPropertyValue('--a1').trim(), passes: document.querySelectorAll('.prod.pass').length })) : null;
+const pv = fr ? await fr.evaluate(() => ({ bg: document.documentElement.dataset.bg, font: document.documentElement.dataset.font, a1: getComputedStyle(document.documentElement).getPropertyValue('--a1').trim(), passes: document.querySelectorAll('.prod.ticket').length })) : null;
 const live = (await page.evaluate(async () => (await (await fetch('/api/shop/config')).json()).theme.preset));
 await page.screenshot({ path: `${OUT}/theme-cyber.png` });
 console.log(presetN >= 16 && pv?.bg === 'grid' && pv.font === 'tech' && pv.a1 === '#ff2bd6' && pv.passes > 0 && live !== 'cyber' ? `✓ 主题页：${presetN} 套预设，选「赛博」后预览里的商城实时换成网格背景 + 科技字体，未发布不影响线上` : `✗ 主题预览异常 ${JSON.stringify({ presetN, pv, live })}`);

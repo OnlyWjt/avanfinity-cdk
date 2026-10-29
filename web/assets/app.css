@@ -651,82 +651,101 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none}
 @media (prefers-reduced-motion:reduce){body::before{animation:none!important}}
 
 /* ============================================================
-   商城首页：会员通行证
-   商品卡做成实体通行证：每个产品一种材质，价格在撕口下面的票根上
+   商城首页：会员票
+   商品卡做成一张票：左边票面写商品，齿孔右边的票根上是价格和购买
    ============================================================ */
-.sh-hero{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;min-height:430px}
+.sh-hero{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;min-height:400px}
 .eyebrow{font-size:12.5px;letter-spacing:.14em;color:var(--muted);margin-bottom:14px}
 .sh-copy h1{font-size:clamp(34px,5vw,58px);line-height:1.08;font-weight:850;letter-spacing:-.035em}
+[data-font="stub"] .sh-copy h1{font-size:clamp(40px,6vw,68px);line-height:1.04;letter-spacing:.01em}
 .sh-lead{font-size:16px;color:var(--muted);margin:18px 0 26px;max-width:470px;line-height:1.75}
 .sh-cta{display:flex;gap:10px;flex-wrap:wrap}
 .sh-cta .btn{padding:12px 22px;font-size:14px}
 .sh-facts{display:flex;gap:8px 20px;flex-wrap:wrap;margin-top:26px;list-style:none;font-size:12.5px;color:var(--muted)}
 .sh-facts li::before{content:"✓";color:var(--ok);margin-right:6px;font-weight:700}
 
-/* 通行证本体 */
-.prod.pass,.deck .pass{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:0;text-align:left;color:#fff;padding:18px 18px 0;border:0;
-  border-radius:calc(var(--r)*1.05);overflow:hidden;isolation:isolate;--stub:72px;
-  -webkit-mask:radial-gradient(circle 11px at left calc(100% - var(--stub)),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at right calc(100% - var(--stub)),#0000 97%,#000) right/51% 100% no-repeat;
-  mask:radial-gradient(circle 11px at left calc(100% - var(--stub)),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at right calc(100% - var(--stub)),#0000 97%,#000) right/51% 100% no-repeat;
-  filter:drop-shadow(0 18px 26px rgba(0,0,0,.28));transition:transform .28s cubic-bezier(.2,.8,.2,1),filter .28s}
+/* 通行证材质：后台生成页的产品选择和票样还在用 */
 .pass.gpt{background:radial-gradient(circle at 105% -8%,rgba(255,255,255,.16) 0 16%,transparent 16.5%),repeating-radial-gradient(circle at 105% -8%,rgba(255,255,255,.075) 0 1px,transparent 1.5px 20px),linear-gradient(150deg,#08362a,#0d7457 58%,#12a37e)}
 .pass.x{background:linear-gradient(112deg,transparent 38%,rgba(255,255,255,.11) 46%,rgba(255,255,255,.02) 52%,transparent 60%),radial-gradient(120% 80% at 0 0,#2b2b37,transparent 60%),linear-gradient(165deg,#040406,#16161c)}
 .pass.tg{background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 220' preserveAspectRatio='none'><path d='M-20 190 C 70 140 120 205 190 130 S 280 50 330 30' fill='none' stroke='white' stroke-opacity='.3' stroke-width='2' stroke-dasharray='5 8'/></svg>") center/100% 100% no-repeat,linear-gradient(150deg,#0b5fa0,#1f97d4 55%,#56c4f3)}
 .pp-top{display:flex;align-items:center;gap:9px;font-size:12px}
 .pp-mark{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);font-weight:800;font-size:14px}
 .pp-kind{letter-spacing:.1em;opacity:.85}
-.pp-badge{margin-left:auto;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.94);color:#14151f;font-weight:700;font-size:11px}
-.pp-title{font-family:var(--display);font-size:21px;font-weight:800;line-height:1.25;margin-top:26px;letter-spacing:-.01em}
-.pp-sub{font-size:12.5px;opacity:.78;margin-top:6px;min-height:19px;padding-right:64px;line-height:1.5}
 .pp-cut{margin:18px 4px 0;border-top:2px dashed rgba(255,255,255,.3)}
-.pp-stub{display:flex;align-items:center;justify-content:space-between;height:var(--stub);gap:10px}
-.prod.pass .price{font-size:28px;font-weight:820;letter-spacing:-.02em;margin:0}
-.prod.pass .price small{font-size:14px;margin-right:2px;opacity:.85}
-.pp-buy{padding:8px 18px;border-radius:999px;background:rgba(255,255,255,.95);color:#14151f;font-weight:750;font-size:13px;transition:transform .2s}
-.pp-stock{position:absolute;right:18px;bottom:calc(var(--stub) + 26px);font-size:11px;opacity:.78}
-.pp-stock.low{opacity:1;color:#ffe08a;font-weight:700}
-.prod.pass:hover:not(.sold){transform:translateY(-5px) rotate(-.6deg);filter:drop-shadow(0 26px 30px rgba(0,0,0,.35)) drop-shadow(0 0 18px color-mix(in srgb,var(--a1) 45%,transparent))}
-.prod.pass:hover:not(.sold) .pp-buy{transform:translateX(3px)}
-.prod.pass:focus-visible{outline:none;filter:drop-shadow(0 0 0 2px var(--a1)) drop-shadow(0 0 2px var(--a1))}
-.prod.pass.sold{filter:grayscale(.8);opacity:.55}
 
-/* 首屏：三张通行证扇形展开（只在进入页面时动一次） */
-.deck{position:relative;height:360px}
-.deck .pass{position:absolute;left:50%;top:26px;width:250px;height:300px;padding:20px 20px 0}
-.deck .pp-plan{font-family:var(--display);font-size:24px;line-height:1.2;margin-top:auto;opacity:.95}
-.deck .pp-plan b{font-size:34px;font-weight:850;letter-spacing:-.02em}
-.deck .pp-cut{margin-top:18px}
-.deck .pp-code{font-family:var(--mono);font-size:12px;opacity:.8}
-.deck .pp-ok{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.18)}
-.deck .d1{--t:translateX(-50%) translate(-128px,22px) rotate(-12deg);transform:var(--t);z-index:1}
-.deck .d2{--t:translateX(-50%) translateY(-6px);transform:var(--t);z-index:3}
-.deck .d3{--t:translateX(-50%) translate(128px,22px) rotate(12deg);transform:var(--t);z-index:2}
-.deck .pass{animation:fan .9s cubic-bezier(.2,.85,.25,1) both}
-.deck .d1{animation-delay:.08s}.deck .d3{animation-delay:.16s}
-@keyframes fan{from{transform:translateX(-50%) translateY(40px) rotate(0);opacity:0}}
-.deck:hover .d1{transform:translateX(-50%) translate(-150px,26px) rotate(-15deg)}
-.deck:hover .d3{transform:translateX(-50%) translate(150px,26px) rotate(15deg)}
-.deck:hover .d2{transform:translateX(-50%) translateY(-14px)}
+/* 票：票面 + 齿孔 + 票根。两侧半圆缺口用 mask 挖出来，所以阴影要加在外层（.prods / .tstack） */
+.ticket{--stubw:164px;--cut:calc(100% - var(--stubw));--ticket:color-mix(in srgb,var(--a2) 13%,var(--bg-solid));
+  display:grid;grid-template-columns:1fr var(--stubw);border-radius:var(--r);color:var(--text);text-align:left;
+  -webkit-mask:radial-gradient(circle 10px at var(--cut) 0,#0000 97%,#000) top/100% 51% no-repeat,radial-gradient(circle 10px at var(--cut) 100%,#0000 97%,#000) bottom/100% 51% no-repeat;
+          mask:radial-gradient(circle 10px at var(--cut) 0,#0000 97%,#000) top/100% 51% no-repeat,radial-gradient(circle 10px at var(--cut) 100%,#0000 97%,#000) bottom/100% 51% no-repeat}
+.ticket.gpt{--pc:#10a37f}.ticket.x{--pc:var(--text)}.ticket.tg{--pc:#229ed9}
+.t-face{background:var(--ticket);padding:20px 22px;position:relative;display:flex;flex-direction:column;min-width:0}
+.t-stub{background:var(--bg-solid);border-left:2px dashed color-mix(in srgb,var(--text) 20%,transparent);padding:20px 18px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.t-band{position:absolute;left:0;top:20px;bottom:20px;width:4px;border-radius:0 3px 3px 0;background:var(--pc)}
+.t-line{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.t-mark{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:var(--pc);flex:none}
+.ticket.x .t-mark{color:var(--bg-solid)}
+.t-badge{margin-left:auto;font-size:11px;font-weight:650;color:var(--a3);box-shadow:inset 0 0 0 1px currentColor;padding:1px 8px;border-radius:4px;white-space:nowrap}
+.t-title{font-family:var(--display);font-size:20px;font-weight:780;line-height:1.25;margin:14px 0 4px;letter-spacing:-.01em}
+[data-font="stub"] .t-title{font-size:25px;font-weight:400;letter-spacing:.01em;line-height:1.15}
+.t-sub{font-size:12.5px;color:var(--muted);line-height:1.55}
+.t-code{font-family:var(--mono);font-size:11.5px;color:var(--a3);letter-spacing:.04em;white-space:nowrap}
+
+/* 货架上的商品票 */
+.prod.ticket{padding:0;gap:0;border:0;background:none;cursor:pointer;font:inherit;width:100%;min-height:172px;transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.prod.ticket .price{font-size:27px;font-weight:820;letter-spacing:-.02em;line-height:1.05;margin:0}
+.prod.ticket .price small{font-size:14px;margin-right:2px;font-weight:600}
+.t-stock{font-size:11.5px;color:var(--muted)}
+.t-stock.low{color:var(--warn);font-weight:650}
+.t-buy{margin-top:auto;width:100%;padding:9px 0;border-radius:calc(var(--r)*.55);background:var(--a1);color:var(--on-a);font-weight:650;font-size:13px;text-align:center;transition:filter .15s}
+[data-btn="gradient"] .t-buy{background:linear-gradient(135deg,var(--a1),var(--a2))}
+[data-shape="pill"] .t-buy{border-radius:999px}
+.prod.ticket:hover:not(.sold){transform:translateY(-3px);box-shadow:none}
+.prod.ticket:hover:not(.sold) .t-buy{filter:brightness(1.1)}
+/* mask 会把 outline 一起裁掉：键盘焦点画在票里面 */
+.prod.ticket:focus-visible{outline:none}
+.prod.ticket:focus-visible .t-face,.prod.ticket:focus-visible .t-stub{box-shadow:inset 0 2px 0 var(--a1),inset 0 -2px 0 var(--a1)}
+.prod.ticket:focus-visible .t-face{box-shadow:inset 2px 2px 0 var(--a1),inset 0 -2px 0 var(--a1)}
+.prod.ticket:focus-visible .t-stub{box-shadow:inset -2px 2px 0 var(--a1),inset 0 -2px 0 var(--a1)}
+.prod.ticket.sold{filter:grayscale(.85);opacity:.55;cursor:not-allowed}
+.prod.ticket.sold .t-buy{background:var(--faint)}
+
+/* 首屏：三张已开通的票叠在一起（进入页面时滑入一次） */
+.tstack{position:relative;height:360px;filter:drop-shadow(0 16px 24px rgba(21,35,63,.16))}
+[data-mode="dark"] .tstack{filter:drop-shadow(0 18px 30px rgba(0,0,0,.5))}
+.tstack .ticket{position:absolute;width:min(430px,100%);--stubw:128px;min-height:104px}
+.tstack .t-face{padding:18px 20px}
+.tstack .t-title{margin:10px 0 0}
+.tstack .t-stub{padding:18px 16px;justify-content:space-between}
+.tstack .t-ok{font-size:12px;font-weight:700;color:var(--ok)}
+.tstack .t1{left:6%;top:4px;transform:rotate(-5deg)}
+.tstack .t2{left:16%;top:126px;transform:rotate(2.5deg)}
+.tstack .t3{left:2%;top:244px;transform:rotate(-2deg)}
+[data-motion="on"] .tstack .ticket{animation:tkIn .7s cubic-bezier(.2,.85,.25,1) both}
+[data-motion="on"] .tstack .t2{animation-delay:.08s}[data-motion="on"] .tstack .t3{animation-delay:.16s}
+@keyframes tkIn{from{opacity:0;translate:0 28px}}
 
 /* 货架 */
 .shelf{margin-top:34px;scroll-margin-top:24px}
 .shelf-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
 .shelf-head h2,.how h2,.faq h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
-.shelf .prods{grid-template-columns:repeat(auto-fill,minmax(262px,1fr));gap:20px}
-.shelf .prod-skel{height:236px}
+[data-font="stub"] :is(.shelf-head h2,.how h2,.faq h2){font-size:32px;font-weight:400;letter-spacing:.01em;line-height:1.1}
+.shelf .prods{grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:18px;filter:drop-shadow(0 10px 18px rgba(21,35,63,.09))}
+[data-mode="dark"] .shelf .prods{filter:drop-shadow(0 12px 22px rgba(0,0,0,.45))}
+.shelf .prod-skel{height:172px}
 
-/* 三步（真实的先后顺序，所以用序号） */
-.how{margin-top:64px}
-.how ol{list-style:none;counter-reset:step;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}
-.how li{counter-increment:step;position:relative;padding:20px 20px 20px 68px;border-radius:var(--r);background:var(--surface);border:1px solid var(--border)}
-.how li::before{content:counter(step);position:absolute;left:20px;top:16px;font-family:var(--display);font-size:34px;font-weight:850;line-height:1;
-  background:linear-gradient(135deg,var(--a1),var(--a2));-webkit-background-clip:text;background-clip:text;color:transparent}
-.how li b{display:block;font-size:15px;margin-bottom:4px}
-.how li span{font-size:12.5px;color:var(--muted);line-height:1.6}
+/* 从付款到开通：真实的先后顺序，用站名之间的箭头表示 */
+.how{margin-top:72px}
+.route{list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:22px;padding:26px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.route li{position:relative}
+.route li:not(:last-child)::after{content:"→";position:absolute;right:-24px;top:28px;color:var(--faint);font-size:18px;line-height:1}
+.route small{display:block;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.06em;margin-bottom:6px}
+.route b{display:block;font-family:var(--display);font-size:22px;font-weight:780;line-height:1.15}
+[data-font="stub"] .route b{font-size:30px;font-weight:400}
+.route span{display:block;font-size:13px;color:var(--muted);line-height:1.65;margin-top:8px;max-width:22em}
 
-.faq{margin-top:56px;max-width:760px}
-.faq h2{margin-bottom:14px}
-.faq details{border-bottom:1px solid var(--border);padding:14px 2px}
+.faq{margin-top:64px;display:grid;grid-template-columns:240px 1fr;gap:40px;align-items:start}
+.faq details{border-bottom:1px solid var(--border);padding:16px 2px}
 .faq summary{cursor:pointer;font-weight:650;font-size:14px;list-style:none;display:flex;justify-content:space-between;gap:12px}
 .faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";color:var(--muted);font-size:18px;line-height:1;transition:transform .2s}
@@ -738,25 +757,26 @@ main.shop .shop-foot a:hover{color:var(--text)}
 
 @media (max-width:880px){
   .sh-hero{grid-template-columns:1fr;gap:10px;min-height:0}
-  .deck{height:290px;order:-1;margin-top:-10px}
-  .deck .pass{width:200px;height:240px}
-  .deck .pp-plan b{font-size:26px}
-  .deck .d1{--t:translateX(-50%) translate(-96px,18px) rotate(-11deg)}
-  .deck .d3{--t:translateX(-50%) translate(96px,18px) rotate(11deg)}
-  .how ol{grid-template-columns:1fr}
+  .tstack{display:none}
+  .shelf .prods{grid-template-columns:1fr}
+  .route{grid-template-columns:1fr;gap:18px}
+  .route li:not(:last-child)::after{display:none}
+  #notice{margin-top:22px}
+  .faq{grid-template-columns:1fr;gap:6px}
 }
 @media (max-width:560px){
-  .shelf .prods{grid-template-columns:1fr;gap:14px}
-  .deck .pass{width:168px;height:206px;padding:14px 14px 0;--stub:56px}
-  .deck .pp-plan{font-size:18px}.deck .pp-plan b{font-size:22px}
-  .deck .d1{--t:translateX(-50%) translate(-82px,16px) rotate(-11deg)}
-  .deck .d3{--t:translateX(-50%) translate(82px,16px) rotate(11deg)}
-  .deck .pp-code{display:none}
+  .ticket{--stubw:126px}
+  .prod.ticket{min-height:0}
+  .t-face{padding:16px 16px}
+  .t-stub{padding:16px 14px}
+  .t-title{font-size:17px;margin-top:10px}
+  [data-font="stub"] .t-title{font-size:21px}
+  .t-sub{font-size:12px}
+  .prod.ticket .price{font-size:21px}
+  .t-band{top:16px;bottom:16px}
 }
-@media (prefers-reduced-motion:reduce){.deck .pass{animation:none}.prod.pass,.deck .pass{transition:none}}
+@media (prefers-reduced-motion:reduce){.tstack .ticket{animation:none!important}.prod.ticket{transition:none}}
 main.shop{overflow-x:clip}
-@media (max-width:880px){ .deck{margin-top:8px} }
-@media (max-width:560px){ .deck{height:250px} .deck .d1{--t:translateX(-50%) translate(-70px,16px) rotate(-10deg)} .deck .d3{--t:translateX(-50%) translate(70px,16px) rotate(10deg)} .deck:hover .d1,.deck:hover .d3,.deck:hover .d2{transform:var(--t)} }
 
 .subcats{display:flex;flex-wrap:wrap;gap:6px;margin:-6px 0 16px}
 .subcats .chipopt{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);font-size:12.5px;color:var(--muted)}
@@ -822,3 +842,129 @@ input[type=range]{accent-color:var(--a1)}
 [data-mode="light"] .link{color:color-mix(in srgb,var(--a2) 55%,#0b1a3a)}
 .seg .ct{font-size:11px;color:var(--faint);margin-left:3px;font-weight:500}
 .seg .ct:empty{display:none}
+
+/* ============================================================
+   兑换券：兑换页 / 兑换结果 / 查订单 / 订单详情共用
+   一张真实尺寸的券居中：上面是主色票根，齿孔下面是白色票身
+   所有主题通用，颜色都取主题变量
+   ============================================================ */
+.rd{max-width:1080px;margin:0 auto;padding:104px 24px 72px;display:flex;flex-direction:column;align-items:center}
+.rd-head{text-align:center;margin:8px 0 30px;max-width:600px}
+.rd-head h1{font-size:clamp(30px,4.2vw,46px);line-height:1.12;font-weight:820;letter-spacing:-.02em}
+[data-font="stub"] .rd-head h1{font-weight:400;letter-spacing:.02em}
+.rd-head p{color:var(--muted);font-size:14.5px;margin-top:10px;line-height:1.7}
+.rd-head p:empty{display:none}
+/* 两侧缺口用 mask 挖，mask 会裁掉自身阴影，所以阴影放在外层 */
+.vwrap{width:min(560px,100%);filter:drop-shadow(0 1px 1px rgba(21,35,63,.06)) drop-shadow(0 18px 28px rgba(21,35,63,.14))}
+[data-mode="dark"] .vwrap{filter:drop-shadow(0 22px 36px rgba(0,0,0,.55))}
+.vwrap>.voucher{--cut:72px;padding:0;border-radius:calc(var(--r)*1.15);box-shadow:none!important;
+  -webkit-mask:radial-gradient(circle 11px at 0 var(--cut),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at 100% var(--cut),#0000 97%,#000) right/51% 100% no-repeat;
+          mask:radial-gradient(circle 11px at 0 var(--cut),#0000 97%,#000) left/51% 100% no-repeat,radial-gradient(circle 11px at 100% var(--cut),#0000 97%,#000) right/51% 100% no-repeat}
+.v-stub{height:var(--cut);display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 28px;background:var(--a1);color:var(--on-a)}
+[data-btn="gradient"] .v-stub,[data-btn="glow"] .v-stub{background:linear-gradient(135deg,var(--a1),var(--a2))}
+.v-stub h2{font-size:21px;font-weight:780;letter-spacing:.08em;line-height:1;white-space:nowrap}
+[data-font="stub"] .v-stub h2{font-size:24px;font-weight:400}
+.v-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.v-tags span{font-size:11.5px;padding:3px 9px;border-radius:999px;white-space:nowrap;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--on-a) 30%,transparent);color:color-mix(in srgb,var(--on-a) 80%,transparent)}
+.v-no{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;color:color-mix(in srgb,var(--a3) 55%,var(--on-a));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-perf{border-top:2px dashed color-mix(in srgb,var(--text) 18%,transparent);margin:-1px 20px 0}
+.v-body{padding:26px 28px 24px;position:relative}
+.v-body>h2:first-child,.v-body>.ohead:first-child{margin-top:0}
+[data-font="stub"] .v-body h2{font-size:25px;font-weight:400;letter-spacing:.01em}
+.v-body .desc{color:var(--muted);margin:6px 0 18px;font-size:13px;line-height:1.6}
+.v-lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.v-lbl b{color:var(--text);font-weight:600}
+/* 兑换码：直接写在券上，只留一条下划线 */
+.v-body .code-in{background:none;border:0;border-bottom:2px solid color-mix(in srgb,var(--text) 18%,transparent);border-radius:0;box-shadow:none;
+  padding:8px 0 12px;text-align:center;font-size:26px;font-weight:600;letter-spacing:.1em}
+.v-body .code-in::placeholder{color:color-mix(in srgb,var(--text) 22%,transparent);font-weight:400}
+.v-body .code-in:focus{border-bottom-color:var(--a1);box-shadow:none}
+.v-help{font-size:12.5px;color:var(--faint);margin-top:10px}
+.v-body .btn.primary.block{padding:14px;font-size:14.5px;margin-top:20px}
+.v-body .steps-top{margin:24px 0 0}
+.v-body .steps-top u{height:3px}
+[data-btn="solid"] .steps-top .done u,[data-btn="solid"] .steps-top .cur u{background:var(--a1)}
+.steps-top .cur span{font-weight:650}
+.rd-foot{display:flex;gap:6px 26px;justify-content:center;flex-wrap:wrap;margin-top:28px;font-size:13px;color:var(--muted);text-align:center}
+.rd-foot b{color:var(--text);font-weight:650;margin-right:6px}
+.rd-foot a{color:var(--text);font-weight:600;text-decoration:none}
+.rd-foot a:hover{text-decoration:underline}
+.rd-foot+.rd-foot{margin-top:12px}
+/* 开通成功：盖章（只在刚成功时落章一次） */
+.seal{position:absolute;right:20px;top:10px;width:112px;height:112px;border-radius:50%;color:var(--a3);
+  box-shadow:inset 0 0 0 3.5px currentColor;display:grid;place-items:center;text-align:center;transform:rotate(-14deg);pointer-events:none;opacity:.92}
+.seal::before{content:"";position:absolute;inset:8px;border-radius:50%;box-shadow:inset 0 0 0 1.2px currentColor}
+.seal b{display:block;font-family:var(--display);font-size:25px;font-weight:800;line-height:1;letter-spacing:.06em}
+[data-font="stub"] .seal b{font-weight:400;font-size:27px}
+.seal small{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;margin-top:6px}
+.seal span{display:block;font-size:9.5px;letter-spacing:.12em;margin:0 auto 6px;max-width:78px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+[data-motion="on"] .seal.stamp{animation:stamp .42s cubic-bezier(.2,1.4,.4,1) both .2s}
+@keyframes stamp{0%{transform:rotate(-26deg) scale(1.9);opacity:0}60%{opacity:.92}100%{transform:rotate(-14deg) scale(1);opacity:.92}}
+/* 印章只压在标题区，不挡住下面的订单信息 */
+.v-done{min-height:112px;padding-right:118px;margin-bottom:16px}
+.v-done .v-to{color:var(--muted);margin-top:6px;font-size:13.5px;line-height:1.6}
+.v-done .v-to b{color:var(--text)}
+@media (max-width:560px){
+  .rd{padding:80px 14px 56px}
+  .rd-head{margin:4px 0 22px}
+  .rd-head p{font-size:13.5px}
+  .vwrap>.voucher{--cut:60px}
+  .v-stub{padding:0 20px}
+  .v-tags{display:none}
+  .v-perf{margin:-1px 14px 0}
+  .v-body{padding:22px 18px 20px}
+  .v-body .code-in{font-size:19px;letter-spacing:.05em}
+  .seal{width:92px;height:92px;right:10px;top:8px}.seal b,[data-font="stub"] .seal b{font-size:21px}.seal span{display:none}
+  .v-done{min-height:96px;padding-right:94px}
+  .rd-foot{gap:4px 16px;font-size:12.5px}
+}
+@media (prefers-reduced-motion:reduce){.seal.stamp{animation:none!important}}
+
+/* ============================================================
+   票根主题（bg=paper / card=paper / font=stub）
+   冷灰底 + 纸面卡片 + 墨蓝主色；得意黑只用在标题，数字用 Martian Mono
+   ============================================================ */
+@font-face{font-family:"Smiley Sans";src:url(/assets/fonts/SmileySans-Oblique.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Martian Mono";src:url(/assets/fonts/MartianMono-latin.woff2) format("woff2");font-weight:400 700;font-stretch:75% 112.5%;font-display:swap;
+  unicode-range:U+0000-00FF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212}
+[data-bg="paper"][data-mode="light"]{
+  --bg:#eef2f5; --bg-solid:#ffffff; --surface:#ffffff; --surface-2:#f3f6f9;
+  --border:rgba(21,35,63,.11); --text:#15233f; --muted:#5a6a80; --faint:#8a99ac;
+  --inset:#f1f5f8; --shadow:0 1px 2px rgba(21,35,63,.05),0 10px 24px -18px rgba(21,35,63,.32);
+  --ok:#1e8a5a; --run:#2f6fb0; --bad:#d3382b; --warn:#b7740a;
+}
+[data-bg="paper"][data-mode="dark"]{
+  --bg:#0d1524; --bg-solid:#121c2e; --surface:#121c2e; --surface-2:#1a2639;
+  --border:rgba(228,236,245,.1); --text:#e4ecf5; --muted:#8c9bb0; --faint:#5f6f86;
+  --inset:rgba(0,0,0,.22); --shadow:0 18px 40px -26px #000;
+  --ok:#3dd68c; --run:#5aa9e6; --bad:#ff5a47; --warn:#f2b24c;
+}
+[data-bg="paper"] body{background-image:none}
+[data-bg="paper"] .grad-text{background:none;-webkit-background-clip:border-box;background-clip:border-box;color:inherit}
+[data-bg="paper"] .glowcard::after{display:none}
+[data-bg="paper"] .pub-top nav a:hover{background:none;color:var(--text)}
+[data-bg="paper"] .pub-top nav a.on{background:none;color:var(--text);font-weight:650;box-shadow:inset 0 -2px 0 var(--text);border-radius:0}
+[data-bg="paper"] .mask{background:rgba(13,21,36,.38)}
+[data-card="paper"] .glass:not(.solid){background:var(--bg-solid);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--border);box-shadow:var(--shadow)}
+[data-card="paper"] .nav a.on{background:var(--inset);box-shadow:none;font-weight:650}
+[data-card="paper"] .seg button.on,[data-card="paper"] .seg a.on{background:var(--bg-solid);box-shadow:0 1px 2px rgba(21,35,63,.12),0 0 0 1px var(--border)}
+[data-btn="solid"] .logo{background:var(--a1)}
+[data-btn="solid"] .btn.primary{box-shadow:none}
+[data-btn="solid"] .sw.on{background:var(--a1)}
+[data-font="stub"]{--display:"Smiley Sans","PingFang SC","Microsoft YaHei",sans-serif;--mono:"Martian Mono","SF Mono",Consolas,monospace;
+  --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif}
+/* 得意黑只有一个字重：不要让浏览器再加粗 */
+[data-font="stub"] :is(h1,h2,.hero h1,.shop-hero h1){font-weight:400;font-synthesis:none;letter-spacing:.01em}
+[data-font="stub"] .top h1 small{font-family:var(--sans)}
+[data-font="stub"] :is(.dlg-t h2,.pcard h2,.ohead h2){font-family:var(--sans);font-weight:700;letter-spacing:0}
+[data-font="stub"] .v-body .ohead h2{font-family:var(--display);font-weight:400}
+/* 金额、统计数字：等宽数字 */
+[data-font="stub"] :is(.stat .v,.price,.paybox .amt,.balance .v,.sum>.total b,.minis strong){font-family:var(--mono);font-weight:600;letter-spacing:-.03em}
+[data-font="stub"] .stat .v span{font-family:var(--sans);letter-spacing:0}
+.v-body h2{font-size:21px;font-weight:750;line-height:1.3}
+/* 票根主题下的「兑换码有效」卡：票面色，不用三色渐变 */
+[data-bg="paper"] .member{background:color-mix(in srgb,var(--a2) 13%,var(--bg-solid));color:var(--text);box-shadow:inset 3px 0 0 var(--a1)}
+[data-bg="paper"] .member::after{display:none}
+[data-bg="paper"] .member small{color:var(--muted);opacity:1}
+[data-bg="paper"] .member .r{opacity:1;color:var(--muted)}
+[data-bg="paper"] .member .r .mono{color:var(--a3)}

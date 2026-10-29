@@ -9,23 +9,29 @@
   <a class="brand" href="/redeem" style="padding:0"><div class="logo" data-bind="logo">C</div><span data-bind="name"></span></a>
   <nav><a class="on" href="/redeem">兑换</a><button class="btn ghost sm" onclick="Theme.toggleMode()" aria-label="切换深浅色"><span data-bind="mode-icon">☾</span></button></nav>
 </header>
-<div class="pub">
-  <div class="hero">
+<main class="rd">
+  <div class="rd-head">
     <h1><span class="grad-text" data-bind="slogan">一码开通你的会员</span></h1>
-    <p class="lead" id="desc"></p>
-    <div class="chips" id="chips"></div>
-    <div class="trust"><div><b>约 30 秒</b>平均开通</div><div><b>无需付款</b>由卖家支付</div><div><b>失败可重兑</b>兑换码不作废</div></div>
+    <p id="desc"></p>
   </div>
-  <div class="pcard glass"><div class="steps-top" id="steps"></div><div id="view"></div></div>
-</div>
+  <div class="vwrap"><div class="voucher glass">
+    <div class="v-stub"><h2>兑换券</h2><div class="v-tags" id="chips"></div><span class="v-no hidden" id="vno"></span></div>
+    <div class="v-perf"></div>
+    <div class="v-body"><div id="view"></div><div class="steps-top" id="steps" aria-label="开通进度"></div></div>
+  </div></div>
+  <div class="rd-foot"><span><b>约 30 秒</b>开通</span><span><b>无需付款</b>由卖家支付</span><span><b>失败可重兑</b>兑换码不作废</span></div>
+  <div class="rd-foot"><span>已经兑换过？<a href="/receipt.html">查看兑换结果</a></span><span><a href="#" data-help>常见问题</a></span></div>
+</main>
 <script src="/assets/app.js"></script>
 <script>
 const DEVICE = localStorage.getItem('cdk-device') || (() => { const d = uuid(); localStorage.setItem('cdk-device', d); return d; })();
 let CFG = { redeem: { products: { gpt: true, x: true, tg: true } } }, R = null, pollT = null, stopCd = null, captchaToken = null;
 const WAITING = ['processing', 'funding', 'retrying', 'paid_pending_delivery', 'manual_review'];
 
-function steps(n) { $('#steps').innerHTML = ['兑换码', R && R.product !== 'gpt' ? '接收方' : '账号', '确认', '开通'].map((s, i) => `<div class="${i + 1 < n ? 'done' : i + 1 === n ? 'cur' : ''}"><u></u><span>${s}</span></div>`).join(''); }
-function show(n, html) { stopCd && stopCd(); stopCd = null; steps(n); $('#view').innerHTML = html; }
+function steps(n) { $('#steps').classList.toggle('hidden', n > 4); $('#steps').innerHTML = ['兑换码', R && R.product !== 'gpt' ? '接收方' : '账号', '确认', '开通'].map((s, i) => `<div class="${i + 1 < n ? 'done' : i + 1 === n ? 'cur' : ''}"><u></u><span>${s}</span></div>`).join(''); }
+function show(n, html) { stopCd && stopCd(); stopCd = null; steps(n); $('#view').innerHTML = html; stubNo(''); }
+/** 票根右侧：平时显示支持的产品，开通成功后换成订单号 */
+function stubNo(no) { $('#vno').textContent = no ? 'No. ' + no : ''; $('#vno').classList.toggle('hidden', !no); $('#chips').classList.toggle('hidden', !!no); }
 /** GPT 点数（Credits）：充值到账号，不改变订阅，没有自动续费 */
 const isCr = r => /^credits_/.test(r?.plan || '');
 const member = () => `<div class="member"><small>兑换码有效</small><b>${esc(R.planLabel)}</b><div class="r"><span class="mono">${esc(R.code)}</span><span>由卖家支付</span></div></div>`;
@@ -61,12 +67,12 @@ function render() {
 
 function codeView(err = '', val = '') {
   forget(); steps(1);
-  show(1, `<h2>输入兑换码</h2><p class="desc">不区分大小写，可以直接粘贴。</p>
+  show(1, `<label class="v-lbl" for="code"><b>兑换码</b><span>不区分大小写</span></label>
     <input class="code-in" id="code" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="64" autocomplete="off" spellcheck="false" value="${esc(val)}">
+    <p class="v-help">可以直接粘贴整段兑换码。</p>
     <div id="captcha" class="mt8"></div>
     <div class="err" id="err">${esc(err)}</div>
-    <button class="btn primary block" id="next">下一步</button>
-    <div class="backlink"><a href="/receipt.html">已经兑换过？查看兑换结果</a> · <a href="#" data-help>常见问题</a></div>`);
+    <button class="btn primary block" id="next">下一步</button>`);
   const inp = $('#code'); inp.focus();
   inp.oninput = () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); $('#err').textContent = ''; };
   inp.onkeydown = e => { if (e.key === 'Enter') $('#next').click(); };
@@ -157,14 +163,19 @@ function progressView() {
 }
 function doneView() {
   const r = R;
-  show(5, `<div class="bigicon">✓</div><h2 style="text-align:center">${isCr(r) ? '充值成功' : '开通成功'}</h2>
-    <p class="desc" style="text-align:center">${esc(r.planLabel)} 已${isCr(r) ? '充值' : '开通'}到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : r.product === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p>
+  const when = new Date(r.completedAt), ymd = `${when.getFullYear()}.${String(when.getMonth() + 1).padStart(2, '0')}.${String(when.getDate()).padStart(2, '0')}`;
+  // 刚开通（2 分钟内）才播放落章动画，回来查看时直接显示
+  const fresh = Date.now() - when < 120e3;
+  show(5, `<div class="v-done"><div class="seal ${fresh ? 'stamp' : ''}" aria-hidden="true"><div><span>${esc(Theme.cached().name || '')}</span><b>${isCr(r) ? '已充值' : '已开通'}</b><small>${ymd}</small></div></div>
+    <h2>${esc(r.planLabel)}</h2>
+    <p class="v-to">${isCr(r) ? '充值成功' : '开通成功'}，已${isCr(r) ? '充值' : '开通'}到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : r.product === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p></div>
     <div class="kv mb16"><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div><div><span>开通时间</span><b>${new Date(r.completedAt).toLocaleString('zh-CN')}</b></div>
       ${r.product !== 'gpt' || isCr(r) ? ''
         : r.willRenew === true ? '<div><span>自动续费</span><b class="c-warn">仍开启，如不需要请在 ChatGPT 设置里关闭</b></div>'
         : '<div><span>自动续费</span><b class="c-ok">已关闭</b></div>'}
       ${r.invoiceUrls.length ? `<div><span>官方账单</span><b><a class="link" href="${esc(r.invoiceUrls[0])}" target="_blank" rel="noopener">查看</a></b></div>` : ''}</div>
     <div class="row-flex"><button class="btn" style="flex:1" id="cp">复制凭证</button><button class="btn primary" style="flex:1" id="again">兑换另一个</button></div>`);
+  stubNo(r.orderNo);
   $('#cp').onclick = () => copy(`订单 ${r.orderNo}\n${r.planLabel}\n${r.account}\n${new Date(r.completedAt).toLocaleString('zh-CN')}`, '凭证信息已复制');
   $('#again').onclick = () => { forget(); codeView(); };
 }
@@ -183,7 +194,7 @@ function poll(ms) {
     pubNav(CFG, 'redeem');
     $('#desc').textContent = CFG.redeem.desc;
     const CHIP = { gpt: 'ChatGPT', x: 'X Premium', tg: 'Telegram Premium' };
-    $('#chips').innerHTML = ['gpt', 'x', 'tg'].filter(k => CFG.redeem.products[k]).map(k => `<span class="glass">${PIC[k]}${CHIP[k]}</span>`).join('');
+    $('#chips').innerHTML = ['gpt', 'x', 'tg'].filter(k => CFG.redeem.products[k]).map(k => `<span>${CHIP[k]}</span>`).join('');
     if (CFG.redeem.maintenance) { show(1, `<div class="bigicon warn">⚙</div><h2 style="text-align:center">系统维护中</h2><p class="desc" style="text-align:center">${esc(CFG.redeem.maintenanceMsg)}</p>`); return; }
   } catch { /* 配置拿不到也允许兑换 */ }
   const rid = localStorage.getItem('cdk-rid');

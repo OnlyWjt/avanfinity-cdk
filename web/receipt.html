@@ -9,19 +9,25 @@
   <a class="brand" href="/redeem" style="padding:0"><div class="logo" data-bind="logo">C</div><span data-bind="name"></span></a>
   <nav><a href="/redeem">兑换</a><button class="btn ghost sm" onclick="Theme.toggleMode()" aria-label="切换深浅色"><span data-bind="mode-icon">☾</span></button></nav>
 </header>
-<div class="pub">
-  <div class="hero"><h1>查询<br><span class="grad-text">兑换结果</span></h1>
-    <p class="lead">输入完整兑换码，查看开通进度和结果。为了安全，只能在<b>兑换时使用的同一设备和浏览器</b>上查询。</p></div>
-  <div class="pcard glass" id="view"></div>
-</div>
+<main class="rd">
+  <div class="rd-head"><h1>查询兑换结果</h1>
+    <p>输入完整兑换码，查看开通进度和结果。为了安全，只能在兑换时使用的同一设备和浏览器上查询。</p></div>
+  <div class="vwrap"><div class="voucher glass">
+    <div class="v-stub"><h2>兑换凭证</h2><span class="v-no hidden" id="vno"></span></div>
+    <div class="v-perf"></div>
+    <div class="v-body" id="view"></div>
+  </div></div>
+  <div class="rd-foot"><span>还没兑换？<a href="/redeem">去兑换</a></span></div>
+</main>
 <script src="/assets/app.js"></script>
 <script>
 const DEVICE = localStorage.getItem('cdk-device') || (() => { const d = uuid(); localStorage.setItem('cdk-device', d); return d; })();
 GET('/api/public/config').then(c => { Theme.apply(c.theme, true); pubNav(c, 'receipt'); }).catch(() => {});
 function form(err = '') {
-  $('#view').innerHTML = `<h2>输入兑换码</h2><p class="desc">需要完整的兑换码。</p>
+  $('#vno').classList.add('hidden');
+  $('#view').innerHTML = `<label class="v-lbl" for="code"><b>兑换码</b><span>需要完整的兑换码</span></label>
     <input class="code-in" id="code" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="64" spellcheck="false">
-    <div class="err">${esc(err)}</div><button class="btn primary block" id="go">查询</button>`;
+    <div class="err">${esc(err)}</div><button class="btn primary block" id="go">查询结果</button>`;
   const inp = $('#code'); inp.focus();
   inp.oninput = () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); };
   inp.onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
@@ -30,6 +36,7 @@ function form(err = '') {
 const LABEL = { completed: '开通成功', processing: '开通中', funding: '准备中', funded: '等待你确认付款', retrying: '自动重试中', paid_pending_delivery: '已付款，等待到账', manual_review: '等待卖家确认', failed: '没有开通成功', expired: '已超时', cancelled: '兑换码已撤销', requires_action: '需要卖家处理', started: '未完成', quoted: '等待你确认', approved: '卖家已确认' };
 function result(r) {
   const done = r.status === 'completed';
+  $('#vno').textContent = r.orderNo ? 'No. ' + r.orderNo : ''; $('#vno').classList.toggle('hidden', !r.orderNo);
   $('#view').innerHTML = `<div class="between mb16"><h2>${esc(r.planLabel)}</h2>${badge(r.status)}</div>
     <div class="kv mb16"><div><span>状态</span><b>${LABEL[r.status] || r.status}</b></div><div><span>兑换码</span><b class="mono">${esc(r.code)}</b></div><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div>
       <div><span>开通到</span><b>${esc(r.account || '—')}</b></div><div><span>兑换时间</span><b>${new Date(r.createdAt).toLocaleString('zh-CN')}</b></div>

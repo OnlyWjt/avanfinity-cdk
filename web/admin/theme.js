@@ -5,22 +5,25 @@ const isSaved = () => JSON.stringify(T) === saved;
 /* ---------- 各维度的选项 ---------- */
 const FONT_STACK = {
   // 内层用单引号：这些值会写进 style="..." 属性里
+  stub: "'Smiley Sans','PingFang SC','Microsoft YaHei',sans-serif",
   modern: "system-ui,'PingFang SC','Microsoft YaHei',sans-serif",
   rounded: "'SF Pro Rounded','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei UI',ui-rounded,sans-serif",
   serif: "'Noto Serif SC','Source Han Serif SC','Songti SC','STSong','SimSun',Georgia,serif",
   tech: "'SF Mono','JetBrains Mono',Menlo,Consolas,monospace",
 };
 const DIMS = {
-  bg: [['aurora', '极光', '柔和的三色光晕'], ['mesh', '流光', '大块色彩缓慢漂移'], ['grid', '网格', '科技感细网格'], ['dots', '点阵', '细密的点状纹理'], ['plain', '纯色', '干净，只留顶部一点光']],
-  card: [['glass', '玻璃', '半透明磨砂'], ['solid', '实色', '不透明，更清晰'], ['outline', '描边', '轻盈的线框'], ['neo', '浮雕', '柔和的立体阴影']],
-  font: [['modern', '现代'], ['rounded', '圆润'], ['serif', '宋体'], ['tech', '科技']],
+  bg: [['paper', '票面', '干净的冷灰底，不加光晕'], ['aurora', '极光', '柔和的三色光晕'], ['mesh', '流光', '大块色彩缓慢漂移'], ['grid', '网格', '科技感细网格'], ['dots', '点阵', '细密的点状纹理'], ['plain', '纯色', '干净，只留顶部一点光']],
+  card: [['paper', '纸面', '白色实底，细边和柔和投影'], ['glass', '玻璃', '半透明磨砂'], ['solid', '实色', '不透明，更清晰'], ['outline', '描边', '轻盈的线框'], ['neo', '浮雕', '柔和的立体阴影']],
+  font: [['stub', '票根', '得意黑标题 + 等宽数字'], ['modern', '现代'], ['rounded', '圆润'], ['serif', '宋体'], ['tech', '科技']],
   btn: [['gradient', '渐变'], ['solid', '纯色'], ['glow', '霓虹']],
   shape: [['round', '圆角'], ['pill', '胶囊'], ['square', '直角']],
 };
 const BASE = { dark: '#0b0c1d', light: '#f3f4fa' };
+/** 票面背景用自己的冷灰底色（和 app.css 里 [data-bg="paper"] 一致） */
+const PAPER = { dark: '#0d1524', light: '#eef2f5' };
 /** 预设缩略图：用这套主题自己的背景、卡片、字体和按钮画一个小场景 */
 function scene(p) {
-  const base = BASE[p.mode], dark = p.mode === 'dark';
+  const base = (p.bg === 'paper' ? PAPER : BASE)[p.mode], dark = p.mode === 'dark';
   const glow = (c, x, y, a = 60) => `radial-gradient(circle at ${x}% ${y}%,${c}${Math.round(a * 2.2).toString(16).padStart(2, '0')},transparent ${a}%)`;
   const line = dark ? 'rgba(255,255,255,.08)' : 'rgba(20,24,60,.08)';
   const bgs = {
@@ -29,13 +32,15 @@ function scene(p) {
     grid: [glow(p.a1, 20, 0, 55), `linear-gradient(${line} 1px,transparent 1px) 0 0/12px 12px`, `linear-gradient(90deg,${line} 1px,transparent 1px) 0 0/12px 12px`],
     dots: [glow(p.a1, 25, 5, 50), `radial-gradient(${dark ? 'rgba(255,255,255,.18)' : 'rgba(20,24,60,.18)'} 1px,transparent 1.4px) 0 0/8px 8px`],
     plain: [glow(p.a1, 50, -30, 60)],
+    paper: ['linear-gradient(transparent,transparent)'],
   }[p.bg];
-  const cardBg = { glass: dark ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.62)', solid: dark ? '#17182e' : '#ffffff', outline: 'transparent', neo: dark ? 'linear-gradient(160deg,#1d1e36,#121329)' : base }[p.card];
-  const cardBd = p.card === 'outline' ? p.a1 + '99' : p.card === 'neo' ? 'transparent' : (dark ? 'rgba(255,255,255,.12)' : 'rgba(20,24,60,.08)');
-  const cardSh = p.card === 'neo' ? (dark ? '0 6px 12px -6px #000' : '4px 4px 10px rgba(40,44,110,.15),-4px -4px 10px #fff') : 'none';
+  const cardBg = { paper: dark ? '#121c2e' : '#ffffff', glass: dark ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.62)', solid: dark ? '#17182e' : '#ffffff', outline: 'transparent', neo: dark ? 'linear-gradient(160deg,#1d1e36,#121329)' : base }[p.card];
+  const cardBd = p.card === 'paper' ? (dark ? 'rgba(228,236,245,.1)' : 'rgba(21,35,63,.1)') : p.card === 'outline' ? p.a1 + '99' : p.card === 'neo' ? 'transparent' : (dark ? 'rgba(255,255,255,.12)' : 'rgba(20,24,60,.08)');
+  const cardSh = p.card === 'paper' ? '0 4px 10px -6px rgba(21,35,63,.35)' : p.card === 'neo' ? (dark ? '0 6px 12px -6px #000' : '4px 4px 10px rgba(40,44,110,.15),-4px -4px 10px #fff') : 'none';
   const rad = Math.round(p.r * .45);
   const btnR = p.shape === 'pill' ? 99 : p.shape === 'square' ? 2 : Math.max(3, Math.round(p.r * .3));
-  const btnBg = p.btn === 'solid' ? p.a1 : `linear-gradient(135deg,${p.a1},${p.a2})`;
+  const a1 = Theme.ui(p.a1, p.mode);
+  const btnBg = p.btn === 'solid' ? a1 : `linear-gradient(135deg,${p.a1},${p.a2})`;
   const btnSh = p.btn === 'glow' ? `0 0 10px ${p.a1}` : 'none';
   return `<div class="scene" style="background:${bgs.join(',')},${base}"></div>
     <div class="chip" style="background:${cardBg};border-color:${cardBd};box-shadow:${cardSh};border-radius:${rad}px;font-family:${FONT_STACK[p.font]};color:${dark ? '#eef0ff' : '#16173a'}">Aa</div>

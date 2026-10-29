@@ -4,11 +4,11 @@ import { config } from '../config.ts';
 
 export interface Theme {
   preset: string; mode: 'dark' | 'light' | 'auto'; a1: string; a2: string; a3: string; r: number; blur: number; glow: number; name: string; logo: string; slogan: string;
-  /** 背景：aurora 极光 | mesh 流光 | grid 网格 | dots 点阵 | plain 纯色 */
+  /** 背景：paper 票面 | aurora 极光 | mesh 流光 | grid 网格 | dots 点阵 | plain 纯色 */
   bg: string;
-  /** 字体气质：modern 现代 | rounded 圆润 | serif 宋体 | tech 科技 */
+  /** 字体气质：stub 票根（得意黑标题 + 等宽数字）| modern 现代 | rounded 圆润 | serif 宋体 | tech 科技 */
   font: string;
-  /** 卡片：glass 玻璃 | solid 实色 | outline 描边 | neo 浮雕 */
+  /** 卡片：paper 纸面 | glass 玻璃 | solid 实色 | outline 描边 | neo 浮雕 */
   card: string;
   /** 主按钮：gradient 渐变 | solid 纯色 | glow 霓虹；形状：round 圆角 | pill 胶囊 | square 直角 */
   btn: string; shape: string;
@@ -49,8 +49,8 @@ export interface PaySettings {
 export interface MailSettings { enabled: boolean; host: string; port: number; secure: boolean; user: string; passEnc: string | null; from: string; fromName: string }
 
 const DEFAULTS = {
-  theme: { preset: 'aurora', mode: 'dark', a1: '#8b7cff', a2: '#4fd8ff', a3: '#ff7ac6', r: 18, blur: 24, glow: 60, name: 'CDK Console', logo: 'C', slogan: '一码开通你的会员',
-    bg: 'aurora', font: 'modern', card: 'glass', btn: 'gradient', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' } as Theme,
+  theme: { preset: 'stub', mode: 'light', a1: '#15233f', a2: '#3d6e9e', a3: '#d3382b', r: 14, blur: 0, glow: 0, name: 'CDK Console', logo: 'C', slogan: '一码开通你的会员',
+    bg: 'paper', font: 'stub', card: 'paper', btn: 'solid', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' } as Theme,
   redeemPage: {
     desc: '输入你拿到的兑换码，我们会先核对账号和套餐，确认无误后自动开通。整个过程不需要你付款，也不需要提供任何支付信息。',
     products: { gpt: true, x: true, tg: true }, contact: '', maintenance: false, maintenanceMsg: '系统维护中，请稍后再来兑换。',

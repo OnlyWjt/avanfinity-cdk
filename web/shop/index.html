@@ -15,10 +15,10 @@
       <div class="sh-cta"><a class="btn primary" href="#shelf">挑选会员</a><a class="btn" href="/redeem">已有兑换码，去兑换</a></div>
       <ul class="sh-facts" id="facts"></ul>
     </div>
-    <div class="deck" aria-hidden="true">
-      <div class="pass gpt d1"><div class="pp-top"><span class="pp-mark">G</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">ChatGPT<br><b>Plus</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">AVF-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
-      <div class="pass x d2"><div class="pp-top"><span class="pp-mark">𝕏</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">X<br><b>Premium</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">XP-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
-      <div class="pass tg d3"><div class="pp-top"><span class="pp-mark">✈</span><span class="pp-kind">会员通行证</span></div><div class="pp-plan">Telegram<br><b>Premium</b></div><div class="pp-cut"></div><div class="pp-stub"><span class="pp-code">TG-••••-••••</span><span class="pp-ok">✓ 已开通</span></div></div>
+    <div class="tstack" aria-hidden="true">
+      <div class="ticket tg t1"><div class="t-face"><span class="t-band"></span><div class="t-line"><span class="t-mark">✈</span>Telegram</div><b class="t-title">Premium 3 个月</b></div><div class="t-stub"><span class="t-code">TG-••••</span><span class="t-ok">✓ 已开通</span></div></div>
+      <div class="ticket x t2"><div class="t-face"><span class="t-band"></span><div class="t-line"><span class="t-mark">𝕏</span>X</div><b class="t-title">Premium</b></div><div class="t-stub"><span class="t-code">XP-••••</span><span class="t-ok">✓ 已开通</span></div></div>
+      <div class="ticket gpt t3"><div class="t-face"><span class="t-band"></span><div class="t-line"><span class="t-mark">G</span>ChatGPT</div><b class="t-title">Plus 月卡</b></div><div class="t-stub"><span class="t-code">AVF-••••</span><span class="t-ok">✓ 已开通</span></div></div>
     </div>
   </section>
   <div id="notice"></div>
@@ -30,20 +30,22 @@
   </section>
 
   <section class="how" id="how">
-    <h2>拿到会员只要三步</h2>
-    <ol>
-      <li><b>选会员，付款</b><span id="howPay">不注册也能买</span></li>
-      <li><b>收到兑换码</b><span id="howMail">付款后几秒钟，订单页直接显示兑换码</span></li>
-      <li><b>打开兑换页开通</b><span>点「去兑换」，按提示填账号，会员直接开到你的账号上</span></li>
+    <h2>从付款到开通</h2>
+    <ol class="route">
+      <li><small>现在</small><b>选会员，付款</b><span id="howPay">不注册也能买</span></li>
+      <li><small>几秒后</small><b>收到兑换码</b><span id="howMail">付款后几秒钟，订单页直接显示兑换码</span></li>
+      <li><small>约 30 秒</small><b>开通会员</b><span>点「去兑换」，按提示填账号，会员直接开到你的账号上</span></li>
     </ol>
   </section>
 
   <section class="faq">
     <h2>常见问题</h2>
+    <div>
     <details><summary>付款后多久能拿到兑换码？</summary><p>通常几秒钟。订单页会自动刷新显示兑换码；如果遇到延迟，系统会自动重试发货，不需要重复购买。</p></details>
     <details><summary>没注册的话怎么找回兑换码？</summary><p>在「查订单」里输入下单邮箱（或订单号）和你设置的查询密码，就能看到这笔订单的兑换码。</p></details>
     <details><summary>兑换码可以送人吗？</summary><p>可以。兑换码在兑换之前不绑定任何账号，转给谁，谁就能开通。</p></details>
     <details><summary>开通失败了怎么办？</summary><p>兑换失败时兑换码不会作废，可以重新兑换；也可以联系客服处理。</p></details>
+    </div>
   </section>
 
   <footer class="shop-foot" id="foot"></footer>
@@ -111,18 +113,17 @@ function visible() {
   const ids = SUB ? [+SUB] : [+TOP, ...subOf(+TOP).map(c => c.id)];
   return PRODUCTS.filter(p => ids.includes(p.categoryId));
 }
-/** 商品卡：每个产品一种通行证材质，价格在票根上 */
+/** 商品卡：一张票，左边票面写商品，齿孔右边的票根上是价格和购买 */
 function render() {
   const list = visible();
   $('#prods').innerHTML = list.map(p => {
     const stock = p.soldOut ? '已售罄' : p.available == null ? '' : p.available <= 5 ? `仅剩 ${p.available} 张` : `库存 ${p.available}`;
-    return `<button class="prod pass ${p.product} ${p.soldOut ? 'sold' : ''}" data-id="${p.id}" ${p.soldOut ? 'disabled' : ''} aria-label="${esc(p.title)}，${yuan(p.price)}">
-      <div class="pp-top"><span class="pp-mark">${MARK[p.product]}</span><span class="pp-kind">${PNAME2[p.product]}</span>${p.badge ? `<span class="pp-badge">${esc(p.badge)}</span>` : ''}</div>
-      <h3 class="pp-title">${esc(p.title)}</h3>
-      <p class="pp-sub">${esc(p.subtitle || '')}</p>
-      <div class="pp-cut"></div>
-      <div class="pp-stub"><span class="price pp-price"><small>¥</small>${yuanN(p.price)}</span><span class="pp-buy">${p.soldOut ? '已售罄' : '购买'}</span></div>
-      ${stock ? `<span class="pp-stock ${!p.soldOut && p.available <= 5 ? 'low' : ''}">${stock}</span>` : ''}
+    return `<button class="prod ticket ${p.product} ${p.soldOut ? 'sold' : ''}" data-id="${p.id}" ${p.soldOut ? 'disabled' : ''} aria-label="${esc(p.title)}，${yuan(p.price)}">
+      <span class="t-face"><span class="t-band"></span>
+        <span class="t-line"><span class="t-mark">${MARK[p.product]}</span>${PNAME2[p.product]}${p.badge ? `<span class="t-badge">${esc(p.badge)}</span>` : ''}</span>
+        <h3 class="t-title">${esc(p.title)}</h3>
+        ${p.subtitle ? `<span class="t-sub">${esc(p.subtitle)}</span>` : ''}</span>
+      <span class="t-stub"><span class="price"><small>¥</small>${yuanN(p.price)}</span>${stock ? `<span class="t-stock ${!p.soldOut && p.available <= 5 ? 'low' : ''}">${stock}</span>` : ''}<span class="t-buy">${p.soldOut ? '已售罄' : '购买'}</span></span>
     </button>`;
   }).join('') || '<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">✦</div>这个分类还没有商品</div></div>';
   $$('#prods [data-id]').forEach(b => b.onclick = () => buy(PRODUCTS.find(p => p.id === b.dataset.id)));
