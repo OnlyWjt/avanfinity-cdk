@@ -66,21 +66,31 @@ export function changePassword(userId: number, oldPw: string, newPw: string) {
   q.run('DELETE FROM sessions WHERE user_id = ?', [userId]);
 }
 
-/** 开启 TOTP：先生成密钥（未生效），用户输入一次正确验证码后才启用 */
-export function totpSetup(userId: number) {
+/**
+ * 生成新的 TOTP 密钥。新密钥先放在 totp_pending_enc，现用的两步验证不受影响，
+ * 用户用新密钥输对一次验证码（totpEnable）才替换。
+ * 已经开启两步验证时必须再验证登录密码和当前验证码：否则拿到一个登录会话就能换掉或关掉别人的两步验证
+ */
+export function totpSetup(userId: number, auth: { password?: string; code?: string } = {}) {
+  const u = q.get<UserRow & { totp_pending_enc: string | null }>('SELECT * FROM users WHERE id = ?', [userId])!;
+  if (u.totp_enabled) {
+    if (!auth.password || !verifyPassword(auth.password, u.password_hash) || !u.totp_secret_enc || !verifyTotp(decrypt(u.totp_secret_enc), String(auth.code || '')))
+      throw new HttpError(400, '更换两步验证需要输入登录密码和当前验证码', 'REAUTH_REQUIRED');
+  }
   const secret = newTotpSecret();
-  q.run('UPDATE users SET totp_secret_enc = ?, totp_enabled = 0 WHERE id = ?', [encrypt(secret), userId]);
+  q.run('UPDATE users SET totp_pending_enc = ? WHERE id = ?', [encrypt(secret), userId]);
   return secret;
 }
 export function totpEnable(userId: number, code: string) {
-  const u = q.get<UserRow>('SELECT * FROM users WHERE id = ?', [userId])!;
-  if (!u.totp_secret_enc || !verifyTotp(decrypt(u.totp_secret_enc), code)) throw new HttpError(400, '验证码不正确');
-  q.run('UPDATE users SET totp_enabled = 1 WHERE id = ?', [userId]);
+  const u = q.get<UserRow & { totp_pending_enc: string | null }>('SELECT * FROM users WHERE id = ?', [userId])!;
+  if (!u.totp_pending_enc) throw new HttpError(400, '请先生成新的密钥');
+  if (!verifyTotp(decrypt(u.totp_pending_enc), code)) throw new HttpError(400, '验证码不正确');
+  q.run('UPDATE users SET totp_secret_enc = totp_pending_enc, totp_pending_enc = NULL, totp_enabled = 1 WHERE id = ?', [userId]);
 }
 export function totpDisable(userId: number, code: string) {
   const u = q.get<UserRow>('SELECT * FROM users WHERE id = ?', [userId])!;
   if (u.totp_enabled && (!u.totp_secret_enc || !verifyTotp(decrypt(u.totp_secret_enc), code))) throw new HttpError(400, '验证码不正确');
-  q.run('UPDATE users SET totp_enabled = 0, totp_secret_enc = NULL WHERE id = ?', [userId]);
+  q.run('UPDATE users SET totp_enabled = 0, totp_secret_enc = NULL, totp_pending_enc = NULL WHERE id = ?', [userId]);
 }
 
 setInterval(() => q.run('DELETE FROM sessions WHERE expires_at < ?', [now()]), 3600e3).unref();

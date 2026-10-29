@@ -14,7 +14,7 @@
     "admin:create": "node --no-warnings scripts/create-admin.ts",
     "typecheck": "tsc --noEmit",
     "test:e2e": "node --no-warnings scripts/e2e.ts",
-    "test": "node --no-warnings scripts/test-all.ts",
+    "test": "npm run typecheck && node --no-warnings scripts/test-all.ts",
     "backup": "node --no-warnings scripts/backup.ts"
   },
   "dependencies": {

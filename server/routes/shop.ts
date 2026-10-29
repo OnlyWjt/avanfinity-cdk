@@ -74,7 +74,7 @@ shop.get('/orders/:no', c => c.json(S.viewOrder(c.req.param('no'), { token: c.re
 shop.post('/orders/:no/pay', async c => {
   const b = await json(c);
   S.viewOrder(c.req.param('no'), { token: b.t, customerId: me(c)?.id }); // 校验访问权限
-  return c.json({ pay: await S.startPayment(c.req.param('no'), str(b.payMethod, '支付方式'), b.paySub || undefined, clientIp(c), isMobile(c)) });
+  return c.json({ pay: await S.startPayment(c.req.param('no'), str(b.payMethod, '支付方式'), b.paySub || undefined, clientIp(c), isMobile(c), me(c)?.id ?? null) });
 });
 shop.post('/orders/:no/cancel', async c => { const b = await json(c); S.cancelOrder(c.req.param('no'), { token: b.t, customerId: me(c)?.id }); return c.json({ ok: true }); });
 shop.post('/query', async c => {

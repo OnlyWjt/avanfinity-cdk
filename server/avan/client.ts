@@ -43,9 +43,14 @@ async function request<T = any>(method: string, path: string, o: ReqOpts = {}): 
       continue;
     }
     const rid = res.headers.get('x-request-id') || undefined;
-    const text = await res.text();
+    // 响应头已经到了、响应体读到一半断了：卡台可能已经处理了这个请求，只能按「结果未知」处理
+    let text: string;
+    try { text = await res.text(); } catch (e: any) { throw new AvanError(0, `卡台响应中断，结果未知：${e?.message || e}`, 'RESPONSE_INTERRUPTED', rid); }
     let data: any = null;
-    try { data = text ? JSON.parse(text) : null; } catch { /* 网关边界响应可能不是 JSON */ }
+    try { data = text ? JSON.parse(text) : null; } catch {
+      // 成功状态却不是 JSON（网关 / 代理返回的页面等）：同样不能当成成功或失败
+      if (res.ok) throw new AvanError(0, `卡台返回了无法解析的内容（HTTP ${res.status}），结果未知`, 'BAD_RESPONSE', rid);
+    }
     if (!res.ok) {
       throw new AvanError(res.status, data?.error || data?.message || `卡台返回 HTTP ${res.status}`, data?.errorCode, rid, data?.data);
     }
@@ -57,17 +62,46 @@ async function request<T = any>(method: string, path: string, o: ReqOpts = {}): 
 /* ---------------- 目录 / 报价 ---------------- */
 export interface CdkOffer { plan: string; enabled: boolean; salePrice: string | null; pricingStatus: 'READY' | 'WAITING_QUOTE'; stock: number }
 export interface GptPlan { key: string; label: string; currency: string; enabled: boolean; customerServiceFee: string; expectedAmountMinor: number | null }
+export interface CheckoutRegion { country: string; currency: string }
+export interface GptPlansData {
+  version: number; plans: GptPlan[];
+  /** 以下三个字段新版卡台才有；旧版缺失时按「不支持选地区」处理 */
+  checkoutCountries?: CheckoutRegion[]; batchConcurrencyByCountry?: Record<string, number> | null; cdkRegionSelectionEnabled?: boolean;
+}
+export interface GptPreflightData {
+  email: string; currentPlan: string; credentialMode: string; preflightToken: string; preflightExpiresAt: string;
+  paymentCountry: string; paymentCurrency: string; quotes: Record<string, { country: string; currency: string; plan: string; amountMinor: number; amountMajor: string }>;
+  quoteError: string; quoteEstimatesUsd?: Record<string, string>;
+}
+export interface GptAutoInput {
+  credential: { mode: 'session'; session: string }; plan: string; paymentCountry: string; paymentCurrency: string;
+  expectedAmountUsd: string; expectedCustomerServiceFee: string; pricingVersion: number; maxTotalDebitUsd: string; forceNewCard?: boolean; productCode?: string;
+}
+export interface GptAutoAttempt { attempt: number; newCard: boolean; cardId: number | null; cardLastFour: string | null; orderId: string | null; status: 'funding' | 'payment' | 'pending' | 'completed' | 'failed'; failureCode: string | null; reservedDebitUsd: string }
+export interface GptAutoTask {
+  id: string; plan: string; forceNewCard: boolean; status: 'queued' | 'running' | 'pending' | 'requires_action' | 'completed' | 'failed';
+  failureCode: string | null; maxTotalDebitUsd: string; reservedDebitUsd: string; attemptCount: number; attempts: GptAutoAttempt[]; createdAt: string; updatedAt: string;
+}
+export interface GptFinancialEntry { amount: string | null; currency: string | null; status: 'held' | 'released' | 'charged' | 'pending' | 'unknown' }
+export interface GptDirectOrder {
+  id: string; status: string; stage: string; nextAction?: string; publicMessage?: string | null; recoveryMessage?: string; cardLastFour?: string | null; maskedEmail?: string;
+  invoiceUrls?: string[]; progress?: any[]; willRenew?: boolean | null;
+  financials?: Partial<Record<'subscriptionPayments' | 'serviceFees' | 'cardFunding' | 'cardOpenFees' | 'cardRechargeFees', GptFinancialEntry[]>>;
+}
+export interface WalletBalance { balance: string; totalBalance?: string; riskLockedBalance?: string }
 export interface SocialPlan { key: string; label: string; tier?: string; months: number; enabled: boolean; serviceFee: string; pricingVersion: number }
 
 export const avan = {
   gptOffers: () => request<{ offers: CdkOffer[] }>('GET', '/gpt-direct/cdk-offers').then(d => d.offers),
-  gptPlans: () => request<{ version: number; plans: GptPlan[] }>('GET', '/gpt-direct/plans'),
+  gptPlans: () => request<GptPlansData>('GET', '/gpt-direct/plans'),
+  balance: () => request<WalletBalance>('GET', '/balance'),
   socialPlans: (k: SocialKind) => request<{ plans: SocialPlan[]; paymentsEnabled: boolean }>('GET', `/${k}-direct/plans`),
   products: () => request<{ list?: any[] } | any[]>('GET', '/products').then(d => (Array.isArray(d) ? d : d.list || (d as any).products || [])),
 
   /* ---------------- GPT CDK ---------------- */
-  gptGenerate: (p: { plan: string; quantity: number; forceNewCard: boolean }, idem: string) =>
-    request<{ saleId: string; salePrice: string; items: { cdkId: string; code: string | null; codePrefix: string }[]; replayed: boolean; forceNewCard: boolean }>(
+  /** paymentCountry 只在卡台目录 cdkRegionSelectionEnabled 为 true 时传（旧版卡台会拒绝未知字段） */
+  gptGenerate: (p: { plan: string; quantity: number; forceNewCard: boolean; paymentCountry?: string }, idem: string) =>
+    request<{ saleId: string; salePrice: string; items: { cdkId: string; code: string | null; codePrefix: string }[]; replayed: boolean; forceNewCard: boolean; checkoutRegion?: CheckoutRegion | null }>(
       'POST', '/gpt-direct/cdks/generate', { body: p, idem }),
   gptCdks: (page = 1, pageSize = 100) => request<{ total: number; list: { id: string; codePrefix: string; plan: string; status: string; inventoryStatus: string; salePrice: string | null; updatedAt: string; forceNewCard: boolean }[] }>(
     'GET', '/gpt-direct/cdks', { query: { page, page_size: pageSize } }),
@@ -75,6 +109,14 @@ export const avan = {
     request<any>('POST', `/public/cdk/${step}`, { body, device, publicApi: true }),
   gptOrderSession: (orderId: string, session: string) =>
     request<any>('POST', `/gpt-direct/orders/${orderId}/session`, { body: { credential: { mode: 'session', session } } }),
+
+  /* ---------------- GPT 直充（自动选卡） ---------------- */
+  gptPreflight: (p: { session: string; paymentCountry?: string; paymentCurrency?: string }) =>
+    request<GptPreflightData>('POST', '/gpt-direct/preflight', { body: { credential: { mode: 'session', session: p.session }, ...(p.paymentCountry && { paymentCountry: p.paymentCountry }), ...(p.paymentCurrency && { paymentCurrency: p.paymentCurrency }) } }),
+  /** 受理 202 不代表成功；超时 / 5xx 必须用同一个幂等键和同一个请求体重放 */
+  gptAutoOrder: (p: GptAutoInput, idem: string) => request<GptAutoTask>('POST', '/gpt-direct/auto-orders', { body: p, idem }),
+  gptAutoTask: (id: string) => request<GptAutoTask>('GET', `/gpt-direct/auto-orders/${id}`),
+  gptOrder: (id: string) => request<{ order: GptDirectOrder; events?: unknown[] }>('GET', `/gpt-direct/orders/${id}`),
 
   /* ---------------- X / TG CDK ---------------- */
   socialGenerate: (k: SocialKind, p: { plan: string; quantity: number; maxWalletDebitUsd: string; maxOfficialAmountMinor: number; currency: string; fundingAmountUsd: string; cardId?: number; autoCard?: { productCode: string; firstName: string; lastName: string } }, idem: string) =>

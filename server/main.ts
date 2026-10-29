@@ -17,6 +17,7 @@ import { verify, receive, syncTransactions } from './services/webhook.ts';
 import { tick } from './services/redeem.ts';
 import { avanCredentials } from './services/settings.ts';
 import { startNotifier } from './services/notify.ts';
+import { startDirectGuard } from './services/direct.ts';
 import { shop, payNotify } from './routes/shop.ts';
 import { adminShop } from './routes/admin-shop.ts';
 import { tickShop, markPaid } from './services/shop.ts';
@@ -132,6 +133,7 @@ setInterval(async () => {
 setInterval(() => { const u = getSetting('pay').usdt; if (u.enabled && u.address) scanUsdt(r => markPaid(r, 'usdt')).catch(e => console.warn('[usdt]', e.message)); }, Number(process.env.USDT_SCAN_MS) || 15e3).unref();
 
 startNotifier();
+startDirectGuard();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, info => {
   console.log(`[cdk] 已启动 http://localhost:${info.port}`);
