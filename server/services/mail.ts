@@ -34,12 +34,17 @@ export async function sendMail(mail: Mail) {
 }
 
 const h = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+/** 买家看到的品牌：开了商城用商城名称，否则用主题里的品牌名称（默认的「CDK Console」是后台的名字） */
+export function brandName() {
+  const sh = getSetting('shop');
+  return (sh.enabled && sh.title) || getSetting('theme').name;
+}
 /** 统一的邮件外框，颜色取主题主色 */
 export function layout(title: string, bodyHtml: string) {
   const t = getSetting('theme');
   return `<!doctype html><html><body style="margin:0;background:#f3f4fa;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#16173a">
   <div style="max-width:560px;margin:0 auto;padding:28px 16px">
-    <div style="font-weight:800;font-size:17px;margin-bottom:16px"><span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:8px;background:${t.a1};color:#fff;margin-right:8px">${h(t.logo)}</span>${h(t.name)}</div>
+    <div style="font-weight:800;font-size:17px;margin-bottom:16px"><span style="display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;border-radius:8px;background:${t.a1};color:#fff;margin-right:8px">${h(t.logo)}</span>${h(brandName())}</div>
     <div style="background:#fff;border-radius:14px;padding:24px;border:1px solid #e6e7f2">
       <h1 style="font-size:19px;margin:0 0 14px">${h(title)}</h1>${bodyHtml}
     </div>

@@ -60,7 +60,7 @@ const MARK = { gpt: 'G', x: '𝕏', tg: '✈' };
 (async () => {
   let c, p;
   try { [c, p] = await Promise.all([cfgReady, GET('/api/shop/products' + (STORE ? '?store=' + STORE : ''))]); }
-  catch (e) { $('#prods').innerHTML = `<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">!</div>${e.status === 404 ? '商城服务暂不可用（服务端可能还是旧版本，请管理员重启服务）' : esc(e.message)}<br><button class="link mt8" onclick="location.reload()">重新加载</button></div></div>`; return; }
+  catch (e) { $('#prods').innerHTML = `<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">!</div>${e.status === 404 ? '商城暂时打不开，请稍后刷新再试' : esc(e.message)}<br><button class="link mt8" onclick="location.reload()">重新加载</button></div></div>`; return; }
   $('#cats').classList.toggle('hidden', !!c.storeMissing);
   if (c.storeMissing) { $('#prods').innerHTML = '<div class="card glass" style="grid-column:1/-1"><div class="empty"><div class="ic">⌂</div>这个店铺不存在或已暂停营业<br><a class="link" href="/shop/">去主站看看 →</a></div></div>'; return; }
   document.title = (c.store ? c.store.name : c.shop.title) + ' · 商城';
@@ -143,7 +143,7 @@ function buy(p) {
         <div class="f"><label for="email">邮箱 <small>${CFG.shop.mail ? '兑换码会发到这个邮箱' : '用来查询订单'}</small></label><input class="field" id="email" type="email" autocomplete="email" placeholder="you@example.com" autofocus></div>
         <div class="two">
           <div class="f"><label for="qpw">查询密码 <small>4–32 位，请记住</small></label><input class="field" id="qpw" type="password" autocomplete="new-password" placeholder="用来查询订单"></div>
-          <div class="f"><label for="contact">联系方式 <small>选填</small></label><input class="field" id="contact" maxlength="60" placeholder="QQ / TG / 微信"></div>
+          <div class="f"><label for="contact">联系方式 <small>选填，订单有问题时方便客服联系你</small></label><input class="field" id="contact" maxlength="60" placeholder="QQ / TG / 微信"></div>
         </div>
         <div class="xs faint">已有账号？<a class="link" href="/account/?next=${encodeURIComponent(location.pathname + '?p=' + p.id)}">登录</a> 后购买可直接用余额，订单自动保存。</div>`}
         ${CFG.store ? '' : `<div class="f"><label>优惠券 <small>选填</small></label><div class="inputgrp"><input id="cpn" placeholder="输入券码" aria-label="优惠券码" autocomplete="off" style="text-transform:uppercase"><button type="button" class="btn ghost sm" id="cpnBtn" style="border-radius:0">使用</button></div><div class="fhelp" id="cpnMsg"></div></div>`}

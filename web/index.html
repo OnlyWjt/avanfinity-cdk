@@ -19,7 +19,7 @@
     <div class="v-perf"></div>
     <div class="v-body"><div id="view"></div><div class="steps-top" id="steps" aria-label="开通进度"></div></div>
   </div></div>
-  <div class="rd-foot"><span><b>约 30 秒</b>开通</span><span><b>无需付款</b>由卖家支付</span><span><b>失败可重兑</b>兑换码不作废</span></div>
+  <div class="rd-foot"><span><b>约 30 秒</b>开通</span><span><b>不再收费</b>会员费用已含在兑换码里</span><span><b>失败可重兑</b>兑换码不作废</span></div>
   <div class="rd-foot"><span>已经兑换过？<a href="/receipt.html">查看兑换结果</a></span><span><a href="#" data-help>常见问题</a></span></div>
 </main>
 <script src="/assets/app.js"></script>
@@ -34,8 +34,8 @@ function show(n, html) { stopCd && stopCd(); stopCd = null; steps(n); $('#view')
 function stubNo(no) { $('#vno').textContent = no ? 'No. ' + no : ''; $('#vno').classList.toggle('hidden', !no); $('#chips').classList.toggle('hidden', !!no); }
 /** GPT 点数（Credits）：充值到账号，不改变订阅，没有自动续费 */
 const isCr = r => /^credits_/.test(r?.plan || '');
-const member = () => `<div class="member"><small>兑换码有效</small><b>${esc(R.planLabel)}</b><div class="r"><span class="mono">${esc(R.code)}</span><span>由卖家支付</span></div></div>`;
-const contact = () => CFG.redeem.contact ? `<a class="backlink" href="#" data-copy="${esc(CFG.redeem.contact)}" data-msg="客服联系方式已复制：${esc(CFG.redeem.contact)}">联系卖家：${esc(CFG.redeem.contact)}</a>` : '';
+const member = () => `<div class="member"><small>兑换码有效</small><b>${esc(R.planLabel)}</b><div class="r"><span class="mono">${esc(R.code)}</span><span>费用已含在兑换码里</span></div></div>`;
+const contact = () => CFG.redeem.contact ? `<a class="backlink" href="#" data-copy="${esc(CFG.redeem.contact)}" data-msg="客服联系方式已复制：${esc(CFG.redeem.contact)}">联系客服：${esc(CFG.redeem.contact)}</a>` : '';
 const save = r => { R = r; localStorage.setItem('cdk-rid', r.rid); };
 const forget = () => { localStorage.removeItem('cdk-rid'); R = null; };
 const call = (path, body) => POST('/api/public/redeem/' + path, { device: DEVICE, ...body });
@@ -49,12 +49,12 @@ function render() {
   if (r.needs === 'pay') return payView();
   if (r.needs === 'resubmit') return resubmitView();
   if (r.status === 'completed') return doneView();
-  if (r.status === 'manual_review') { show(3, `<div class="bigicon warn">⚑</div><h2 style="text-align:center">已提交，等待卖家确认</h2>
-      <p class="desc" style="text-align:center">${esc(r.message || '需要卖家确认后才能为你开通。')}通常几分钟内处理，你不需要做任何操作，可以停留在本页等待。</p>
+  if (r.status === 'manual_review') { show(3, `<div class="bigicon warn">⚑</div><h2 style="text-align:center">已提交，等待人工审核</h2>
+      <p class="desc" style="text-align:center">${esc(r.message || '这次开通需要人工审核。')}通常几分钟内处理完，你不需要做任何操作，留在本页等待即可。</p>
       <div class="kv mb16"><div><span>套餐</span><b>${esc(r.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(r.account || '')}</b></div><div><span>兑换码</span><b class="c-ok">已锁定，不会被他人使用</b></div></div>${contact()}`); return poll(5000); }
   if (WAITING.includes(r.status)) return progressView();
   if (r.status === 'blocked' && r.stage === 'gate') return codeView(r.message);
-  if (r.status === 'requires_action') { show(4, `<div class="bigicon warn">!</div><h2 style="text-align:center">需要卖家处理</h2><p class="desc" style="text-align:center">${esc(r.message || '')}</p>${contact()}`); return poll(15000); }
+  if (r.status === 'requires_action') { show(4, `<div class="bigicon warn">!</div><h2 style="text-align:center">需要客服处理</h2><p class="desc" style="text-align:center">${esc(r.message || '')}</p>${contact()}`); return poll(15000); }
   if (r.status === 'failed' || r.status === 'expired' || r.status === 'cancelled') {
     show(1, `<div class="bigicon bad">✕</div><h2 style="text-align:center">${r.status === 'expired' ? '兑换已超时' : r.status === 'cancelled' ? '兑换码已被撤销' : '这次没有开通成功'}</h2><p class="desc" style="text-align:center">${esc(r.message || '')}</p>
       ${r.codeReusable ? '<button class="btn primary block" id="again">重新兑换</button>' : ''}${contact()}<button class="backlink" id="other">换一个兑换码</button>`);
@@ -116,20 +116,20 @@ function accountView(err = '') {
   $('#next').onclick = async e => {
     const body = R.product === 'gpt' ? { session: $('#sess').value.trim() } : { recipient: $('#rec').value.trim() };
     if (!(body.session || body.recipient)) { $('#err').textContent = R.product === 'gpt' ? '请粘贴 Session 内容' : '请填写用户名'; return; }
-    try { save(await run(e.currentTarget, '正在检查账号与报价…', () => call('account', { rid: R.rid, ...body }))); render(); }
+    try { save(await run(e.currentTarget, '正在检查账号…', () => call('account', { rid: R.rid, ...body }))); render(); }
     catch (x) { $('#err').textContent = x.message; if (x.status === 404) setTimeout(() => codeView(x.message), 1500); }
   };
 }
 function confirmView() {
   const q = R.quote || {};
-  show(3, `<h2>确认开通信息</h2><p class="desc">账号检查通过，报价已锁定，请在 <b class="mono c-warn" id="cd">--:--</b> 内确认。</p>
+  show(3, `<h2>确认开通信息</h2><p class="desc">账号检查通过。请核对下面的信息，在 <b class="mono c-warn" id="cd">--:--</b> 内确认。</p>
     <div class="kv mb16"><div><span>套餐</span><b>${esc(R.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(R.account || '')}</b></div>
       ${q.currentPlan ? `<div><span>当前套餐</span><b>${esc(q.currentPlan)}</b></div>` : ''}<div><span>兑换码</span><b class="mono">${esc(R.code)}</b></div>
-      <div><span>你需支付</span><b class="c-ok">¥0 · 由卖家支付</b></div></div>
-    <div class="note mb16">${R.product === 'gpt' ? (isCr(R) ? 'ⓘ 点数会直接充值到这个账号，不改变你的订阅，也不会扣你的钱。' : 'ⓘ 开通后会自动关闭自动续费，到期不会扣你的钱。') : 'ⓘ 接下来会先做付款准备，准备好后需要你再点一次「确认付款」才会真正付款。'}</div>
+      <div><span>费用</span><b class="c-ok">已含在兑换码里，不会再收费</b></div></div>
+    <div class="note mb16">${R.product === 'gpt' ? (isCr(R) ? 'ⓘ 点数会直接充值到这个账号，不改变你现在的订阅。' : 'ⓘ 开通后会自动关闭续费，到期不会从你的账号扣钱。') : 'ⓘ 确认后还要再确认一次账号，确认后就不能改到其他账号了。'}</div>
     <div class="err" id="err"></div>
     <button class="btn primary block" id="next">确认开通</button><button class="backlink" id="back">← 返回修改账号</button>`);
-  if (q.expiresAt) stopCd = countdown($('#cd'), (new Date(q.expiresAt) - Date.now()) / 1000, () => { toast('报价已过期，请重新检查账号', 'warn'); R.needs = R.product === 'gpt' ? 'session' : 'recipient'; render(); });
+  if (q.expiresAt) stopCd = countdown($('#cd'), (new Date(q.expiresAt) - Date.now()) / 1000, () => { toast('确认超时，请重新检查账号', 'warn'); R.needs = R.product === 'gpt' ? 'session' : 'recipient'; render(); });
   $('#back').onclick = () => { R.needs = R.product === 'gpt' ? 'session' : 'recipient'; render(); };
   $('#next').onclick = async e => {
     try { save(await run(e.currentTarget, '提交中…', () => call('confirm', { rid: R.rid }))); render(); }
@@ -137,16 +137,16 @@ function confirmView() {
   };
 }
 function payView() {
-  show(4, `<div class="bigicon" style="background:var(--a2);color:#06131a">◉</div><h2 style="text-align:center">准备就绪，确认付款？</h2>
-    <p class="desc" style="text-align:center">点击下面的按钮后才会真正向${R.product === 'x' ? ' X ' : ' Telegram '}付款，付款后无法撤销。</p>
-    <div class="kv mb16"><div><span>套餐</span><b>${esc(R.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(R.account || '')}</b></div><div><span>你需支付</span><b class="c-ok">¥0</b></div></div>
+  show(4, `<div class="bigicon" style="background:var(--a2);color:#06131a">◉</div><h2 style="text-align:center">最后确认：开通到这个账号？</h2>
+    <p class="desc" style="text-align:center">确认后会立即向${R.product === 'x' ? ' X ' : ' Telegram '}提交开通，之后不能撤销，也不能改到其他账号。</p>
+    <div class="kv mb16"><div><span>套餐</span><b>${esc(R.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(R.account || '')}</b></div><div><span>费用</span><b class="c-ok">已含在兑换码里</b></div></div>
     <div class="err" id="err"></div>
-    <button class="btn primary block" id="pay">确认付款并开通</button>
-    <div class="xs faint mt8" style="text-align:center">暂时不想继续可以直接关闭页面，之后在同一设备上继续。</div>`);
-  $('#pay').onclick = async e => { try { save(await run(e.currentTarget, '付款中…', () => call('confirm', { rid: R.rid }))); render(); } catch (x) { $('#err').textContent = x.message; } };
+    <button class="btn primary block" id="pay">确认开通</button>
+    <div class="xs faint mt8" style="text-align:center">还没想好可以先关闭页面，之后在同一设备上打开本页继续。</div>`);
+  $('#pay').onclick = async e => { try { save(await run(e.currentTarget, '开通中…', () => call('confirm', { rid: R.rid }))); render(); } catch (x) { $('#err').textContent = x.message; } };
 }
 function resubmitView() {
-  show(4, `<div class="bigicon warn">!</div><h2 style="text-align:center">需要重新粘贴 Session</h2><p class="desc" style="text-align:center">${esc(R.message || 'ChatGPT 登录状态已过期。')}请粘贴<b>同一个账号</b>（${esc(R.account || '')}）的最新 Session，会继续原来的开通，不会重复付款。</p>
+  show(4, `<div class="bigicon warn">!</div><h2 style="text-align:center">需要重新粘贴 Session</h2><p class="desc" style="text-align:center">${esc(R.message || 'ChatGPT 登录状态已过期。')}请粘贴<b>同一个账号</b>（${esc(R.account || '')}）的最新 Session，会接着原来的进度开通，不会重复开通。</p>
     <textarea class="field" id="sess" placeholder="ChatGPT session JSON"></textarea><div class="err" id="err"></div>
     <button class="btn primary block mt8" id="go">继续开通</button>`);
   $('#go').onclick = async e => { try { save(await run(e.currentTarget, '提交中…', () => call('session', { rid: R.rid, session: $('#sess').value.trim() }))); render(); } catch (x) { $('#err').textContent = x.message; } };
@@ -154,10 +154,10 @@ function resubmitView() {
 function progressView() {
   const r = R;
 
-  const base = r.product === 'gpt' ? ['兑换码已确认', '账号与报价已确认', '正在付款', isCr(r) ? '正在充值点数' : '正在开通会员'] : ['账号已确认', '准备付款', '向官方付款', r.product === 'x' ? '确认会员生效' : '核验赠送到账'];
+  const base = r.product === 'gpt' ? ['兑换码已确认', '账号已确认', '正在提交开通', isCr(r) ? '正在充值点数' : '正在开通会员'] : ['账号已确认', '正在准备', '正在提交开通', r.product === 'x' ? '确认会员生效' : '确认赠送到账'];
   const k = r.product === 'gpt' ? (r.progress.length ? Math.min(3, r.progress.length) : 2) : r.status === 'funding' ? 1 : r.status === 'paid_pending_delivery' ? 3 : 2;
-  const title = r.status === 'retrying' ? '遇到问题，正在自动重试' : r.status === 'funding' ? '正在准备' : r.status === 'paid_pending_delivery' ? '已付款，等待官方到账' : '正在为你开通';
-  show(4, `<h2>${title}</h2><p class="desc">${r.status === 'retrying' ? esc(r.message || '') : r.status === 'funding' ? '正在做付款准备，还<b>没有</b>付款。' : '通常 30 秒内完成。可以关闭页面，稍后在同一设备上打开本页或「查询凭证」查看结果。'}</p>
+  const title = r.status === 'retrying' ? '遇到问题，正在自动重试' : r.status === 'funding' ? '正在准备' : r.status === 'paid_pending_delivery' ? '已提交，等待官方到账' : '正在为你开通';
+  show(4, `<h2>${title}</h2><p class="desc">${r.status === 'retrying' ? esc(r.message || '') : r.status === 'funding' ? '马上就好，准备完成后需要你再确认一次账号。' : '通常 30 秒内完成。可以关闭页面，之后在同一设备上打开本页或「查看兑换结果」。'}</p>
     <div class="tl">${base.map((t, i) => `<div class="it ${i < k ? 'done' : i === k ? 'cur' : 'wait'}"><div class="dot">${i < k ? '✓' : i === k ? '' : i + 1}</div><div><b>${t}</b><p>${i < k ? '已完成' : i === k ? '处理中…' : '等待中'}</p></div></div>`).join('')}</div>`);
   poll(3000);
 }
@@ -166,7 +166,7 @@ function doneView() {
   const when = new Date(r.completedAt), ymd = `${when.getFullYear()}.${String(when.getMonth() + 1).padStart(2, '0')}.${String(when.getDate()).padStart(2, '0')}`;
   // 刚开通（2 分钟内）才播放落章动画，回来查看时直接显示
   const fresh = Date.now() - when < 120e3;
-  show(5, `<div class="v-done"><div class="seal ${fresh ? 'stamp' : ''}" aria-hidden="true"><div><span>${esc(Theme.cached().name || '')}</span><b>${isCr(r) ? '已充值' : '已开通'}</b><small>${ymd}</small></div></div>
+  show(5, `<div class="v-done"><div class="seal ${fresh ? 'stamp' : ''}" aria-hidden="true"><div><span>${esc((CFG.shop?.enabled && CFG.shop.title) || CFG.theme?.name || '')}</span><b>${isCr(r) ? '已充值' : '已开通'}</b><small>${ymd}</small></div></div>
     <h2>${esc(r.planLabel)}</h2>
     <p class="v-to">${isCr(r) ? '充值成功' : '开通成功'}，已${isCr(r) ? '充值' : '开通'}到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : r.product === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p></div>
     <div class="kv mb16"><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div><div><span>开通时间</span><b>${new Date(r.completedAt).toLocaleString('zh-CN')}</b></div>
@@ -215,9 +215,9 @@ function poll(ms) {
   codeView('', pre || '');
 })();
 document.addEventListener('click', e => { if (!e.target.closest?.('[data-help]')) return; e.preventDefault(); dialog({ title: '常见问题', tone: 'info', actions: [{ label: '知道了', kind: 'primary', onClick: () => {} }], body: `
-  <div class="kv"><div><span>需要付钱吗？</span><b>不需要，费用由卖家支付。</b></div><div><span>开通失败怎么办？</span><b>兑换码会自动释放，可以重新兑换。</b></div>
-  <div><span>会自动续费吗？</span><b>ChatGPT 开通后会自动关闭续费。</b></div><div><span>Session 安全吗？</span><b>只用于本次开通，不会保存到数据库。</b></div>
-  <div><span>换了设备怎么办？</span><b>兑换进行中请在同一设备完成；查询凭证也需要同一设备。</b></div>
-  ${CFG.redeem.contact ? `<div><span>联系卖家</span><b>${esc(CFG.redeem.contact)}</b></div>` : ''}</div>` }); });
+  <div class="kv"><div><span>兑换要另外付钱吗？</span><b>不用，会员费用已含在兑换码里。</b></div><div><span>开通失败怎么办？</span><b>兑换码不会作废，可以重新兑换。</b></div>
+  <div><span>会自动续费吗？</span><b>ChatGPT 开通后会自动关闭续费。</b></div><div><span>Session 安全吗？</span><b>只用于这一次开通，不会保存。</b></div>
+  <div><span>换了设备怎么办？</span><b>兑换进行中请在同一设备完成；查看兑换结果也需要同一设备。</b></div>
+  ${CFG.redeem.contact ? `<div><span>联系客服</span><b>${esc(CFG.redeem.contact)}</b></div>` : ''}</div>` }); });
 </script>
 </body></html>

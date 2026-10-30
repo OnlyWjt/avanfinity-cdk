@@ -4,7 +4,7 @@ import { q, tx, now } from '../db.ts';
 import { hashPassword, verifyPassword, token } from '../crypto.ts';
 import { bad, HttpError } from '../http.ts';
 import { getSetting } from './settings.ts';
-import { sendMail, mailConfigured, layout } from './mail.ts';
+import { sendMail, mailConfigured, layout, brandName } from './mail.ts';
 
 export interface Customer { id: number; email: string; name: string; password_hash: string; balance: number; disabled: number; created_at: string; reset_hash: string | null; reset_expires: string | null }
 const sid = (t: string) => createHash('sha256').update('c:' + t).digest('hex');
@@ -49,7 +49,7 @@ export async function sendReset(email: string) {
   const code = String(randomInt(100000, 1000000));
   await q.run('UPDATE customers SET reset_hash = ?, reset_expires = ? WHERE id = ?', [hashPassword(code), new Date(Date.now() + 15 * 60e3).toISOString(), c.id]);
   // 不等待发信：已注册和未注册邮箱的响应时间一致，不暴露邮箱是否存在
-  void sendMail({ to: c.email, ref: 'reset', subject: `【${getSetting('theme').name}】重置密码验证码`, text: `验证码：${code}，15 分钟内有效。`, html: layout('重置密码', `<p>你的验证码是</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${code}</p><p style="color:#585d82">15 分钟内有效。如果不是你本人操作，请忽略这封邮件。</p>`) }).catch(() => {});
+  void sendMail({ to: c.email, ref: 'reset', subject: `【${brandName()}】重置密码验证码`, text: `验证码：${code}，15 分钟内有效。`, html: layout('重置密码', `<p>你的验证码是</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${code}</p><p style="color:#585d82">15 分钟内有效。如果不是你本人操作，请忽略这封邮件。</p>`) }).catch(() => {});
 }
 const resetFails = new Map<number, number>();
 export async function resetPassword(email: string, code: string, password: string) {

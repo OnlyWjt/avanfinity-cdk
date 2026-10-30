@@ -20,7 +20,7 @@ import type { PayAction, PayResult, PaymentRow } from './pay/types.ts';
 import * as coupons from './coupons.ts';
 import * as agents from './agents.ts';
 import * as customers from './customers.ts';
-import { sendMail, mailConfigured, layout, button, esc, siteUrl } from './mail.ts';
+import { sendMail, mailConfigured, layout, button, esc, siteUrl, brandName } from './mail.ts';
 import { config } from '../config.ts';
 import { startOfDay } from './stats.ts';
 
@@ -483,7 +483,7 @@ export async function mailOrder(no: string) {
   const rows = v.codes.map(c => `<tr><td style="padding:8px 10px;font-family:Menlo,Consolas,monospace;font-size:14px;border-bottom:1px solid #eee">${esc(c.code)}</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right"><a href="${esc(siteUrl('/redeem#code=' + encodeURIComponent(c.code)))}" style="color:#5b6bff">立即兑换</a></td></tr>`).join('');
   try {
     await sendMail({
-      to: o.email, ref: o.no, subject: `【${getSetting('theme').name}】订单 ${o.no} 的兑换码`,
+      to: o.email, ref: o.no, subject: `【${brandName()}】订单 ${o.no} 的兑换码`,
       text: `订单 ${o.no}\n${o.title} × ${o.quantity}\n\n${v.codes.map(c => c.code).join('\n')}\n\n订单详情：${link}`,
       html: layout('你的兑换码已送达', `<p style="color:#585d82;margin:0 0 12px">${esc(o.title)} × ${o.quantity} · 订单 ${o.no}</p>
         <table style="width:100%;border-collapse:collapse;background:#f7f8fc;border-radius:10px">${rows}</table>

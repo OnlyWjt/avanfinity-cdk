@@ -143,7 +143,7 @@ export async function checkGates(s: Strategy, ctx: { ip: string; device: string;
 
   const expAt = ctx.codeExpiresAt || (s.expire ? new Date(new Date(ctx.codeCreatedAt).getTime() + s.expire * 86400e3).toISOString() : null);
   checks.push({ name: '有效期', ok: !expAt || expAt > now(), detail: expAt ? `至 ${expAt.slice(0, 10)}` : '不过期' });
-  if (expAt && expAt <= now()) return fail('兑换码已过期', '这个兑换码已过期，请联系卖家。');
+  if (expAt && expAt <= now()) return fail('兑换码已过期', '这个兑换码已过期，如有疑问请联系客服。');
 
   if (s.timeOn) {
     const t = hhmmNow(), okT = inWindow(t, s.from, s.to);
@@ -202,7 +202,7 @@ export function checkPrice(s: Strategy, baseCost: number | null, curCost: number
   if (!hit || s.priceAct === 'pass') return { ok: true, checks: [{ name: '价格保护', ok: hit ? 'warn' : true, detail }] };
   return {
     ok: false, action: s.priceAct === 'manual' ? 'manual' : 'block', rule: `价格保护：${detail}`,
-    userMsg: s.priceAct === 'manual' ? '当前官方价格有波动，需要卖家确认后为你开通。' : '当前官方价格波动较大，暂时无法兑换，请稍后再试。兑换码仍然有效。',
+    userMsg: s.priceAct === 'manual' ? '这次开通需要人工审核，通过后会为你开通。' : '暂时无法开通，请稍后再试。兑换码仍然有效。',
     checks: [{ name: '价格保护', ok: s.priceAct === 'manual' ? 'warn' : false, detail }],
   };
 }

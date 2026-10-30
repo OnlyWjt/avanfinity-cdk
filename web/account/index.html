@@ -11,7 +11,7 @@
 <script src="/assets/shop.js"></script>
 <script>
 const NEXT = qs('next');
-const LEDGER = { topup: '充值', spend: '消费', refund: '退款', adjust: '后台调整', from_earnings: '代理收益转入' };
+const LEDGER = { topup: '充值', spend: '消费', refund: '退款', adjust: '人工调整', from_earnings: '代理收益转入' };
 
 /** 只允许跳回本站页面（防止 ?next=//evil.com 把人带走） */
 const safeNext = () => { try { const u = new URL(NEXT || '', location.origin); return NEXT && u.origin === location.origin ? u.pathname + u.search + u.hash : ''; } catch { return ''; } };
@@ -26,7 +26,7 @@ function auth(tab, err = '') {
     <div class="form">
       <div class="f"><label for="email">邮箱</label><input class="field" id="email" type="email" autocomplete="email"></div>
       <div class="f"><label for="pw">密码 ${reg ? '<small>至少 8 位</small>' : '<button class="link" id="forgot" type="button">忘记密码？</button>'}</label><input class="field" id="pw" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"></div>
-      ${reg ? '<div class="f"><label>昵称 <small>选填</small></label><input class="field" id="name" maxlength="30"></div><div class="xs faint">注册前免注册买的订单，仍然用邮箱和查询密码在「查订单」里查看。</div>' : ''}
+      ${reg ? '<div class="f"><label>昵称 <small>选填</small></label><input class="field" id="name" maxlength="30"></div><div class="xs faint">注册之前没登录买的订单，仍然在「查订单」里用邮箱和查询密码查看。</div>' : ''}
       <div class="err" id="err">${esc(err)}</div>
       <button class="btn primary block" id="go">${reg ? '注册并登录' : '登录'}</button>
     </div>`}
@@ -134,7 +134,7 @@ function apply() {
   const d = dialog({ title: '申请成为代理', sub: '审核通过后可以开自己的分站、推广返佣、按进货价批发', size: 'md',
     body: `<div class="form"><div class="f"><label>店铺名称</label><input class="field" id="sn" maxlength="30" placeholder="例如：小明会员小铺"></div>
       <div class="f"><label>店铺地址 <small>3–24 位小写字母、数字或横线</small></label><div class="inputgrp"><span>${esc(location.host)}/s/</span><input id="sl" maxlength="24" placeholder="mystore"></div></div>
-      <div class="f"><label>联系方式 <small>方便管理员联系你</small></label><input class="field" id="sc" maxlength="60" placeholder="TG / 微信 / QQ"></div></div>`,
+      <div class="f"><label>联系方式 <small>审核时方便我们联系你</small></label><input class="field" id="sc" maxlength="60" placeholder="TG / 微信 / QQ"></div></div>`,
     actions: [{ label: '取消' }, { label: '提交申请', kind: 'primary', onClick: async () => {
       await POST('/api/shop/agent/apply', { shopName: $('#sn', d.el).value, slug: $('#sl', d.el).value.trim().toLowerCase(), contact: $('#sc', d.el).value });
       toast('已提交，等待审核'); const r = await GET('/api/shop/account/me'); home(r.me);

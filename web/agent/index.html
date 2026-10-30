@@ -119,13 +119,13 @@ function store() {
     <div class="f"><label>店铺名称</label><input class="field" id="sn" maxlength="30" value="${esc(a.shopName)}"></div>
     <div class="f"><label>店铺公告 <small>显示在分站顶部</small></label><textarea class="field" id="sno" maxlength="300" style="font-family:var(--sans);min-height:80px">${esc(a.notice || '')}</textarea></div>
     <div class="f"><label>客服联系方式 <small>显示在分站底部</small></label><input class="field" id="sc" maxlength="60" value="${esc(a.contact || '')}"></div>
-    <div class="f"><label>店铺地址</label><div class="copyline">${esc(location.origin)}/s/${esc(a.slug)}</div><div class="help">地址不能修改，如需更换请联系管理员</div></div>
+    <div class="f"><label>店铺地址</label><div class="copyline">${esc(location.origin)}/s/${esc(a.slug)}</div><div class="help">地址不能修改，如需更换请联系平台客服</div></div>
     <button class="btn primary" id="save">保存</button></div></section>`);
   $('#save').onclick = e => run(e.currentTarget, '保存中', () => PUT('/api/shop/agent/store', { shopName: $('#sn').value, notice: $('#sno').value, contact: $('#sc').value })).then(async () => { toast('已保存'); D = await GET('/api/shop/agent/dashboard'); render(); segSet($('#tab'), 'store'); store(); });
 }
 function withdraw() {
   const a = D.agent, min = D.settings.minWithdraw;
-  const d = dialog({ title: '申请提现', sub: `可提现 ${yuan(a.earnings)}，最低 ${yuan(min)}，管理员审核后人工打款`, size: 'md',
+  const d = dialog({ title: '申请提现', sub: `可提现 ${yuan(a.earnings)}，最低 ${yuan(min)}，平台审核后人工打款`, size: 'md',
     body: `<div class="form"><div class="f"><label>提现金额</label><div class="inputgrp"><span>¥</span><input id="wa" inputmode="decimal" value="${a.earnings > 0 ? yuanN(a.earnings) : ''}"></div></div>
       <div class="f"><label>收款方式</label><select class="field" id="wm">${Object.entries(WM).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div class="two"><div class="f"><label>收款账号 <small>USDT 填 TRC20 地址</small></label><input class="field mono" id="wac" maxlength="120"></div><div class="f"><label>收款人姓名 <small>选填</small></label><input class="field" id="wn" maxlength="30"></div></div></div>`,

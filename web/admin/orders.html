@@ -85,6 +85,7 @@ async function openRed(id) {
     body: `
       <div class="sec">${badge(o.status)}
         ${o.status === 'blocked' ? `<div class="note bad mt8">⛔ 命中规则：${esc(o.rule || '')}<br>用户看到：${esc(o.message || '')}<br>没有提交到卡台，不产生费用。</div>` : ''}
+        ${o.status === 'failed' && o.rule ? `<div class="note bad mt8">✕ 内部原因：${esc(o.rule)}<br>用户看到：${esc(o.message || '')}</div>` : ''}
         ${o.status === 'manual_review' ? `<div class="note warn mt8">⚑ ${esc(o.rule || o.message || '')}<br>${o.stage === 'price' ? '通过后按当前实时报价兑换；拒绝则提示用户稍后再试，兑换码保持可用。' : '兑换失败转人工。可以重新尝试，或释放兑换码让用户自己重兑。'}${o.product === 'gpt' && !o.hasSession ? '<br><b>用户 Session 已过期</b>：通过后用户需要回到兑换页重新粘贴 Session。' : ''}</div>` : ''}
         ${['failed', 'requires_action', 'approved'].includes(o.status) && o.message ? `<div class="note mt8">${esc(o.message)}</div>` : ''}
         ${o.status === 'paid_pending_delivery' ? '<div class="note mt8">◷ 已有付款成功证据，等待官方交付。不要重新兑换。</div>' : ''}

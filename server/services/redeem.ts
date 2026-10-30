@@ -89,8 +89,10 @@ const userErr = (msg: string, code = 'REDEEM_ERROR', extra?: Record<string, unkn
 function explain(e: unknown, fallback = '暂时无法处理，请稍后再试'): string {
   if (!(e instanceof AvanError)) return fallback;
   if (e.status === 429) return '当前兑换人数较多，请稍等一分钟再试。';
-  if (e.uncertain) return '卡台暂时没有响应，请稍后刷新查看结果，不要重复兑换。';
-  if (e.code === 'NOT_CONFIGURED') return '系统尚未配置完成，请联系卖家。';
+  if (e.uncertain) return '服务暂时没有响应，请稍后刷新查看结果，不要重复兑换。';
+  if (e.code === 'NOT_CONFIGURED') return '系统尚未配置完成，请联系客服。';
+  // 服务端故障的原文是给运维看的，买家只看通用说明
+  if (e.status >= 500) return fallback;
   return e.message || fallback;
 }
 
@@ -100,7 +102,7 @@ function explain(e: unknown, fallback = '暂时无法处理，请稍后再试'):
 async function upstreamCodeFor(code: CodeRow, red: Red, forceNew = false): Promise<{ id: string; code: string }> {
   if (code.mode === 'hosted') {
     const c = decryptOpt(code.code_enc);
-    if (!c) throw userErr('这个兑换码缺少卡台凭证，请联系卖家。');
+    if (!c) throw userErr('这个兑换码暂时无法使用，请联系客服。');
     return { id: code.upstream_id || code.id, code: c };
   }
   if (!forceNew) {
@@ -118,12 +120,12 @@ async function upstreamCodeFor(code: CodeRow, red: Red, forceNew = false): Promi
     const r = await avan.gptGenerate({ plan: code.plan, quantity: 1, forceNewCard: !!params.forceNewCard, ...(await cdkRegionArg(params.country)) }, idem);
     id = r.items[0].cdkId; full = r.items[0].code;
   } else {
-    if (!params.social) throw userErr('兑换码配置不完整，请联系卖家。');
+    if (!params.social) throw userErr('这个兑换码暂时无法使用，请联系客服。');
     const r = await avan.socialGenerate(code.product, { plan: code.plan, quantity: 1, ...params.social, autoCard: autoCard() }, idem);
     id = r.list[0].id; full = r.list[0].code || null;
     if (!full) full = (await avan.socialExport(code.product, id)).code;
   }
-  if (!full) throw userErr('卡台没有返回兑换凭证，请稍后再试。');
+  if (!full) throw userErr('兑换码校验没有完成，请稍后再试。');
   await q.insertIgnore('INSERT INTO upstream_codes(id, code_id, product, plan, code_enc, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, code.id, code.product, code.plan, encrypt(full), 'issued', now()]);
   await upd(red.id, { upstream_code_id: id });
   return { id, code: full };
@@ -149,7 +151,7 @@ export async function start(rawCode: string, ctx: Ctx) {
     throw userErr('兑换码无效，请检查是否输错（容易混淆的字符：0/O、1/I）。', 'INVALID_CODE');
   }
   if (!page.products[code.product]) throw userErr('这个产品暂停兑换，请稍后再来。', 'PRODUCT_CLOSED');
-  if (code.status === 'revoked') { await attempt(ctx.ip, ctx.device, h, false, 'revoked'); throw userErr('这个兑换码已被卖家撤销，请联系卖家。', 'REVOKED'); }
+  if (code.status === 'revoked') { await attempt(ctx.ip, ctx.device, h, false, 'revoked'); throw userErr('这个兑换码已作废，如有疑问请联系客服。', 'REVOKED'); }
   if (code.status === 'redeemed') {
     await attempt(ctx.ip, ctx.device, h, true, 'redeemed');
     throw userErr('这个兑换码已经使用过。如果是你本人兑换的，可以去「查询凭证」查看结果。', 'ALREADY_REDEEMED');
@@ -248,7 +250,7 @@ export async function submitAccount(rid: string, device: string, p: { session?: 
     const s = await getStrategy(red.strategy_id);
     const reAccountable = ['started', 'quoted', 'approved'].includes(red.status) || (red.status === 'blocked' && red.stage !== 'gate') || (red.status === 'failed' && code.status === 'unused');
     if (!reAccountable) throw userErr('当前状态不能修改账号。', 'BAD_STATE');
-    if (code.status === 'revoked') throw userErr('这个兑换码已被卖家撤销。', 'REVOKED');
+    if (code.status === 'revoked') throw userErr('这个兑换码已作废。', 'REVOKED');
     // 码已被别的兑换占用（例如这次失败释放后，另一台设备又开始兑换）就不能再抢回来
     const claimed = (await q.run("UPDATE codes SET status = 'in_use', redemption_id = ? WHERE id = ? AND (status = 'unused' OR redemption_id = ?) AND status != 'revoked'", [red.id, code.id, red.id])).changes;
     if (!claimed) throw userErr('这个兑换码正在另一台设备上兑换。如果是你本人，请回到原来的设备继续。', 'IN_USE_ELSEWHERE');
@@ -338,7 +340,7 @@ async function socialAccount(red: Red, code: CodeRow, s: Strategy, recipientRaw:
     return block(red, code, 'account', `卡台判定不符合资格：${d.message || d.errorCode}`, d.message || '这个账号暂时不能接收会员（可能已经是会员），请更换账号。', acc);
   }
   if (d.status === 'failed_precharge' || d.status === 'review_required') {
-    await upd(red.id, { status: d.status === 'review_required' ? 'requires_action' : 'failed', stage: 'preflight', error_msg: d.message || '暂时无法为这个账号开通，请联系卖家。', rule: d.errorCode });
+    await upd(red.id, { status: d.status === 'review_required' ? 'requires_action' : 'failed', stage: 'preflight', error_msg: d.message || '暂时无法为这个账号开通，请联系客服。', rule: d.errorCode });
     if (d.status === 'failed_precharge') await setCode(code.id, { status: 'unused' });
     return view((await getRed(red.id))!);
   }
@@ -404,8 +406,8 @@ async function claimAccount(red: Red, code: CodeRow, mark: Partial<Record<keyof 
 async function confirmGpt(red: Red, code: CodeRow) {
   const quote = parse<any>(red.quote, {});
   if (quote.expiresAt && quote.expiresAt < now()) {
-    await upd(red.id, { status: 'started', stage: 'code', error_msg: '报价已过期，请重新检查账号。' });
-    throw userErr('报价已过期，请重新检查账号。', 'QUOTE_EXPIRED');
+    await upd(red.id, { status: 'started', stage: 'code', error_msg: '确认超时，请重新检查账号。' });
+    throw userErr('确认超时，请重新检查账号。', 'QUOTE_EXPIRED');
   }
   const crid = red.client_request_id && red.status === 'processing' ? red.client_request_id : uuid();
   // 先进入「处理中」再调卡台：既占住账号名额，也让并发的确认看到它（复查和改状态在同一个事务里）
@@ -418,8 +420,8 @@ async function confirmGpt(red: Red, code: CodeRow) {
     await applyGpt((await getRed(red.id))!, normalizeGptPublic(d));
   } catch (e) {
     if (e instanceof AvanError && e.code === 'PREFLIGHT_REQUIRED') {
-      await upd(red.id, { status: 'started', stage: 'code', error_msg: '报价已失效，请重新检查账号。' });
-      throw userErr('报价已失效，请重新检查账号。', 'QUOTE_EXPIRED');
+      await upd(red.id, { status: 'started', stage: 'code', error_msg: '确认超时，请重新检查账号。' });
+      throw userErr('确认超时，请重新检查账号。', 'QUOTE_EXPIRED');
     }
     if (e instanceof AvanError && e.uncertain) {
       // 结果未知：保留 clientRequestId，转入轮询，绝不换标识重下
@@ -447,8 +449,8 @@ async function confirmSocial(red: Red, code: CodeRow) {
     await applySocialStatus((await getRed(red.id))!, d);
   } catch (e) {
     if (e instanceof AvanError && /QUOTE_(CHANGED|EXPIRED)/.test(e.code || '')) {
-      await upd(red.id, { status: 'started', stage: 'code', error_msg: '官方报价已更新，请重新检查账号。' });
-      throw userErr('官方报价已更新，请重新检查账号。', 'QUOTE_EXPIRED');
+      await upd(red.id, { status: 'started', stage: 'code', error_msg: '开通信息有变化，请重新检查账号。' });
+      throw userErr('开通信息有变化，请重新检查账号。', 'QUOTE_EXPIRED');
     }
     if (e instanceof AvanError && e.uncertain) {
       await upd(red.id, { status: red.status === 'funded' ? 'processing' : 'funding', next_poll_at: new Date(Date.now() + 5000).toISOString() });
@@ -494,9 +496,9 @@ async function applySocialStatus(red: Red, d: SocialPublicData, fromPreview = fa
     case 'completed': await complete(red, { ...base, quote: red.quote, progress: d.giftDays ? json([{ step: '赠送已到账', status: 'done', message: `${d.giftDays} 天` }]) : red.progress }); return true;
     case 'revoked':
       await setCode(code.id, { status: 'revoked' });
-      await upd(red.id, { ...base, status: 'cancelled', error_msg: '这个兑换码已被卖家撤销。' }); return true;
+      await upd(red.id, { ...base, status: 'cancelled', error_msg: '这个兑换码已作废。' }); return true;
     case 'review_required': case 'requires_action':
-      await upd(red.id, { ...base, status: 'requires_action', stage: d.status, error_msg: d.message || '需要卖家处理，请联系卖家。', next_poll_at: nextPoll(red, 60_000) }); return true;
+      await upd(red.id, { ...base, status: 'requires_action', stage: d.status, error_msg: d.message || '这次开通需要客服处理，请联系客服。', next_poll_at: nextPoll(red, 60_000) }); return true;
     case 'ineligible': case 'failed_precharge':
       await failSocial(red, base, d); return true;
   }
@@ -521,13 +523,13 @@ async function complete(red: Red, f: Partial<Red>) {
 }
 
 async function failGpt(red: Red, f: Partial<Red>, v: GptPublicView) {
-  const msg = v.message || '支付没有成功';
+  const msg = v.message || '开通没有成功';
   await upd(red.id, { ...f, error_code: v.errorCode ?? v.orderStatus ?? null, error_msg: msg });
   await markUpstream(red.upstream_code_id, 'released');
   await afterFailure((await getRed(red.id))!, msg);
 }
 async function failSocial(red: Red, f: Partial<Red>, d: SocialPublicData) {
-  const msg = d.message || (d.status === 'ineligible' ? '这个账号不符合开通条件' : '付款准备失败');
+  const msg = d.message || (d.status === 'ineligible' ? '这个账号不符合开通条件' : '开通准备没有完成');
   await upd(red.id, { ...f, error_msg: msg });
   if (d.canRetryPreflight) await markUpstream(red.upstream_code_id, 'released'); else await markUpstream(red.upstream_code_id, 'failed');
   await afterFailure((await getRed(red.id))!, msg, d.canRetryPreflight === true);
@@ -545,10 +547,10 @@ async function afterFailure(red: Red, msg: string, socialRetryable = true) {
     return;
   }
   if (s.failAct === 'manual') {
-    await upd(red.id, { status: 'manual_review', stage: 'failed', review: 'pending', next_poll_at: null, error_msg: `${msg}。卖家会尽快处理，兑换码不会作废。` });
+    await upd(red.id, { status: 'manual_review', stage: 'failed', review: 'pending', next_poll_at: null, error_msg: `${msg}。客服会尽快处理，兑换码不会作废。` });
     return;
   }
-  await upd(red.id, { status: 'failed', stage: 'failed', next_poll_at: null, error_msg: `${msg}。兑换码已释放，可以重新兑换。` });
+  await upd(red.id, { status: 'failed', stage: 'failed', next_poll_at: null, error_msg: `${msg}。兑换码仍然有效，可以重新兑换。` });
   await setCode(code.id, { status: 'unused' });
   sessions.delete(red.id);
 }
@@ -580,7 +582,7 @@ export async function retry(rid: string) {
         await confirmSocial((await getRed(rid))!, code);  // 只做第一阶段，付款仍需用户确认
       }
     } catch (e) {
-      await upd(rid, { status: s.failAct === 'manual' ? 'manual_review' : 'failed', review: s.failAct === 'manual' ? 'pending' : null, error_msg: `重试失败：${e instanceof Error ? e.message : e}。兑换码已释放，可以重新兑换。` });
+      await upd(rid, { status: s.failAct === 'manual' ? 'manual_review' : 'failed', review: s.failAct === 'manual' ? 'pending' : null, rule: `重试失败：${e instanceof Error ? e.message : e}`, error_msg: s.failAct === 'manual' ? '这次没有开通成功，客服会尽快处理，兑换码不会作废。' : '这次没有开通成功，兑换码仍然有效，可以重新兑换。' });
       if (s.failAct !== 'manual') await setCode(code.id, { status: 'unused' });
     }
     return view((await getRed(rid))!);
@@ -662,7 +664,7 @@ export async function adminApprove(rid: string) {
       await upd(rid, { status: 'approved' });
       return locked(rid, async () => gptAccount((await getRed(rid))!, code, await getStrategy(red.strategy_id), session, true));
     }
-    await upd(rid, { status: 'approved', error_msg: '卖家已确认，请重新粘贴 Session 完成开通。' });
+    await upd(rid, { status: 'approved', error_msg: '审核已通过，请重新粘贴 Session 完成开通。' });
     return view((await getRed(rid))!);
   }
   await upd(rid, { status: 'approved' });
@@ -671,7 +673,7 @@ export async function adminApprove(rid: string) {
 export async function adminReject(rid: string, reason = '卖家拒绝了这次兑换') {
   const red = await getRed(rid);
   if (!red || !['manual_review', 'approved', 'requires_action'].includes(red.status)) throw bad('当前状态不能拒绝');
-  await upd(rid, { status: 'blocked', stage: 'review', review: 'rejected', rule: `管理员拒绝：${reason}`, error_msg: '暂时无法兑换，请稍后再试或联系卖家。兑换码仍然有效。' });
+  await upd(rid, { status: 'blocked', stage: 'review', review: 'rejected', rule: `管理员拒绝：${reason}`, error_msg: '暂时无法兑换，请稍后再试或联系客服。兑换码仍然有效。' });
   await releaseIfCurrent(red);
   sessions.delete(rid);
 }
@@ -686,7 +688,7 @@ export async function adminRetry(rid: string) {
 export async function adminRelease(rid: string) {
   const red = await getRed(rid);
   if (!red || IN_FLIGHT.includes(red.status) || red.status === 'completed') throw bad('进行中或已完成的兑换不能释放');
-  await upd(rid, { status: 'failed', error_msg: '卖家已释放兑换码，可以重新兑换。', next_poll_at: null });
+  await upd(rid, { status: 'failed', error_msg: '兑换码已恢复可用，可以重新兑换。', next_poll_at: null });
   await releaseIfCurrent(red);
 }
 /** 只有当这条记录是兑换码当前的兑换时才释放码，避免历史记录影响进行中的兑换 */
@@ -731,7 +733,7 @@ export async function view(red: Red) {
 export async function receipt(rawCode: string, device: string) {
   const code = await q.get<{ id: string }>('SELECT id FROM codes WHERE code_hash = ?', [lookupHash(normalizeCode(rawCode))]);
   const red = code && await q.get<Red>("SELECT * FROM redemptions WHERE code_id = ? AND browser_device = ? AND status != 'blocked' ORDER BY created_at DESC LIMIT 1", [code.id, device]);
-  if (!red) throw new HttpError(404, '没有在这台设备上找到这个兑换码的记录。请使用兑换时的设备和浏览器查询，或联系卖家。', 'NOT_FOUND');
+  if (!red) throw new HttpError(404, '没有在这台设备上找到这个兑换码的记录。请使用兑换时的设备和浏览器查询，或联系客服。', 'NOT_FOUND');
   return view(red);
 }
 

@@ -33,7 +33,7 @@ function form(err = '') {
   inp.onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
   $('#go').onclick = async e => { try { result(await run(e.currentTarget, '查询中…', () => POST('/api/public/receipt', { device: DEVICE, code: inp.value }))); } catch (x) { form(x.message); } };
 }
-const LABEL = { completed: '开通成功', processing: '开通中', funding: '准备中', funded: '等待你确认付款', retrying: '自动重试中', paid_pending_delivery: '已付款，等待到账', manual_review: '等待卖家确认', failed: '没有开通成功', expired: '已超时', cancelled: '兑换码已撤销', requires_action: '需要卖家处理', started: '未完成', quoted: '等待你确认', approved: '卖家已确认' };
+const LABEL = { completed: '开通成功', processing: '开通中', funding: '准备中', funded: '等待你确认开通', retrying: '自动重试中', paid_pending_delivery: '已提交，等待到账', manual_review: '等待人工审核', failed: '没有开通成功', expired: '已超时', cancelled: '兑换码已撤销', requires_action: '需要客服处理', started: '未完成', quoted: '等待你确认', approved: '审核已通过' };
 function result(r) {
   const done = r.status === 'completed';
   $('#vno').textContent = r.orderNo ? 'No. ' + r.orderNo : ''; $('#vno').classList.toggle('hidden', !r.orderNo);

@@ -56,7 +56,7 @@ const pmLabel = (method, sub) => { const m = (CFG?.payMethods || []).find(x => x
  */
 function payPicker(el, { balance = null, exclude = [], total = null, current = null } = {}) {
   const list = [...(balance != null ? [{ method: 'balance', label: '余额支付', icon: 'balance' }] : []), ...(CFG?.payMethods || [])].filter(m => !exclude.includes(m.method));
-  if (!list.length) { el.innerHTML = '<div class="note warn">商家还没有开通在线支付，请联系客服</div>'; const none = () => null; none.setTotal = () => {}; return none; }
+  if (!list.length) { el.innerHTML = '<div class="note warn">暂时没有可用的支付方式，请联系客服</div>'; const none = () => null; none.setTotal = () => {}; return none; }
   let cur = -1;
   const short = m => m.method === 'balance' && total != null && balance < total;
   const draw = () => {

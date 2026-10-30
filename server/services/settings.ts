@@ -52,7 +52,7 @@ const DEFAULTS = {
   theme: { preset: 'stub', mode: 'light', a1: '#15233f', a2: '#3d6e9e', a3: '#d3382b', r: 14, blur: 0, glow: 0, name: 'CDK Console', logo: 'C', slogan: '一码开通你的会员',
     bg: 'paper', font: 'stub', card: 'paper', btn: 'solid', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' } as Theme,
   redeemPage: {
-    desc: '输入你拿到的兑换码，我们会先核对账号和套餐，确认无误后自动开通。整个过程不需要你付款，也不需要提供任何支付信息。',
+    desc: '输入兑换码，填好要开通的账号，确认后自动开通。会员费用已含在兑换码里，不会再向你收费，也不需要填写任何支付信息。',
     products: { gpt: true, x: true, tg: true }, contact: '', maintenance: false, maintenanceMsg: '系统维护中，请稍后再来兑换。',
     turnstileSiteKey: '', turnstileSecretEnc: null,
   } as RedeemPage,
