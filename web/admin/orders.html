@@ -49,7 +49,7 @@ async function load() {
       <td class="t"><div class="row-flex">${PICXS[o.product]}<div><b class="mono">${o.id}</b><p>${esc(o.code)}</p></div></div></td>
       <td>${esc(o.planLabel)}</td><td class="xs">${esc(o.strategy.name)}</td><td class="muted">${esc(o.account || '—')}</td>
       <td>${badge(o.status)}${o.attempts > 1 ? `<div class="xs faint">重试 ${o.attempts - 1} 次</div>` : ''}</td>
-      <td class="xs muted" style="max-width:280px">${esc(o.status === 'blocked' ? (o.rule || o.message || '') : o.message || '')}</td>
+      <td class="xs muted" style="max-width:280px">${esc(o.status === 'blocked' ? (o.rule || o.message || '') : o.message || '')}${o.status === 'failed' && o.rule ? `<div class="faint">${esc(o.rule)}</div>` : ''}</td>
       <td class="num">${o.cost ? money(o.cost) : '—'}</td><td class="xs faint nowrap">${fmtTime(o.createdAt)}</td>
     </tr>`).join('') || '<tr><td colspan="8"><div class="empty"><div class="ic">⇄</div>没有符合条件的记录</div></td></tr>';
   $$('#tbody tr[data-id]').forEach(tr => tr.onclick = () => openRed(tr.dataset.id));

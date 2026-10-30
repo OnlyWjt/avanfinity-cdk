@@ -154,7 +154,7 @@ export async function start(rawCode: string, ctx: Ctx) {
   if (code.status === 'revoked') { await attempt(ctx.ip, ctx.device, h, false, 'revoked'); throw userErr('这个兑换码已作废，如有疑问请联系客服。', 'REVOKED'); }
   if (code.status === 'redeemed') {
     await attempt(ctx.ip, ctx.device, h, true, 'redeemed');
-    throw userErr('这个兑换码已经使用过。如果是你本人兑换的，可以去「查询凭证」查看结果。', 'ALREADY_REDEEMED');
+    throw userErr('这个兑换码已经使用过。如果是你本人兑换的，可以在兑换页点「查看兑换结果」。', 'ALREADY_REDEEMED');
   }
 
   // 继续同一设备上未完成的兑换

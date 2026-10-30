@@ -1,8 +1,9 @@
 /* 首帧之前执行（放在 <head> 里同步加载）：
-   按本地缓存的主题设置颜色、背景、字体、卡片风格和深浅色，避免切换页面时先闪一帧默认主题 */
+   按本地缓存的主题设置颜色、背景、字体、卡片风格和深浅色，避免切换页面时先闪一帧默认主题。
+   还没有本地缓存时（第一次来）用服务端写在前面的 window.__CDK_THEME（站点当前主题） */
 (function () {
   var d = document.documentElement, s = d.style, t = {};
-  try { t = JSON.parse(localStorage.getItem('cdk-theme') || '{}'); } catch (e) {}
+  try { t = JSON.parse(localStorage.getItem('cdk-theme') || 'null') || window.__CDK_THEME || {}; } catch (e) { t = window.__CDK_THEME || {}; }
   var preview = window.parent !== window && /[?&]preview=1/.test(location.search);
   var mode = (!preview && localStorage.getItem('cdk-mode')) || t.mode || 'light';
   if (mode === 'auto') mode = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';

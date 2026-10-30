@@ -948,9 +948,9 @@ input[type=range]{accent-color:var(--a1)}
 [data-card="paper"] .glass:not(.solid){background:var(--bg-solid);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--border);box-shadow:var(--shadow)}
 [data-card="paper"] .nav a.on{background:var(--inset);box-shadow:none;font-weight:650}
 [data-card="paper"] .seg button.on,[data-card="paper"] .seg a.on{background:var(--bg-solid);box-shadow:0 1px 2px rgba(21,35,63,.12),0 0 0 1px var(--border)}
-[data-btn="solid"] .logo{background:var(--a1)}
-[data-btn="solid"] .btn.primary{box-shadow:none}
-[data-btn="solid"] .sw.on{background:var(--a1)}
+[data-bg="paper"][data-btn="solid"] .logo:not(.img){background:var(--a1)}
+[data-bg="paper"][data-btn="solid"] .btn.primary{box-shadow:none}
+[data-bg="paper"][data-btn="solid"] .sw.on{background:var(--a1)}
 [data-font="stub"]{--display:"Smiley Sans","PingFang SC","Microsoft YaHei",sans-serif;--mono:"Martian Mono","SF Mono",Consolas,monospace;
   --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif}
 /* 得意黑只有一个字重：不要让浏览器再加粗 */

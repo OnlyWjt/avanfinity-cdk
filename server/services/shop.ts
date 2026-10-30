@@ -480,14 +480,17 @@ export async function mailOrder(no: string) {
   if (!o || o.status !== 'delivered' || !mailConfigured()) return false;
   const v = await orderView(o);
   const link = siteUrl(`/shop/order.html?no=${o.no}&t=${o.view_token}`);
+  // 在代理分站下的单：买家认识的是分站名称
+  const store = o.source === 'store' && o.agent_id ? (await q.get<{ shop_name: string }>('SELECT shop_name FROM agents WHERE customer_id = ?', [o.agent_id]))?.shop_name : null;
+  const brand = store || brandName();
   const rows = v.codes.map(c => `<tr><td style="padding:8px 10px;font-family:Menlo,Consolas,monospace;font-size:14px;border-bottom:1px solid #eee">${esc(c.code)}</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right"><a href="${esc(siteUrl('/redeem#code=' + encodeURIComponent(c.code)))}" style="color:#5b6bff">立即兑换</a></td></tr>`).join('');
   try {
     await sendMail({
-      to: o.email, ref: o.no, subject: `【${brandName()}】订单 ${o.no} 的兑换码`,
+      to: o.email, ref: o.no, subject: `【${brand}】订单 ${o.no} 的兑换码`,
       text: `订单 ${o.no}\n${o.title} × ${o.quantity}\n\n${v.codes.map(c => c.code).join('\n')}\n\n订单详情：${link}`,
       html: layout('你的兑换码已送达', `<p style="color:#585d82;margin:0 0 12px">${esc(o.title)} × ${o.quantity} · 订单 ${o.no}</p>
         <table style="width:100%;border-collapse:collapse;background:#f7f8fc;border-radius:10px">${rows}</table>
-        <p style="color:#585d82;font-size:13px">点击「立即兑换」按提示开通即可，兑换码也可以转送给他人。</p>${button(link, '查看订单')}`),
+        <p style="color:#585d82;font-size:13px">点击「立即兑换」按提示开通即可，兑换码也可以转送给他人。</p>${button(link, '查看订单')}`, brand),
     });
     await q.run("UPDATE orders SET mail_status = 'sent' WHERE no = ?", [no]);
     return true;

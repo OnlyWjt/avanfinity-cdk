@@ -421,7 +421,11 @@ export const LATER_MIGRATIONS: Record<Dialect, string>[] = [
     mysql: `
       DROP TABLE IF EXISTS direct_spend;
       DELETE FROM settings WHERE "key" = 'directGuard';
-      ALTER TABLE redemptions DROP COLUMN direct_task_id;`,
+      SET @drop_direct = (SELECT IF(COUNT(*) > 0, 'ALTER TABLE redemptions DROP COLUMN direct_task_id', 'DO 0') FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'redemptions' AND COLUMN_NAME = 'direct_task_id');
+      PREPARE drop_direct FROM @drop_direct;
+      EXECUTE drop_direct;
+      DEALLOCATE PREPARE drop_direct;`,
   },
 ];
 

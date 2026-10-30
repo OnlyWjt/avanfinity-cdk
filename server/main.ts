@@ -25,6 +25,7 @@ import { allChannels } from './services/pay/index.ts';
 import { ensureDefaultLevel } from './services/agents.ts';
 import { getSetting, loadSettings } from './services/settings.ts';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 // 先连上数据库、跑完迁移、读入设置，后面的模块才能用
 await initDb({ exclusive: true });
@@ -93,6 +94,18 @@ app.get('/', async (c, next) => (getSetting('shop').enabled && getSetting('shop'
 app.get('/redeem', c => sendPage(c, 'index.html'));
 app.get('/shop', c => c.redirect('/shop/'));
 app.get('/s/:slug', c => sendPage(c, 'shop/index.html'));
+/* boot.js 前面写上站点当前的主题：第一次来的访客还没有本地缓存，首帧就用站点的深浅色和配色，不会先闪一帧默认主题。
+   只带外观字段（Logo 图片、自定义 CSS 可能很大，等 app.js 拿到配置再应用） */
+app.get('/assets/boot.js', async c => {
+  const t = getSetting('theme');
+  const keys = ['mode', 'a1', 'a2', 'a3', 'r', 'blur', 'glow', 'bg', 'font', 'card', 'btn', 'shape', 'motion'] as const;
+  const site = Object.fromEntries(keys.map(k => [k, t[k]]));
+  const body = `window.__CDK_THEME = ${JSON.stringify(site).replace(/</g, '\\u003c')};\n` + await readFile(resolve(ROOT, 'web/assets/boot.js'), 'utf8');
+  const etag = `W/"${createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+  const h = { ETag: etag, 'Cache-Control': 'public, max-age=300' };
+  if (c.req.header('if-none-match') === etag) return c.body(null, 304, h);
+  return c.body(body, 200, { ...h, 'Content-Type': 'text/javascript; charset=utf-8' });
+});
 // 静态文件缓存：ETag 协商（没变返回 304），脚本样式再缓存 5 分钟，切换页面不用重新下载
 app.use('/*', async (c, next) => {
   if (c.req.method !== 'GET' || c.req.path.startsWith('/api/')) return next();
