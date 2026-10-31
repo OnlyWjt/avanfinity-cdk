@@ -123,31 +123,31 @@ await page.goto(`${BASE}/admin/settings.html`, { waitUntil: 'networkidle0' });
 await page.click('#productCode + .dd'); await sleep(250);
 await page.screenshot({ path: `${OUT}/dropdown-settings.png` });
 
-// X 两阶段兑换（页面上点）
-current = 'redeem-x';
+// TG 两阶段兑换（页面上点）
+current = 'redeem-tg';
 await page.bringToFront();
 const xCode = await page.evaluate(async () => {
-  const st = (await (await fetch('/api/admin/strategies')).json()).list.find((s: any) => s.mode === 'own' && s.prod.includes('x') && s.on);
-  const r = await (await fetch('/api/admin/batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: 'x', plan: 'premium_6m', quantity: 1, strategyId: st.id, idemKey: 'gen-ui-' + Date.now(), social: { maxWalletDebitUsd: '60.00', currency: 'usd', maxOfficialAmountMinor: 5500, fundingAmountUsd: '50.00' } }) })).json();
+  const st = (await (await fetch('/api/admin/strategies')).json()).list.find((s: any) => s.mode === 'own' && s.prod.includes('tg') && s.on);
+  const r = await (await fetch('/api/admin/batches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: 'tg', plan: 'premium_6m', quantity: 1, strategyId: st.id, idemKey: 'gen-ui-' + Date.now(), social: { maxWalletDebitUsd: '60.00', currency: 'usd', maxOfficialAmountMinor: 5500, fundingAmountUsd: '50.00' } }) })).json();
   return r.codes[0];
 });
 const bxCtx = await browser.createBrowserContext();
 const bx = await bxCtx.newPage();
-bx.on('pageerror', e => problems.push(`[redeem-x] JS 错误: ${(e as Error).message}`));
+bx.on('pageerror', e => problems.push(`[redeem-tg] JS 错误: ${(e as Error).message}`));
 await bx.setViewport({ width: 390, height: 844, isMobile: true, deviceScaleFactor: 2 });
 await bx.bringToFront();
 await bx.goto(BASE + '/', { waitUntil: 'networkidle0' });
 await bx.screenshot({ path: `${OUT}/mobile-1.png` });
 await bx.type('#code', xCode); await bx.click('#next');
 await bx.waitForSelector('#rec', { timeout: 10000 });
-await bx.type('#rec', 'ui_x_user_' + String(Date.now()).slice(-5)); await bx.click('#next');
+await bx.type('#rec', 'ui_tg_user_' + String(Date.now()).slice(-5)); await bx.click('#next');
 await bx.waitForSelector('#cd', { timeout: 10000 });
 await bx.screenshot({ path: `${OUT}/mobile-2.png` });
 await bx.click('#next');
-await bx.waitForSelector('#pay', { timeout: 20000 }).then(() => console.log('✓ X 第一阶段完成，页面出现「确认付款」'), () => console.log('✗ X 没有进入确认付款'));
+await bx.waitForSelector('#pay', { timeout: 20000 }).then(() => console.log('✓ TG 第一阶段完成，页面出现「确认开通」'), () => console.log('✗ TG 没有进入确认开通'));
 await bx.screenshot({ path: `${OUT}/mobile-3.png` });
 await bx.click('#pay');
-await bx.waitForFunction(() => document.body.innerText.includes('开通成功'), { timeout: 20000 }).then(() => console.log('✓ 手机端 X 两阶段兑换开通成功'), () => console.log('✗ X 没有等到成功'));
+await bx.waitForFunction(() => document.body.innerText.includes('开通成功'), { timeout: 20000 }).then(() => console.log('✓ 手机端 TG 两阶段兑换开通成功'), () => console.log('✗ TG 没有等到成功'));
 await bx.screenshot({ path: `${OUT}/mobile-4.png` });
 // 刷新后恢复结果
 await bx.reload({ waitUntil: 'networkidle0' }); await sleep(500);

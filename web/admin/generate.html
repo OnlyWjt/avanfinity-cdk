@@ -67,7 +67,6 @@
       <div class="gen-h"><span class="no">1</span><h3>产品线</h3></div>
       <div class="choice" id="prodChoice">
         <button class="opt pass gpt" data-v="gpt"><span class="pp-mark">G</span><span><b>ChatGPT</b><small>Go · Plus · Pro · 点数</small></span></button>
-        <button class="opt pass x" data-v="x"><span class="pp-mark">𝕏</span><span><b>X Premium</b><small>Premium · Premium+</small></span></button>
         <button class="opt pass tg" data-v="tg"><span class="pp-mark">✈</span><span><b>Telegram</b><small>Premium 3 / 6 / 12 月</small></span></button>
       </div>
     </section>
@@ -117,7 +116,7 @@
 </div>
 <script src="/assets/app.js"></script>
 <script>
-const S = { p: qs('p') || 'gpt', plan: null, qty: 10, strat: null };
+const S = { p: ['gpt', 'tg'].includes(qs('p')) ? qs('p') : 'gpt', plan: null, qty: 10, strat: null };
 let cat, strategies, idemKey = null, dirtySocial = false;
 /** 卡台钱包余额（只读）：取不到时为 null，不影响生成 */
 let BAL = null;
@@ -164,7 +163,7 @@ function render() {
   const card = p => {
     const dis = !usable(p);
     const name = esc(p.label.replace(/^(ChatGPT|X|Telegram) /, ''));
-    // GPT 订阅：成本 + 平台库存条；点数：预估成本；X / TG：官方金额兑换时才确定，只显示服务费
+    // GPT 订阅：成本 + 平台库存条；点数：预估成本；TG：官方金额兑换时才确定，只显示服务费
     const body = S.p === 'gpt'
       ? (dis ? `<div class="pc-cost">—</div><small>${p.credits && !own ? '需要自有码策略' : '等待卡台报价'}</small>`
         : p.credits ? `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><small>预估 · 兑换时按点数报价扣费</small>`
@@ -227,7 +226,7 @@ function summary() {
     cost = cap;
     if (!(cap > 0)) bad = '请填写单码成本上限';
     else if (fund >= cap) bad = '预付额必须小于成本上限（上限还要覆盖通道费和服务费）';
-    else if (!cat.paymentConfigured && !own) bad = '还没有在设置里选择 X / TG 付款通道';
+    else if (!cat.paymentConfigured && !own) bad = '还没有在设置里选择 Telegram 付款通道';
   }
   const costLabel = S.p !== 'gpt' ? '单码成本上限' : plan.credits ? '单码成本（预估）' : '单码成本';
   $('#sum').innerHTML = `<div>生成费用<b>$0.00</b></div><div>${costLabel}<b>${money(cost)}</b></div>

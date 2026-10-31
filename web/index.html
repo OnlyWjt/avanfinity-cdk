@@ -25,7 +25,7 @@
 <script src="/assets/app.js"></script>
 <script>
 const DEVICE = localStorage.getItem('cdk-device') || (() => { const d = uuid(); localStorage.setItem('cdk-device', d); return d; })();
-let CFG = { redeem: { products: { gpt: true, x: true, tg: true } } }, R = null, pollT = null, stopCd = null, captchaToken = null;
+let CFG = { redeem: { products: { gpt: true, tg: true } } }, R = null, pollT = null, stopCd = null, captchaToken = null;
 const WAITING = ['processing', 'funding', 'retrying', 'paid_pending_delivery', 'manual_review'];
 
 function steps(n) { $('#steps').classList.toggle('hidden', n > 4); $('#steps').innerHTML = ['兑换码', R && R.product !== 'gpt' ? '接收方' : '账号', '确认', '开通'].map((s, i) => `<div class="${i + 1 < n ? 'done' : i + 1 === n ? 'cur' : ''}"><u></u><span>${s}</span></div>`).join(''); }
@@ -105,7 +105,7 @@ function accountView(err = '') {
       <button class="btn primary block mt8" id="next">检查账号</button><button class="backlink" id="back">← 换一个兑换码</button>`);
     $('#cpUrl').onclick = () => copy('https://chatgpt.com/api/auth/session');
   } else {
-    show(2, `${member()}<h2>填写${R.product === 'x' ? ' X ' : ' Telegram '}用户名</h2><p class="desc">会员会以官方赠送的方式开通到这个账号，不需要你的密码。</p>
+    show(2, `${member()}<h2>填写 Telegram 用户名</h2><p class="desc">会员会以官方赠送的方式开通到这个账号，不需要你的密码。</p>
       <div class="inputgrp"><span>@</span><input id="rec" placeholder="username" autocomplete="off" spellcheck="false" value="${esc((R.account || '').replace(/^@/, ''))}"></div>
       <div class="note mt8">ⓘ 请仔细核对拼写，开通后无法转移到其他账号。</div>
       <div class="err" id="err">${esc(err)}</div>
@@ -138,7 +138,7 @@ function confirmView() {
 }
 function payView() {
   show(4, `<div class="bigicon" style="background:var(--a2);color:#06131a">◉</div><h2 style="text-align:center">最后确认：开通到这个账号？</h2>
-    <p class="desc" style="text-align:center">确认后会立即向${R.product === 'x' ? ' X ' : ' Telegram '}提交开通，之后不能撤销，也不能改到其他账号。</p>
+    <p class="desc" style="text-align:center">确认后会立即向 Telegram 提交开通，之后不能撤销，也不能改到其他账号。</p>
     <div class="kv mb16"><div><span>套餐</span><b>${esc(R.planLabel)}</b></div><div><span>开通到</span><b class="mono">${esc(R.account || '')}</b></div><div><span>费用</span><b class="c-ok">已含在兑换码里</b></div></div>
     <div class="err" id="err"></div>
     <button class="btn primary block" id="pay">确认开通</button>
@@ -154,7 +154,7 @@ function resubmitView() {
 function progressView() {
   const r = R;
 
-  const base = r.product === 'gpt' ? ['兑换码已确认', '账号已确认', '正在提交开通', isCr(r) ? '正在充值点数' : '正在开通会员'] : ['账号已确认', '正在准备', '正在提交开通', r.product === 'x' ? '确认会员生效' : '确认赠送到账'];
+  const base = r.product === 'gpt' ? ['兑换码已确认', '账号已确认', '正在提交开通', isCr(r) ? '正在充值点数' : '正在开通会员'] : ['账号已确认', '正在准备', '正在提交开通', '确认赠送到账'];
   const k = r.product === 'gpt' ? (r.progress.length ? Math.min(3, r.progress.length) : 2) : r.status === 'funding' ? 1 : r.status === 'paid_pending_delivery' ? 3 : 2;
   const title = r.status === 'retrying' ? '遇到问题，正在自动重试' : r.status === 'funding' ? '正在准备' : r.status === 'paid_pending_delivery' ? '已提交，等待官方到账' : '正在为你开通';
   show(4, `<h2>${title}</h2><p class="desc">${r.status === 'retrying' ? esc(r.message || '') : r.status === 'funding' ? '马上就好，准备完成后需要你再确认一次账号。' : '通常 30 秒内完成。可以关闭页面，之后在同一设备上打开本页或「查看兑换结果」。'}</p>
@@ -168,7 +168,7 @@ function doneView() {
   const fresh = Date.now() - when < 120e3;
   show(5, `<div class="v-done"><div class="seal ${fresh ? 'stamp' : ''}" aria-hidden="true"><div><span>${esc((CFG.shop?.enabled && CFG.shop.title) || CFG.theme?.name || '')}</span><b>${isCr(r) ? '已充值' : '已开通'}</b><small>${ymd}</small></div></div>
     <h2>${esc(r.planLabel)}</h2>
-    <p class="v-to">${isCr(r) ? '充值成功' : '开通成功'}，已${isCr(r) ? '充值' : '开通'}到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : r.product === 'x' ? '打开 X 即可看到 Premium 标识。' : '打开 Telegram 即可看到赠送消息。'}</p></div>
+    <p class="v-to">${isCr(r) ? '充值成功' : '开通成功'}，已${isCr(r) ? '充值' : '开通'}到 <b>${esc(r.account || '')}</b>。${r.product === 'gpt' ? '刷新 ChatGPT 即可使用。' : '打开 Telegram 即可看到赠送消息。'}</p></div>
     <div class="kv mb16"><div><span>订单号</span><b class="mono">${esc(r.orderNo)}</b></div><div><span>开通时间</span><b>${new Date(r.completedAt).toLocaleString('zh-CN')}</b></div>
       ${r.product !== 'gpt' || isCr(r) ? ''
         : r.willRenew === true ? '<div><span>自动续费</span><b class="c-warn">仍开启，如不需要请在 ChatGPT 设置里关闭</b></div>'
@@ -193,8 +193,8 @@ function poll(ms) {
     Theme.apply(CFG.theme, true);
     pubNav(CFG, 'redeem');
     $('#desc').textContent = CFG.redeem.desc;
-    const CHIP = { gpt: 'ChatGPT', x: 'X Premium', tg: 'Telegram Premium' };
-    $('#chips').innerHTML = ['gpt', 'x', 'tg'].filter(k => CFG.redeem.products[k]).map(k => `<span>${CHIP[k]}</span>`).join('');
+    const CHIP = { gpt: 'ChatGPT', tg: 'Telegram Premium' };
+    $('#chips').innerHTML = ['gpt', 'tg'].filter(k => CFG.redeem.products[k]).map(k => `<span>${CHIP[k]}</span>`).join('');
     if (CFG.redeem.maintenance) { show(1, `<div class="bigicon warn">⚙</div><h2 style="text-align:center">系统维护中</h2><p class="desc" style="text-align:center">${esc(CFG.redeem.maintenanceMsg)}</p>`); return; }
   } catch { /* 配置拿不到也允许兑换 */ }
   const rid = localStorage.getItem('cdk-rid');

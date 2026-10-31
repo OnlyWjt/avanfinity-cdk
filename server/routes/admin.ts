@@ -10,7 +10,7 @@ import * as R from '../services/redeem.ts';
 import * as W from '../services/webhook.ts';
 import * as ST from '../services/stats.ts';
 import { getSetting, setSetting, patchSetting, avanCredentials, saveAvanCredentials, mask } from '../services/settings.ts';
-import { gptOffers, gptSalePrice, catalogUsd, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, isCredits, walletBalance } from '../services/catalog.ts';
+import { gptOffers, gptSalePrice, catalogUsd, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, isCredits, walletBalance, RETIRED_PRODUCTS } from '../services/catalog.ts';
 import { checkPerms, AVAN_PERMS } from '../avan/permissions.ts';
 import { createUser } from '../services/auth.ts';
 import { encryptOpt } from '../crypto.ts';
@@ -19,7 +19,9 @@ import { sendTelegram, dailyReportText } from '../services/notify.ts';
 export const admin = new Hono<AppEnv>();
 const page = (v: string | undefined) => Math.max(1, Math.min(100000, Number(v) || 1));
 const size = (v: string | undefined, def = 20) => Math.max(1, Math.min(200, Number(v) || def));
-const PRODUCTS = ['gpt', 'x', 'tg'] as const;
+/** 在售的产品线（生成、定价）；查历史记录时还要认已下线的 X */
+const PRODUCTS = ['gpt', 'tg'] as const;
+const ALL_PRODUCTS = ['gpt', 'x', 'tg'] as const;
 
 /* ================= 总览 / 搜索 ================= */
 admin.get('/overview', requireRole('support'), async c => c.json(await ST.overview()));
@@ -46,7 +48,7 @@ admin.get('/search', requireRole('support'), async c => {
 /* ================= CDK ================= */
 admin.get('/codes/stats', requireRole('support'), async c => c.json(await B.codeStats()));
 admin.get('/codes', requireRole('support'), async c => {
-  const product = oneOf(c.req.query('product') || 'gpt', 'product', PRODUCTS);
+  const product = oneOf(c.req.query('product') || 'gpt', 'product', ALL_PRODUCTS);
   return c.json(await B.listCodes({ product, status: c.req.query('status'), plan: c.req.query('plan'), strategy: c.req.query('strategy'), q: c.req.query('q'), page: page(c.req.query('page')), size: size(c.req.query('size')) }));
 });
 admin.get('/codes/:id', requireRole('support'), async c => c.json(await B.codeDetail(c.req.param('id'))));
@@ -66,7 +68,7 @@ admin.post('/codes/revoke', requireRole('operator'), async c => {
 });
 
 admin.get('/catalog', requireRole('support'), async c => {
-  const [offers, xp, tp] = await Promise.all([gptOffers(), socialPlans('x'), socialPlans('tg')]);
+  const [offers, tp] = await Promise.all([gptOffers(), socialPlans('tg')]);
   // 点数没有 CDK 售价和库存（兑换时按点数报价扣费）：成本按套餐目录估算，能估出来就算可生成
   const gpt = await Promise.all(planKeys('gpt').map(async k => {
     const o = offers.val?.find(x => x.plan === k);
@@ -76,11 +78,10 @@ admin.get('/catalog', requireRole('support'), async c => {
   }));
   return c.json({
     gpt,
-    x: planKeys('x').map(k => { const p = xp.val?.plans.find(x => x.key === k); return { key: k, label: fullPlanLabel('x', k), enabled: p?.enabled ?? true, serviceFee: p ? Number(p.serviceFee) : null }; }),
     tg: planKeys('tg').map(k => { const p = tp.val?.plans.find(x => x.key === k); return { key: k, label: fullPlanLabel('tg', k), enabled: p?.enabled ?? true, serviceFee: p ? Number(p.serviceFee) : null }; }),
     socialDefaults: getSetting('socialDefaults'), fx: getSetting('fx').usdCny,
     paymentConfigured: !!getSetting('payment').productCode,
-    errors: [offers.error, xp.error, tp.error].filter(Boolean),
+    errors: [offers.error, tp.error].filter(Boolean),
   });
 });
 
@@ -89,6 +90,7 @@ admin.get('/batches', requireRole('support'), async c => c.json({ list: (await q
   .map(b => ({ id: b.id, product: b.product, plan: b.plan, label: fullPlanLabel(b.product, b.plan), quantity: b.quantity, redeemed: b.redeemed, mode: b.mode, strategy: b.strategy_name, memo: b.memo, cost: b.cost_usd, creator: b.creator, createdAt: b.created_at })) }));
 admin.post('/batches', requireRole('operator'), async c => {
   const b = await body<any>(c);
+  if (RETIRED_PRODUCTS[b.product]) throw bad(`${RETIRED_PRODUCTS[b.product]}，不能再生成`);
   const r = await B.generateBatch({
     product: oneOf(b.product, 'product', PRODUCTS), plan: str(b.plan, 'plan', { max: 40 }), quantity: int(b.quantity, '数量', 1, 50),
     strategyId: str(b.strategyId, '策略'), memo: str(b.memo, '备注', { opt: true, max: 100 }), idemKey: str(b.idemKey, 'idemKey', { min: 8, max: 128 }),
@@ -218,7 +220,7 @@ admin.put('/pricing/fx', requireRole('admin'), async c => { const b = await body
 admin.put('/pricing/social-defaults', requireRole('admin'), async c => {
   const b = await body<any>(c);
   const [p, plan] = String(b.key).split('.');
-  if (!['x', 'tg'].includes(p) || !planKeys(p).includes(plan)) throw bad('套餐不正确');
+  if (p !== 'tg' || !planKeys(p).includes(plan)) throw bad('套餐不正确');
   const currency = str(b.currency, '币种', { min: 3, max: 3 }).toLowerCase();
   const maxOfficialAmountMinor = int(Number(b.maxOfficialAmountMinor), '官方金额上限', 1, 1e9);
   const fundingAmountUsd = str(b.fundingAmountUsd, '预付额');
@@ -306,7 +308,7 @@ admin.put('/settings/redeem', requireRole('admin'), async c => {
     ...cur,
     desc: str(b.desc ?? cur.desc, '页面说明', { opt: true, max: 300 }), contact: str(b.contact ?? cur.contact, '客服', { opt: true, max: 100 }),
     maintenance: !!(b.maintenance ?? cur.maintenance), maintenanceMsg: str(b.maintenanceMsg ?? cur.maintenanceMsg, '维护提示', { opt: true, max: 200 }),
-    products: { gpt: !!(b.products?.gpt ?? cur.products.gpt), x: !!(b.products?.x ?? cur.products.x), tg: !!(b.products?.tg ?? cur.products.tg) },
+    products: { gpt: !!(b.products?.gpt ?? cur.products.gpt), tg: !!(b.products?.tg ?? cur.products.tg) },
     turnstileSiteKey: str(b.turnstileSiteKey ?? cur.turnstileSiteKey, 'Turnstile Site Key', { opt: true, max: 100 }),
     turnstileSecretEnc: b.turnstileSecret === '' ? null : b.turnstileSecret ? encryptOpt(b.turnstileSecret) : cur.turnstileSecretEnc,
   };

@@ -36,7 +36,7 @@ const t = await api('POST', '/api/admin/settings/avan/test');
 ok(t.data.ok, '卡台连接测试 ' + JSON.stringify(t.data.checks || t.data.error));
 
 // ---- 策略 ----
-const strat = await api('POST', '/api/admin/strategies', { name: 'E2E 严格' + Date.now() % 1000, prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: 'E' + (Date.now() % 1000), accN: 1, accDays: 30, freeOnly: true, failAct: 'retry', retryN: 1, priceTol: 10, priceAct: 'manual', ipH: 500, devD: 100, captcha: 100 });
+const strat = await api('POST', '/api/admin/strategies', { name: 'E2E 严格' + Date.now() % 1000, prod: ['gpt', 'tg'], mode: 'own', prefix: 'E' + (Date.now() % 1000), accN: 1, accDays: 30, freeOnly: true, failAct: 'retry', retryN: 1, priceTol: 10, priceAct: 'manual', ipH: 500, devD: 100, captcha: 100 });
 ok(strat.status === 200, '创建自有码策略 ' + (strat.data.error || strat.data.prefix));
 const hosted = (await api('GET', '/api/admin/strategies')).data.list.find((s: any) => s.isDefault);
 await api('PUT', `/api/admin/strategies/${hosted.id}`, { ...hosted, mode: 'hosted', ipH: 500, devD: 100, captcha: 100 });
@@ -47,10 +47,15 @@ ok(gOwn.data.codes?.length === 3, `生成 GPT 自有码 ×3 ${gOwn.data.codes?.[
 const gHost = await api('POST', '/api/admin/batches', { product: 'gpt', plan: 'go', quantity: 1, strategyId: hosted.id, idemKey: 'gen-' + randomUUID() });
 ok(gHost.data.codes?.[0]?.startsWith('AVF-'), `生成 GPT 托管码 ${gHost.data.codes?.[0] || gHost.data.error}`);
 const idem = 'gen-' + randomUUID();
-const xOwn = await api('POST', '/api/admin/batches', { product: 'x', plan: 'premium_3m', quantity: 1, strategyId: strat.data.id, idemKey: idem });
-ok(xOwn.data.codes?.length === 1, `生成 X 自有码 ${xOwn.data.error || ''}`);
-const replay = await api('POST', '/api/admin/batches', { product: 'x', plan: 'premium_3m', quantity: 1, strategyId: strat.data.id, idemKey: idem });
-ok(replay.data.replayed && replay.data.batchId === xOwn.data.batchId, '相同幂等键重放同一批次');
+const tgOwn = await api('POST', '/api/admin/batches', { product: 'tg', plan: 'premium_3m', quantity: 1, strategyId: strat.data.id, idemKey: idem });
+ok(tgOwn.data.codes?.length === 1, `生成 TG 自有码 ${tgOwn.data.error || ''}`);
+const replay = await api('POST', '/api/admin/batches', { product: 'tg', plan: 'premium_3m', quantity: 1, strategyId: strat.data.id, idemKey: idem });
+ok(replay.data.replayed && replay.data.batchId === tgOwn.data.batchId, '相同幂等键重放同一批次');
+// X Premium 已在卡台下线
+const xGen = await api('POST', '/api/admin/batches', { product: 'x', plan: 'premium_3m', quantity: 1, strategyId: strat.data.id, idemKey: 'gen-' + randomUUID() });
+ok(xGen.status === 400 && /下线/.test(xGen.data.error || ''), `X 已下线：不能再生成 → ${xGen.status} ${xGen.data.error || ''}`);
+ok(!(await api('GET', '/api/admin/catalog')).data.x, 'X 已下线：生成页的报价目录里没有 X');
+ok((await api('GET', '/api/admin/codes?product=x')).status === 200, 'X 已下线：历史 X 码在 CDK 管理里还能查');
 const tgHost = await api('POST', '/api/admin/batches', { product: 'tg', plan: 'premium_6m', quantity: 1, strategyId: hosted.id, idemKey: 'gen-' + randomUUID() });
 ok(tgHost.data.codes?.[0]?.startsWith('TGCD-'), `生成 TG 托管码 ${tgHost.data.codes?.[0] || tgHost.data.error}`);
 
@@ -94,19 +99,19 @@ await pubApi('/redeem/confirm', { rid: s.data.rid });
 fin = await until(() => status(s.data.rid), v => ['completed', 'failed'].includes(v.status));
 ok(fin.status === 'completed', `GPT 托管码开通 → ${fin.status}`);
 
-// 6. X 自有码两阶段
-s = await pubApi('/redeem/start', { code: xOwn.data.codes[0] });
-ok(s.data.needs === 'recipient', `X 输码 → ${s.data.status || s.data.error}`);
+// 6. TG 自有码两阶段
+s = await pubApi('/redeem/start', { code: tgOwn.data.codes[0] });
+ok(s.data.needs === 'recipient', `TG 输码 → ${s.data.status || s.data.error}`);
 a = await pubApi('/redeem/account', { rid: s.data.rid, recipient: '@already_prem' });
-ok(a.data.status === 'blocked', `X 已是会员 → ${a.data.status}：${a.data.message}`);
+ok(a.data.status === 'blocked', `TG 已是会员 → ${a.data.status}：${a.data.message}`);
 a = await pubApi('/redeem/account', { rid: s.data.rid, recipient: '@elonfan' });
-ok(a.data.needs === 'confirm', `X 换账号报价 → ${a.data.status || a.data.error} ${JSON.stringify(a.data.quote)}`);
+ok(a.data.needs === 'confirm', `TG 换账号报价 → ${a.data.status || a.data.error} ${JSON.stringify(a.data.quote)}`);
 cf = await pubApi('/redeem/confirm', { rid: s.data.rid });
 let fd = await until(() => status(s.data.rid), v => v.status === 'funded');
-ok(fd.needs === 'pay', `X 第一阶段准备完成 → ${fd.status}`);
+ok(fd.needs === 'pay', `TG 第一阶段准备完成 → ${fd.status}`);
 await pubApi('/redeem/confirm', { rid: s.data.rid });
 fin = await until(() => status(s.data.rid), v => ['completed', 'failed'].includes(v.status));
-ok(fin.status === 'completed', `X 付款完成 → ${fin.status}`);
+ok(fin.status === 'completed', `TG 付款完成 → ${fin.status}`);
 
 // 7. TG 托管码
 s = await pubApi('/redeem/start', { code: tgHost.data.codes[0] });

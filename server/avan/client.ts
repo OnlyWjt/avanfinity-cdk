@@ -1,7 +1,7 @@
 /**
  * Avanfinity 卡台 API 客户端（只封装 CDK 系统用得到的接口）
  * - v1 接口：{base}/api/v1/...，X-App-Id / X-App-Secret 鉴权
- * - 公开兑换接口：{base}/api/public/...，不带密钥；GPT 用 X-Redemption-Device，X/TG 用 body.deviceToken
+ * - 公开兑换接口：{base}/api/public/...，不带密钥；GPT 用 X-Redemption-Device，TG 用 body.deviceToken
  */
 import { avanCredentials } from '../services/settings.ts';
 
@@ -14,8 +14,9 @@ export class AvanError extends Error {
   get uncertain() { return this.status === 0 || this.status === 408 || this.status >= 500; }
 }
 
-export type Product = 'gpt' | 'x' | 'tg';
-export type SocialKind = 'x' | 'tg';
+/** 卡台在售的产品线（X Premium 已下线） */
+export type Product = 'gpt' | 'tg';
+export type SocialKind = 'tg';
 
 interface ReqOpts { body?: unknown; idem?: string; device?: string; publicApi?: boolean; query?: Record<string, string | number | undefined>; timeoutMs?: number }
 
@@ -88,7 +89,7 @@ export const avan = {
   gptOrderSession: (orderId: string, session: string) =>
     request<any>('POST', `/gpt-direct/orders/${orderId}/session`, { body: { credential: { mode: 'session', session } } }),
 
-  /* ---------------- X / TG CDK ---------------- */
+  /* ---------------- Telegram CDK ---------------- */
   socialGenerate: (k: SocialKind, p: { plan: string; quantity: number; maxWalletDebitUsd: string; maxOfficialAmountMinor: number; currency: string; fundingAmountUsd: string; cardId?: number; autoCard?: { productCode: string; firstName: string; lastName: string } }, idem: string) =>
     request<{ list: SocialIssuerItem[]; replayed: boolean }>('POST', `/${k}-direct/cdks/generate`, { body: p, idem }),
   socialCdks: (k: SocialKind) => request<{ list: SocialIssuerItem[] } | SocialIssuerItem[]>('GET', `/${k}-direct/cdks`).then(d => (Array.isArray(d) ? d : d.list)),

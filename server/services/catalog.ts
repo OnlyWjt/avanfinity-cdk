@@ -21,9 +21,17 @@ export function invalidateCatalog() { cache.clear(); }
 
 /** GPT 订阅套餐 + 固定面额的点数（Credits）；点数也可以是自定义的 credits_N（N 为 250–9999999） */
 export const GPT_PLAN_KEYS = ['go', 'plus', 'pro_5x', 'pro_20x', 'pro_25x', 'credits_250', 'credits_1000', 'credits_2500', 'credits_5000'] as const;
-export const X_PLAN_KEYS = ['premium_3m', 'premium_6m', 'premium_12m', 'premium_plus_3m', 'premium_plus_6m', 'premium_plus_12m'] as const;
 export const TG_PLAN_KEYS = ['premium_3m', 'premium_6m', 'premium_12m'] as const;
-export const planKeys = (p: string): readonly string[] => (p === 'gpt' ? GPT_PLAN_KEYS : p === 'x' ? X_PLAN_KEYS : TG_PLAN_KEYS);
+export const planKeys = (p: string): readonly string[] => (p === 'gpt' ? GPT_PLAN_KEYS : p === 'tg' ? TG_PLAN_KEYS : []);
+/**
+ * 在售的产品线。X Premium 已在卡台下线（2026-10）：不能再生成、兑换、上架、下单；
+ * 已有的 X 兑换记录、订单、统计照常显示（PRODUCT_NAME / planLabel 里的 X 名称保留）
+ */
+export const ACTIVE_PRODUCTS = ['gpt', 'tg'] as const;
+export type ActiveProduct = typeof ACTIVE_PRODUCTS[number];
+export const isActiveProduct = (p: string): p is ActiveProduct => (ACTIVE_PRODUCTS as readonly string[]).includes(p);
+/** 已下线产品线的说明（给后台看） */
+export const RETIRED_PRODUCTS: Record<string, string> = { x: 'X Premium 已在卡台下线' };
 
 /** 点数套餐 credits_N：N 为 250–9999999 的整数，不能有前导零（和卡台的校验一致） */
 const CREDITS = /^credits_(25[0-9]|2[6-9][0-9]|[3-9][0-9]{2}|[1-9][0-9]{3,6})$/;
@@ -33,6 +41,7 @@ export const isCredits = (plan: string) => creditsOf(plan) != null;
 export const validPlan = (product: string, plan: string) => planKeys(product).includes(plan) || (product === 'gpt' && isCredits(plan));
 
 const GPT_LABEL: Record<string, string> = { go: 'Go', plus: 'Plus', pro_5x: 'Pro 5x', pro_20x: 'Pro 20x', pro_25x: 'Pro 25x' };
+/** premium_plus_* 是 X Premium+ 的套餐，只用于显示历史记录 */
 const SOCIAL_LABEL: Record<string, string> = { premium_3m: 'Premium 3 个月', premium_6m: 'Premium 6 个月', premium_12m: 'Premium 12 个月', premium_plus_3m: 'Premium+ 3 个月', premium_plus_6m: 'Premium+ 6 个月', premium_plus_12m: 'Premium+ 12 个月' };
 export const PRODUCT_NAME: Record<string, string> = { gpt: 'ChatGPT', x: 'X', tg: 'Telegram' };
 export function planLabel(product: string, plan: string) {

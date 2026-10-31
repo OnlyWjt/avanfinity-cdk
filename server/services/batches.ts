@@ -5,9 +5,9 @@ import { avan, AvanError, type SocialKind } from '../avan/client.ts';
 import { bad, HttpError, notFound } from '../http.ts';
 import { getStrategy, type Strategy } from './strategy.ts';
 import { getSetting } from './settings.ts';
-import { gptSalePrice, gptPlans, validPlan, isCredits, socialPlans, fullPlanLabel } from './catalog.ts';
+import { gptSalePrice, gptPlans, validPlan, isCredits, socialPlans, fullPlanLabel, isActiveProduct, RETIRED_PRODUCTS } from './catalog.ts';
 
-export type Product = 'gpt' | 'x' | 'tg';
+export type Product = 'gpt' | 'tg';
 
 export interface SocialParams { maxWalletDebitUsd: string; maxOfficialAmountMinor: number; currency: string; fundingAmountUsd: string }
 /** delivery / country 只对 GPT 有意义；旧批次没有这两个字段，按卡台 CDK、默认地区处理 */
@@ -44,7 +44,7 @@ function socialParamsFor(product: SocialKind, plan: string, s: Strategy, overrid
 }
 export function autoCard() {
   const p = getSetting('payment');
-  if (!p.productCode) throw new HttpError(409, '还没有在「设置 → 卡台 API」里选择 X / TG 的付款通道', 'PAYMENT_NOT_CONFIGURED');
+  if (!p.productCode) throw new HttpError(409, '还没有在「设置 → 卡台 API」里选择 Telegram 的付款通道', 'PAYMENT_NOT_CONFIGURED');
   return { productCode: p.productCode, firstName: p.firstName || 'CDK', lastName: p.lastName || 'USER' };
 }
 
@@ -55,7 +55,8 @@ export function autoCard() {
  * idemKey 由前端按表单内容生成：网络超时后重试会复用，卡台侧不会重复生成
  */
 export async function generateBatch(p: { product: Product; plan: string; quantity: number; strategyId: string; memo?: string; idemKey: string; social?: Partial<SocialParams>; userId: number }) {
-  if (!['gpt', 'x', 'tg'].includes(p.product)) throw bad('产品不正确');
+  if (RETIRED_PRODUCTS[p.product]) throw bad(`${RETIRED_PRODUCTS[p.product]}，不能再生成`);
+  if (!isActiveProduct(p.product)) throw bad('产品不正确');
   if (!validPlan(p.product, p.plan)) throw bad('套餐不正确');
   if (!Number.isInteger(p.quantity) || p.quantity < 1 || p.quantity > 50) throw bad('数量 1–50');
   if (!/^[!#-~]{8,128}$/.test(p.idemKey)) throw bad('幂等键不正确');
@@ -131,7 +132,7 @@ async function batchResult(batchId: string) {
 }
 
 /* ---------------- 列表 / 详情 ---------------- */
-export async function listCodes(f: { product: Product; status?: string; plan?: string; strategy?: string; q?: string; page: number; size: number }) {
+export async function listCodes(f: { product: string /* 含已下线的 X，查历史码 */; status?: string; plan?: string; strategy?: string; q?: string; page: number; size: number }) {
   const where = ['c.product = ?'], args: any[] = [f.product];
   if (f.status) { where.push('c.status = ?'); args.push(f.status); }
   if (f.plan) { where.push('c.plan = ?'); args.push(f.plan); }
@@ -168,8 +169,8 @@ export async function codeDetail(id: string) {
 
 export async function codeStats() {
   const rows = await q.all<{ product: string; status: string; n: number }>('SELECT product, status, COUNT(*) n FROM codes GROUP BY product, status');
-  const out: Record<string, Record<string, number>> = { gpt: {}, x: {}, tg: {} };
-  for (const r of rows) out[r.product][r.status] = r.n;
+  const out: Record<string, Record<string, number>> = { gpt: {}, tg: {} };
+  for (const r of rows) (out[r.product] ??= {})[r.status] = r.n;
   return out;
 }
 
@@ -206,7 +207,7 @@ export async function revokeCodes(ids: string[]) {
     try {
       if (r.mode === 'hosted' && r.product !== 'gpt' && r.upstream_id) await avan.socialRevoke(r.product, r.upstream_id, 'rv-' + r.id);
       if (r.mode === 'own') {
-        // 已经临时生成的卡台 X/TG 码一起撤销（GPT 卡台码没有撤销接口，未兑换不产生费用）
+        // 已经临时生成的卡台 TG 码一起撤销（GPT 卡台码没有撤销接口，未兑换不产生费用）
         for (const u of await q.all<any>("SELECT * FROM upstream_codes WHERE code_id = ? AND status IN ('issued','released')", [id])) {
           if (u.product !== 'gpt') await avan.socialRevoke(u.product, u.id, 'rv-' + u.id).catch(() => {});
           await q.run("UPDATE upstream_codes SET status = 'revoked' WHERE id = ?", [u.id]);

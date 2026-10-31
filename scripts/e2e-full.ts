@@ -65,7 +65,7 @@ ok((await admin('POST', '/api/admin/batches', { product: 'gpt', plan: 'nope', qu
 
 /* ---------- 新策略：价格保护转人工 ---------- */
 const pfx = 'P' + String(Date.now()).slice(-4);
-const st = (await admin('POST', '/api/admin/strategies', { name: '测试价格保护 ' + pfx, prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: pfx, ipH: 500, devD: 100, captcha: 100, accN: 5, priceTol: 5, priceAct: 'manual', failAct: 'release' })).data;
+const st = (await admin('POST', '/api/admin/strategies', { name: '测试价格保护 ' + pfx, prod: ['gpt', 'tg'], mode: 'own', prefix: pfx, ipH: 500, devD: 100, captcha: 100, accN: 5, priceTol: 5, priceAct: 'manual', failAct: 'release' })).data;
 ok(st.id, '创建价格保护策略');
 const gen = (await admin('POST', '/api/admin/batches', { product: 'gpt', plan: 'go', quantity: 4, strategyId: st.id, idemKey: 'gen-' + randomUUID() })).data;
 ok(gen.codes?.length === 4, '生成 4 张 Go 自有码');

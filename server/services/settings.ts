@@ -21,11 +21,11 @@ export interface Theme {
   /** 自定义 CSS（管理员填写，所有前台和后台页面生效） */
   customCss: string;
 }
-export interface RedeemPage { desc: string; products: { gpt: boolean; x: boolean; tg: boolean }; contact: string; maintenance: boolean; maintenanceMsg: string; turnstileSiteKey: string; turnstileSecretEnc: string | null }
+export interface RedeemPage { desc: string; products: { gpt: boolean; tg: boolean }; contact: string; maintenance: boolean; maintenanceMsg: string; turnstileSiteKey: string; turnstileSecretEnc: string | null }
 export interface AvanSettings { baseUrl: string; appId: string; appSecretEnc: string | null; webhookSecretEnc: string | null }
-/** X / TG 兑换时自动开卡用的产品（对用户和管理界面都不展示卡信息） */
+/** TG 兑换时自动开卡用的产品（对用户和管理界面都不展示卡信息） */
 export interface PaymentSettings { productCode: string; firstName: string; lastName: string }
-/** X / TG 每个套餐的默认生成参数 */
+/** TG 每个套餐的默认生成参数 */
 export interface SocialPlanDefaults { currency: string; maxOfficialAmountMinor: number; fundingAmountUsd: string }
 export interface Notify { failAlert: boolean; shopAlert: boolean; lowStock: boolean; dailyReport: boolean; autoCancelRenewal: boolean; lowStockThreshold: number; tgTokenEnc: string | null; tgChatId: string; lastReportDay: string }
 
@@ -53,18 +53,12 @@ const DEFAULTS = {
     bg: 'paper', font: 'stub', card: 'paper', btn: 'solid', shape: 'round', motion: true, logoImg: '', tagline: '', customCss: '' } as Theme,
   redeemPage: {
     desc: '输入兑换码，填好要开通的账号，确认后自动开通。会员费用已含在兑换码里，不会再向你收费，也不需要填写任何支付信息。',
-    products: { gpt: true, x: true, tg: true }, contact: '', maintenance: false, maintenanceMsg: '系统维护中，请稍后再来兑换。',
+    products: { gpt: true, tg: true }, contact: '', maintenance: false, maintenanceMsg: '系统维护中，请稍后再来兑换。',
     turnstileSiteKey: '', turnstileSecretEnc: null,
   } as RedeemPage,
   avan: { baseUrl: config.avanBase, appId: '', appSecretEnc: null, webhookSecretEnc: null } as AvanSettings,
   payment: { productCode: '', firstName: 'CDK', lastName: 'USER' } as PaymentSettings,
   socialDefaults: {
-    'x.premium_3m': { currency: 'usd', maxOfficialAmountMinor: 3000, fundingAmountUsd: '26.00' },
-    'x.premium_6m': { currency: 'usd', maxOfficialAmountMinor: 5500, fundingAmountUsd: '50.00' },
-    'x.premium_12m': { currency: 'usd', maxOfficialAmountMinor: 9500, fundingAmountUsd: '88.00' },
-    'x.premium_plus_3m': { currency: 'usd', maxOfficialAmountMinor: 7000, fundingAmountUsd: '64.00' },
-    'x.premium_plus_6m': { currency: 'usd', maxOfficialAmountMinor: 13000, fundingAmountUsd: '122.00' },
-    'x.premium_plus_12m': { currency: 'usd', maxOfficialAmountMinor: 25000, fundingAmountUsd: '235.00' },
     'tg.premium_3m': { currency: 'usd', maxOfficialAmountMinor: 1300, fundingAmountUsd: '13.00' },
     'tg.premium_6m': { currency: 'usd', maxOfficialAmountMinor: 1700, fundingAmountUsd: '17.00' },
     'tg.premium_12m': { currency: 'usd', maxOfficialAmountMinor: 3100, fundingAmountUsd: '30.00' },

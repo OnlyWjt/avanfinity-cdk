@@ -9,7 +9,7 @@
   <div class="grid mb16" id="kpis"></div>
   <section class="card glass p0">
     <div class="toolbar">
-      <div class="seg" id="prodSeg"><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button></div>
+      <div class="seg" id="prodSeg"><button data-v="gpt">ChatGPT</button><button data-v="x">X（已下线）</button><button data-v="tg">Telegram</button></div>
       <div class="fsearch">⌕<input id="q" placeholder="前缀 / 完整码 / 账号 / 批次 / 备注"></div>
       <select class="field sm" id="stSel"><option value="">全部状态</option><option value="unused">未使用</option><option value="in_use">兑换中</option><option value="redeemed">已兑换</option><option value="revoked">已撤销</option></select>
       <select class="field sm" id="planSel"></select>
@@ -46,7 +46,8 @@ async function kpis() {
   const st = await GET('/api/admin/codes/stats');
   const k = (p, l) => { const s = st[p] || {}; return `<div class="card glass s3 stat"><div class="lbl">${l} · 未使用</div><div class="v">${s.unused || 0}</div><span class="lbl">已兑换 ${s.redeemed || 0} · 兑换中 ${s.in_use || 0}</span></div>`; };
   const revoked = ['gpt', 'x', 'tg'].reduce((a, p) => a + ((st[p] || {}).revoked || 0), 0);
-  $('#kpis').innerHTML = k('gpt', 'ChatGPT') + k('x', 'X') + k('tg', 'Telegram') + `<div class="card glass s3 stat"><div class="lbl">已撤销</div><div class="v">${revoked}</div><span class="lbl">所有产品</span></div>`;
+  const xLeft = (st.x || {}).unused || 0;
+  $('#kpis').innerHTML = k('gpt', 'ChatGPT') + k('tg', 'Telegram') + (xLeft ? `<a class="card glass s3 stat" href="cdks.html?p=x" style="text-decoration:none" title="X Premium 已在卡台下线，这些码已经不能兑换"><div class="lbl">X（已下线）· 未使用</div><div class="v c-warn">${xLeft}</div><span class="lbl">不能再兑换，建议撤销后给买家换别的</span></a>` : '') + `<div class="card glass s3 stat"><div class="lbl">已撤销</div><div class="v">${revoked}</div><span class="lbl">所有产品</span></div>`;
 }
 async function load() {
   kpis();

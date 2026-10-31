@@ -14,7 +14,7 @@ import { bad, notFound, HttpError } from '../http.ts';
 import { getSetting } from './settings.ts';
 import { getStrategy } from './strategy.ts';
 import { generateBatch, revokeCodes } from './batches.ts';
-import { fullPlanLabel, validPlan, isCredits } from './catalog.ts';
+import { fullPlanLabel, validPlan, isCredits, isActiveProduct, RETIRED_PRODUCTS, ACTIVE_PRODUCTS } from './catalog.ts';
 import { channel, channels, notifyUrl } from './pay/index.ts';
 import type { PayAction, PayResult, PaymentRow } from './pay/types.ts';
 import * as coupons from './coupons.ts';
@@ -24,7 +24,7 @@ import { sendMail, mailConfigured, layout, button, esc, siteUrl, brandName } fro
 import { config } from '../config.ts';
 import { startOfDay } from './stats.ts';
 
-export type Product = { id: string; category_id: number | null; product: 'gpt' | 'x' | 'tg'; plan: string; title: string; subtitle: string; description: string; badge: string; price: number; agent_price: number; strategy_id: string; stock_limit: number | null; sold: number; reserved: number; max_per_order: number; enabled: number; sort: number };
+export type Product = { id: string; category_id: number | null; product: string; plan: string; title: string; subtitle: string; description: string; badge: string; price: number; agent_price: number; strategy_id: string; stock_limit: number | null; sold: number; reserved: number; max_per_order: number; enabled: number; sort: number };
 export type Order = {
   no: string; kind: 'buy' | 'wholesale' | 'topup'; source: string; customer_id: number | null; agent_id: number | null; email: string; contact: string; query_hash: string | null; view_token: string;
   product_id: string | null; title: string; quantity: number; unit_price: number; subtotal: number; discount: number; total: number; coupon_id: number | null; cost: number;
@@ -39,11 +39,13 @@ export const getProduct = async (id: string) => await q.get<Product>('SELECT * F
 export const available = (p: Product) => (p.stock_limit == null ? null : Math.max(0, p.stock_limit - p.sold - p.reserved));
 
 export async function listProducts(all = false) {
-  return await q.all<Product>(`SELECT * FROM shop_products ${all ? '' : 'WHERE enabled = 1'} ORDER BY sort, created_at`);
+  const active = ACTIVE_PRODUCTS.map(p => `'${p}'`).join(',');
+  return await q.all<Product>(`SELECT * FROM shop_products ${all ? '' : `WHERE enabled = 1 AND product IN (${active})`} ORDER BY sort, created_at`);
 }
 export async function saveProduct(b: any, id?: string) {
   const product = String(b.product);
-  if (!['gpt', 'x', 'tg'].includes(product)) throw bad('产品不正确');
+  if (RETIRED_PRODUCTS[product]) throw bad(`${RETIRED_PRODUCTS[product]}，不能再上架`);
+  if (!isActiveProduct(product)) throw bad('产品不正确');
   if (!validPlan(product, b.plan)) throw bad('套餐不正确');
   const price = Math.round(Number(b.price) * 100), agentPrice = Math.round(Number(b.agentPrice ?? b.price) * 100);
   if (!(price > 0 && price < 1e8)) throw bad('零售价不正确');
@@ -145,6 +147,7 @@ export async function createOrder(i: CreateOrder) {
   } else {
     product = i.productId ? await getProduct(i.productId) : undefined;
     if (!product || !product.enabled) throw bad('商品不存在或已下架');
+    if (!isActiveProduct(product.product)) throw bad('这个商品已停售');
     quantity = Math.floor(Number(i.quantity) || 1);
     if (quantity < 1 || quantity > (i.kind === 'wholesale' ? 50 : product.max_per_order)) throw bad(`每单数量 1–${i.kind === 'wholesale' ? 50 : product.max_per_order}`);
     title = product.title;
@@ -322,7 +325,8 @@ export async function deliver(no: string) {
       return;
     }
     const p = await getProduct(o.product_id!);
-    const spec = { product: (o.snap_product || p?.product) as Product['product'], plan: o.snap_plan || p?.plan || '', strategyId: o.snap_strategy || p?.strategy_id || '' };
+    // 下线产品线的订单在 generateBatch 里会被拒绝，报错写明原因
+    const spec = { product: (o.snap_product || p?.product) as 'gpt' | 'tg', plan: o.snap_plan || p?.plan || '', strategyId: o.snap_strategy || p?.strategy_id || '' };
     try {
       const r = await generateBatch({ ...spec, quantity: o.quantity, memo: `订单 ${no}`, idemKey: `order-${no}`, userId: 0 });
       const fx = getSetting('fx').usdCny;

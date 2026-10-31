@@ -9,7 +9,7 @@
   <div class="note mb16">ⓘ 流水来自卡台同步（每 5 分钟自动同步一次，也会通过 Webhook 实时写入），不包含付款账户信息。按支付时间关联到对应的兑换记录。</div>
   <section class="card glass p0">
     <div class="toolbar">
-      <select class="field sm" id="product"><option value="">全部产品</option><option value="gpt">ChatGPT</option><option value="x">X</option><option value="tg">Telegram</option></select>
+      <select class="field sm" id="product"><option value="">全部产品</option><option value="gpt">ChatGPT</option><option value="x">X（已下线）</option><option value="tg">Telegram</option></select>
       <select class="field sm" id="status"><option value="">全部状态</option><option value="APPROVED">成功</option><option value="DECLINED">拒付</option><option value="SETTLED">已结算</option><option value="REVERSED">已撤销</option></select>
       <div class="fsearch">⌕<input id="q" placeholder="商户 / 交易 ID / 兑换码"></div>
       <button class="btn sm" style="margin-left:auto" id="sync" data-role="operator">↻ 立即同步</button>

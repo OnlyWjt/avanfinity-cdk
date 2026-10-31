@@ -9,7 +9,7 @@
  *   blocked          被策略拦截（码仍可用）
  *   manual_review    等待管理员审核（价格保护 / 失败转人工）
  *   approved         管理员已通过，等待用户重新提交账号（Session 已过期时）
- *   funding / funded X/TG 第一阶段：准备付款 / 已准备好，等用户确认付款
+ *   funding / funded TG 第一阶段：准备付款 / 已准备好，等用户确认付款
  *   processing       已提交卡台，等待结果
  *   retrying         失败后按策略自动重试中
  *   requires_action  需要用户补交 Session 等
@@ -26,7 +26,7 @@ import { normalizeGptPublic, type GptPublicView } from '../avan/normalize.ts';
 import { HttpError, bad } from '../http.ts';
 import { getStrategy, checkGates, checkAccount, checkPrice, type Strategy, type AccountInfo } from './strategy.ts';
 import { getSetting } from './settings.ts';
-import { gptSalePrice, gptPlans, fullPlanLabel } from './catalog.ts';
+import { gptSalePrice, gptPlans, fullPlanLabel, isActiveProduct, RETIRED_PRODUCTS } from './catalog.ts';
 import { autoCard, cdkRegionArg, type BatchParams } from './batches.ts';
 
 const IN_FLIGHT = ['processing', 'funding', 'retrying', 'paid_pending_delivery'];
@@ -121,9 +121,9 @@ async function upstreamCodeFor(code: CodeRow, red: Red, forceNew = false): Promi
     id = r.items[0].cdkId; full = r.items[0].code;
   } else {
     if (!params.social) throw userErr('这个兑换码暂时无法使用，请联系客服。');
-    const r = await avan.socialGenerate(code.product, { plan: code.plan, quantity: 1, ...params.social, autoCard: autoCard() }, idem);
+    const r = await avan.socialGenerate(code.product as SocialKind, { plan: code.plan, quantity: 1, ...params.social, autoCard: autoCard() }, idem);
     id = r.list[0].id; full = r.list[0].code || null;
-    if (!full) full = (await avan.socialExport(code.product, id)).code;
+    if (!full) full = (await avan.socialExport(code.product as SocialKind, id)).code;
   }
   if (!full) throw userErr('兑换码校验没有完成，请稍后再试。');
   await q.insertIgnore('INSERT INTO upstream_codes(id, code_id, product, plan, code_enc, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, code.id, code.product, code.plan, encrypt(full), 'issued', now()]);
@@ -150,6 +150,7 @@ export async function start(rawCode: string, ctx: Ctx) {
     if (failed > 30) throw userErr('尝试次数过多，请一小时后再试。', 'RATE_LIMITED');
     throw userErr('兑换码无效，请检查是否输错（容易混淆的字符：0/O、1/I）。', 'INVALID_CODE');
   }
+  if (!isActiveProduct(code.product)) throw userErr('这个兑换码对应的会员已停止开通，请联系客服处理。', 'PRODUCT_RETIRED');
   if (!page.products[code.product]) throw userErr('这个产品暂停兑换，请稍后再来。', 'PRODUCT_CLOSED');
   if (code.status === 'revoked') { await attempt(ctx.ip, ctx.device, h, false, 'revoked'); throw userErr('这个兑换码已作废，如有疑问请联系客服。', 'REVOKED'); }
   if (code.status === 'redeemed') {
@@ -219,7 +220,7 @@ export async function start(rawCode: string, ctx: Ctx) {
 }
 
 async function newRedemption(code: CodeRow, s: Strategy, ctx: Ctx, prev: Red | undefined, f: Partial<Red>): Promise<Red> {
-  // X/TG 卡台码会永久绑定 deviceToken，同一张码必须沿用之前的设备标识
+  // TG 卡台码会永久绑定 deviceToken，同一张码必须沿用之前的设备标识
   const lastDev = prev?.device || (await q.get<{ device: string }>('SELECT device FROM redemptions WHERE code_id = ? ORDER BY created_at DESC LIMIT 1', [code.id]))?.device;
   const device = lastDev || (code.product === 'gpt' ? uuid() : hex(32));
   const id = 'r_' + hex(10);
@@ -478,7 +479,7 @@ async function applyGpt(red: Red, v: GptPublicView) {
   await upd(red.id, { ...f, status: red.status === 'retrying' ? 'retrying' : 'processing', stage: v.stage || v.orderStatus || red.stage, next_poll_at: nextPoll(red) });
 }
 
-/** X/TG 状态映射；返回 true 表示根据卡台状态恢复了流程 */
+/** TG 状态映射；返回 true 表示根据卡台状态恢复了流程 */
 async function applySocialStatus(red: Red, d: SocialPublicData, fromPreview = false): Promise<boolean> {
   const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
   const base: Partial<Red> = { error_code: d.errorCode ?? null };
@@ -594,6 +595,10 @@ export async function poll(rid: string) {
   return locked(rid, async () => {
     const red = await getRed(rid);
     if (!red || !IN_FLIGHT.includes(red.status)) return;
+    if (!isActiveProduct(red.product)) {
+      await upd(rid, { status: 'requires_action', stage: 'retired', next_poll_at: null, rule: `${RETIRED_PRODUCTS[red.product] || '产品线已下线'}，查不到结果，请到卡台后台核对是否已开通 / 已扣款`, error_msg: '这次开通需要客服处理，请联系客服。' });
+      return;
+    }
     try {
       if (red.product === 'gpt') {
         const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
@@ -655,6 +660,7 @@ export async function nudgeByUpstream(cdkId?: string, orderId?: string) {
 export async function adminApprove(rid: string) {
   const red = await getRed(rid);
   if (!red || red.status !== 'manual_review') throw bad('这条记录不在待审核状态');
+  if (!isActiveProduct(red.product)) throw bad(`${RETIRED_PRODUCTS[red.product] || '产品线已下线'}，不能再开通；可以拒绝这次兑换，或撤销兑换码后给用户换别的产品`);
   const code = (await q.get<CodeRow>('SELECT * FROM codes WHERE id = ?', [red.code_id]))!;
   await upd(rid, { review: 'approved' });
   if (red.stage === 'failed') return retry(rid);
@@ -680,6 +686,7 @@ export async function adminReject(rid: string, reason = '卖家拒绝了这次�
 export async function adminRetry(rid: string) {
   const red = await getRed(rid);
   if (!red || !['failed', 'manual_review'].includes(red.status)) throw bad('只有失败的记录可以重试');
+  if (!isActiveProduct(red.product)) throw bad(`${RETIRED_PRODUCTS[red.product] || '产品线已下线'}，不能重试`);
   if (red.product === 'gpt' && !getSession(rid)) throw bad('用户的 Session 已过期（只在内存保留 30 分钟），无法代为重试；兑换码已释放，请让用户重新兑换');
   await setCode(red.code_id, { status: 'in_use', redemption_id: rid });
   await upd(rid, { attempts: red.attempts + 1, status: 'retrying' });

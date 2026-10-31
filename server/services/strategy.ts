@@ -9,11 +9,11 @@ import { q, now, json, parse, sql } from '../db.ts';
 import { config } from '../config.ts';
 import { bad, HttpError } from '../http.ts';
 import { hex } from '../crypto.ts';
-import { isCredits } from './catalog.ts';
+import { isCredits, isActiveProduct } from './catalog.ts';
 
 export interface StrategyConfig {
   desc: string;
-  prod: ('gpt' | 'x' | 'tg')[];
+  prod: ('gpt' | 'tg')[];
   mode: 'own' | 'hosted';
   prefix: string;
   ipH: number;          // 同一 IP 每小时最多尝试
@@ -27,7 +27,7 @@ export interface StrategyConfig {
   mailAllow: string; mailBlock: string;
   priceTol: number;     // 售价上涨超过 %
   priceAct: 'block' | 'manual' | 'pass';
-  costCap: number;      // X/TG 单码成本上限（USD），生成时写入
+  costCap: number;      // TG 单码成本上限（USD），生成时写入
   failAct: 'retry' | 'release' | 'manual';
   retryN: number;
   payMode: 'shared' | 'own';  // GPT 每码独立支付（forceNewCard）
@@ -36,7 +36,7 @@ export interface StrategyConfig {
 export interface Strategy extends StrategyConfig { id: string; name: string; on: boolean; prio: number; isDefault: boolean; hits?: number }
 
 const DEFAULT_CFG: StrategyConfig = {
-  desc: '所有未指定策略的兑换码', prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: 'CDK',
+  desc: '所有未指定策略的兑换码', prod: ['gpt', 'tg'], mode: 'own', prefix: 'CDK',
   ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '',
   accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com, guerrillamail.com',
   priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', country: '',
@@ -62,7 +62,7 @@ async function validate(s: Partial<Strategy>, id?: string): Promise<StrategyConf
   const c = { ...DEFAULT_CFG, ...s } as any;
   const name = String(s.name || '').trim();
   if (!name || name.length > 40) throw bad('策略名称 1–40 字');
-  c.prod = (Array.isArray(c.prod) ? c.prod : []).filter((p: string) => ['gpt', 'x', 'tg'].includes(p));
+  c.prod = (Array.isArray(c.prod) ? c.prod : []).filter((p: string) => isActiveProduct(p));
   if (!c.prod.length) throw bad('至少选择一个适用产品');
   if (!['own', 'hosted'].includes(c.mode)) throw bad('兑换码模式不正确');
   c.prefix = String(c.prefix || '').toUpperCase().replace(/[^A-Z0-9]/g, '');

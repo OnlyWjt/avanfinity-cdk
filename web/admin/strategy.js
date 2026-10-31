@@ -1,7 +1,7 @@
 /* 兑换策略页 */
 $('#page').innerHTML = $('#page').innerHTML.replaceAll('${LAYER_OWN}', LAYER.own).replaceAll('${LAYER_GEN}', LAYER.gen).replaceAll('${LAYER_PLAT}', LAYER.platform);
 let list = [], cur = null, dirty = false, readOnly = true;
-const BLANK = { name: '新策略', desc: '', on: false, prio: 10, prod: ['gpt', 'x', 'tg'], mode: 'own', prefix: '', ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '', accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com', priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', country: '' };
+const BLANK = { name: '新策略', desc: '', on: false, prio: 10, prod: ['gpt', 'tg'], mode: 'own', prefix: '', ipH: 20, devD: 5, captcha: 3, expire: 0, timeOn: false, from: '09:00', to: '23:00', geo: '', accN: 1, accDays: 30, freeOnly: false, mailAllow: '', mailBlock: 'tempmail.com, 10minutemail.com', priceTol: 10, priceAct: 'manual', costCap: 30, failAct: 'release', retryN: 1, payMode: 'shared', country: '' };
 
 ready(async () => {
   readOnly = !can('admin');
@@ -43,7 +43,7 @@ function renderEditor() {
         `<div class="seg full" id="modeSeg"><button data-v="own" class="${own ? 'on' : ''}">自有码</button><button data-v="hosted" class="${own ? '' : 'on'}">托管码</button></div>`)}
       ${own ? rule('码前缀', '2–6 位字母或数字，例如 TB → TB-7K2Q-F9WM-3TXA', 'own', `<div class="inputgrp"><input data-k="prefix" value="${v('prefix')}" maxlength="6" style="text-transform:uppercase"><span>-XXXX</span></div>`) : ''}
       ${s.prod.includes('gpt') ? rule('GPT 结账地区', '国家代码，如 US、PH；留空用卡台默认地区。生成后这一批码的结账地区和币种固定（点数也一样）', 'gen', `<input class="field mono" data-k="country" value="${v('country')}" maxlength="2" placeholder="默认" style="text-transform:uppercase;width:90px">`) : ''}
-      ${rule('适用产品', '', 'own', `<div class="row-flex">${['gpt', 'x', 'tg'].map(p => `<label class="row-flex sm" style="margin-left:8px"><input type="checkbox" data-prod="${p}" ${s.prod.includes(p) ? 'checked' : ''}>${{ gpt: 'GPT', x: 'X', tg: 'TG' }[p]}</label>`).join('')}</div>`)}
+      ${rule('适用产品', '', 'own', `<div class="row-flex">${['gpt', 'tg'].map(p => `<label class="row-flex sm" style="margin-left:8px"><input type="checkbox" data-prod="${p}" ${s.prod.includes(p) ? 'checked' : ''}>${{ gpt: 'GPT', x: 'X', tg: 'TG' }[p]}</label>`).join('')}</div>`)}
       ${rule('优先级', '数字越小越靠前（只影响列表顺序）', 'own', num('prio', '级'))}
     </div>
     <div class="grp"><h4>② 兑换门槛 <small>用户输码时检查，还没调用卡台</small></h4>
@@ -54,8 +54,8 @@ function renderEditor() {
       ${rule('限定兑换时段', `只在 ${v('from')}–${v('to')} 之间允许兑换（服务器业务时区）`, 'own', `<div class="row-flex">${s.timeOn ? `<input class="field sm mono" data-k="from" value="${v('from')}" style="width:70px">–<input class="field sm mono" data-k="to" value="${v('to')}" style="width:70px">` : ''}${sw('timeOn')}</div>`)}
       ${rule('拦截地区', '国家代码，逗号分隔，如 CN, RU。需要部署在 Cloudflare 后面才能识别地区', 'own', `<input class="field" data-k="geo" value="${v('geo')}" placeholder="不限制">`)}
     </div>
-    <div class="grp"><h4>③ 账号规则 <small>X/TG 在卡台预检前检查，GPT 在预检后检查</small></h4>
-      ${rule('同一账号最多兑换', `在 ${v('accDays')} 天内，同一个账号（ChatGPT 按账号 ID、X/TG 按用户名）在本策略下最多兑换几次`, 'own', `<div class="row-flex" style="width:100%"><div class="inputgrp"><input data-k="accN" data-num value="${v('accN')}"><span>次</span></div><div class="inputgrp"><input data-k="accDays" data-num value="${v('accDays')}"><span>天</span></div></div>`)}
+    <div class="grp"><h4>③ 账号规则 <small>TG 在卡台预检前检查，GPT 在预检后检查</small></h4>
+      ${rule('同一账号最多兑换', `在 ${v('accDays')} 天内，同一个账号（ChatGPT 按账号 ID、Telegram 按用户名）在本策略下最多兑换几次`, 'own', `<div class="row-flex" style="width:100%"><div class="inputgrp"><input data-k="accN" data-num value="${v('accN')}"><span>次</span></div><div class="inputgrp"><input data-k="accDays" data-num value="${v('accDays')}"><span>天</span></div></div>`)}
       ${rule('只允许 Free 账号兑换（GPT）', '已经是付费会员的账号会被拒绝，避免叠加或被盗号兑换', 'own', sw('freeOnly'))}
       ${rule('邮箱域名黑名单（GPT）', '临时邮箱、一次性邮箱', 'own', `<input class="field" data-k="mailBlock" value="${v('mailBlock')}" placeholder="tempmail.com, …">`)}
       ${rule('邮箱域名白名单（GPT）', '填写后只允许这些域名，留空不限制', 'own', `<input class="field" data-k="mailAllow" value="${v('mailAllow')}" placeholder="不限制">`)}
@@ -64,8 +64,8 @@ function renderEditor() {
     <div class="grp"><h4>④ 价格保护 <small>防止报价上涨导致亏本</small></h4>
       ${rule('成本比生成时高出', 'GPT：兑换时卡台售价比生成这批码时高出多少就触发', 'own', num('priceTol', '%'))}
       ${rule('触发后', '', 'own', sel('priceAct', [['block', '拦截，提示稍后再试'], ['manual', '转人工审核'], ['pass', '放行，只记录']]))}
-      ${rule('单码成本上限（X/TG）', '生成时写进卡台的资金上限；超过直接失败，不会多扣', 'gen', `<div class="inputgrp"><input data-k="costCap" data-num value="${v('costCap')}"><span>USD</span></div>`)}
-      ${rule('报价有效期', 'GPT 约 10 分钟，X / TG 30 分钟', 'platform', '<span class="xs faint">不可修改</span>')}
+      ${rule('单码成本上限（TG）', '生成时写进卡台的资金上限；超过直接失败，不会多扣', 'gen', `<div class="inputgrp"><input data-k="costCap" data-num value="${v('costCap')}"><span>USD</span></div>`)}
+      ${rule('报价有效期', 'GPT 约 10 分钟，TG 30 分钟', 'platform', '<span class="xs faint">不可修改</span>')}
     </div>
     <div class="grp"><h4>⑤ 失败处理</h4>
       ${rule('支付失败后', own ? '自有码可以由后端自动换一张新的卡台码重试（GPT 需要用户 Session 仍在 30 分钟内）' : '托管码失败后卡台释放这张码，只能让用户自己重新兑换', own ? 'own' : 'platform',

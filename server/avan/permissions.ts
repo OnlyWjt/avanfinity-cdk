@@ -10,14 +10,12 @@ export interface AvanPerm { key: string; what: string; check?: () => Promise<unk
 export const AVAN_PERMS: AvanPerm[] = [
   { key: 'cdk:read', what: 'GPT CDK 售价和库存', check: () => avan.gptOffers() },
   { key: 'gpt:read', what: 'GPT 套餐报价（点数成本估算）', check: () => avan.gptPlans() },
-  { key: 'x-direct:read', what: 'X 套餐和服务费', check: () => avan.socialPlans('x') },
   { key: 'tg-direct:read', what: 'Telegram 套餐和服务费', check: () => avan.socialPlans('tg') },
-  { key: 'products:read', what: 'X / TG 付款通道的卡产品列表', check: () => avan.products() },
+  { key: 'products:read', what: 'Telegram 付款通道的卡产品列表', check: () => avan.products() },
   { key: 'cards:read', what: '同步支付流水', check: () => avan.allTransactions(1, 1) },
   { key: 'account:read', what: '显示卡台余额', check: () => avan.balance() },
   { key: 'cdk:purchase', what: '生成 GPT CDK（自有码在兑换时生成）' },
   { key: 'gpt:write', what: '买家重新提交 ChatGPT Session' },
-  { key: 'x-direct:write', what: '生成、导出、撤销 X CDK' },
   { key: 'tg-direct:write', what: '生成、导出、撤销 Telegram CDK' },
 ];
 export const AVAN_PERM_KEYS = AVAN_PERMS.map(p => p.key);

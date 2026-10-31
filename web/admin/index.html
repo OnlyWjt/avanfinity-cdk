@@ -33,7 +33,7 @@
 
     <section class="card glass s8">
       <h3>实时兑换
-        <div class="seg" id="feedSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button><button data-v="attention">需处理</button></div>
+        <div class="seg" id="feedSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="tg">Telegram</button><button data-v="attention">需处理</button></div>
       </h3>
       <div id="feed"></div>
       <a class="link mt12" style="display:inline-block" href="orders.html">查看全部兑换记录 →</a>
@@ -81,8 +81,8 @@ async function load() {
     $('#attnText').innerHTML = `<b class="c-warn">${attn} 笔兑换需要关注</b>：${parts.join('、')}。`;
     $('#attn').classList.remove('hidden');
   }
-  const info = { gpt: 'Go · Plus · Pro', x: 'Premium · Premium+', tg: 'Premium 3 · 6 · 12 月' };
-  $('#prods').innerHTML = ['gpt', 'x', 'tg'].map(k => `<a class="card glass" href="cdks.html?p=${k}" style="text-decoration:none">
+  const info = { gpt: 'Go · Plus · Pro · 点数', tg: 'Premium 3 · 6 · 12 月' };
+  $('#prods').innerHTML = ['gpt', 'tg'].map(k => `<a class="card glass" href="cdks.html?p=${k}" style="text-decoration:none">
     <div class="row-flex mb12">${PIC[k].replace('pic', 'pic lg')}<div><b style="font-size:15px">${PNAME[k]}</b><div class="xs muted">${info[k]}</div></div></div>
     <div class="minis"><div><small>未兑换</small><strong>${o.unused[k] || 0}</strong></div><div><small>今日兑换</small><strong>${o.todayBy[k] || 0}</strong></div><div><small>&nbsp;</small><strong class="sm"><span class="link">管理 →</span></strong></div></div></a>`).join('');
   $('#stratN').textContent = `${o.strategies.filter(x => x.on).length} 条启用中`;

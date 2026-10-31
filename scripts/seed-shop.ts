@@ -30,7 +30,7 @@ const existing = (await api('GET', '/api/admin/shop/products')).list;
 const items = [
   { product: 'gpt', plan: 'plus', title: 'ChatGPT Plus 月卡', subtitle: '官方开通 · 自动关闭续费', badge: '热销', price: '168', agentPrice: '150', description: '购买后获得兑换码，打开兑换页粘贴 ChatGPT 会话即可开通。\n开通后自动关闭续费，到期不会扣费。', sort: 1 },
   { product: 'gpt', plan: 'go', title: 'ChatGPT Go 月卡', subtitle: '入门套餐', price: '45', agentPrice: '38', sort: 2 },
-  { product: 'x', plan: 'premium_3m', title: 'X Premium 3 个月', subtitle: '官方赠送方式开通', price: '268', agentPrice: '240', stockLimit: 20, sort: 3 },
+  { product: 'tg', plan: 'premium_6m', title: 'Telegram Premium 6 个月', subtitle: '填用户名即可', price: '198', agentPrice: '178', stockLimit: 20, sort: 3 },
   { product: 'tg', plan: 'premium_3m', title: 'Telegram Premium 3 个月', subtitle: '填用户名即可', badge: '新品', price: '128', agentPrice: '110', sort: 4 },
 ];
 let n = 0;

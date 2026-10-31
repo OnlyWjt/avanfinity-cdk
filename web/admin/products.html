@@ -15,7 +15,7 @@
   </aside>
   <section class="card glass p0" style="min-width:0">
     <div class="toolbar">
-      <div class="seg" id="prodSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X</button><button data-v="tg">Telegram</button></div>
+      <div class="seg" id="prodSeg"><button class="on" data-v="">全部</button><button data-v="gpt">ChatGPT</button><button data-v="x">X（已下线）</button><button data-v="tg">Telegram</button></div>
       <div style="margin-left:auto" class="row-flex"><a class="btn" href="/shop/" target="_blank">打开商城 ↗</a><button class="btn primary" id="add" data-role="admin">＋ 新建商品</button></div>
     </div>
     <div class="tblwrap"><table class="tbl stack">
@@ -98,17 +98,22 @@ function render() {
   $('#tbody').innerHTML = list.map(p => {
     const s = STRATS.find(x => x.id === p.strategy_id), plan = planInfo(p.product, p.plan);
     return `<tr class="click" data-id="${p.id}">
-      <td class="t"><div class="row-flex">${PICXS[p.product]}<div><b>${esc(p.title)}</b>${p.badge ? ` <span class="badge acc">${esc(p.badge)}</span>` : ''}<p>${esc(p.subtitle || '')}</p></div></div></td>
+      <td class="t"><div class="row-flex">${PICXS[p.product]}<div><b>${esc(p.title)}</b>${p.badge ? ` <span class="badge acc">${esc(p.badge)}</span>` : ''}${retired(p) ? ' <span class="badge idle">已停售 · X 已下线</span>' : ''}<p>${esc(p.subtitle || '')}</p></div></div></td>
       <td class="xs">${p.category_id ? esc(catPath(p.category_id)) : '<span class="faint">未分类</span>'}</td>
       <td class="xs">${esc(plan?.label || p.plan)}<div class="faint">${esc(s?.name || '策略已删除')}</div></td>
       <td class="num"><b>${yuan(p.price)}</b></td><td class="num">${yuan(p.agent_price)}</td>
-      ${(() => { const c = costCny(p); const m = c == null ? null : p.price - c; return `<td class="num muted" title="按卡台售价 × 汇率估算；X / TG 按实际扣款，下单后才知道">${c == null ? '—' : yuan(c)}</td><td class="num ${m == null ? 'faint' : m < 0 ? 'c-bad' : 'c-ok'}" title="零售价 − 成本（不含代理分成）">${m == null ? '—' : (m < 0 ? '亏 ' : '') + yuan(Math.abs(m))}</td>`; })()}
+      ${(() => { const c = costCny(p); const m = c == null ? null : p.price - c; return `<td class="num muted" title="按卡台售价 × 汇率估算；Telegram 按实际扣款，下单后才知道">${c == null ? '—' : yuan(c)}</td><td class="num ${m == null ? 'faint' : m < 0 ? 'c-bad' : 'c-ok'}" title="零售价 − 成本（不含代理分成）">${m == null ? '—' : (m < 0 ? '亏 ' : '') + yuan(Math.abs(m))}</td>`; })()}
       <td class="num">${p.stock_limit == null ? '<span class="faint">不限</span>' : `${p.available}<span class="faint"> / ${p.stock_limit}</span>`}${p.reserved ? `<div class="xs faint">待付占用 ${p.reserved}</div>` : ''}</td>
       <td class="num">${p.sold}</td>
-      <td><button class="sw ${p.enabled ? 'on' : ''}" data-sw="${p.id}" data-role="admin"></button></td>
+      <td>${retired(p) ? '<span class="xs faint">已停售</span>' : `<button class="sw ${p.enabled ? 'on' : ''}" data-sw="${p.id}" data-role="admin"></button>`}</td>
       <td class="acts"><button class="iconbtn">›</button></td></tr>`;
   }).join('') || `<tr><td colspan="11"><div class="empty"><div class="ic">▦</div>这里还没有商品<br><button class="link" onclick="edit()" data-role="admin">新建第一个商品 →</button></div></td></tr>`;
-  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.closest('[data-sw]')) return; edit(LIST.find(p => p.id === tr.dataset.id)); });
+  $$('#tbody tr[data-id]').forEach(tr => tr.onclick = e => {
+    if (e.target.closest('[data-sw]')) return;
+    const p = LIST.find(x => x.id === tr.dataset.id);
+    if (retired(p)) return toast('X Premium 已在卡台下线：这个商品买家已经看不到，也不能再编辑或上架', 'info');
+    edit(p);
+  });
   $$('[data-sw]').forEach(b => b.onclick = async () => {
     const p = LIST.find(x => x.id === b.dataset.sw);
     if (p.enabled && !(await confirmBox({ title: `下架「${esc(p.title)}」？`, body: '下架后买家看不到这个商品；已经下单的订单不受影响，照常发货。', ok: '下架' }))) return;
@@ -116,11 +121,14 @@ function render() {
   });
   applyRoles();
 }
-/** 卡台成本折合人民币（分）；X / TG 下单时才知道实际扣款，返回 null */
+/** 已下线产品线（X）的商品：只显示，不能编辑、上架 */
+const retired = p => p.product === 'x';
+/** 卡台成本折合人民币（分）；Telegram 下单时才知道实际扣款，返回 null */
 /** 自定义点数 credits_N 不在目录列表里：标签和成本按最接近的固定面额估算 */
 const isCr = k => /^credits_\d+$/.test(k || '');
 function planInfo(product, key) {
-  const p = CAT[product].find(x => x.key === key);
+  // 下线的产品线（X）没有报价目录
+  const p = (CAT[product] || []).find(x => x.key === key);
   if (p || product !== 'gpt' || !isCr(key)) return p;
   const n = Number(key.slice(8)), t = CAT.gpt.filter(x => x.credits && x.cost != null).sort((a, b) => Math.abs(Number(a.key.slice(8)) - n) - Math.abs(Number(b.key.slice(8)) - n))[0];
   return { key, label: `ChatGPT ${n.toLocaleString('en-US')} 点数`, credits: true, cost: t ? Math.ceil(((t.cost - (t.fee || 0)) / Number(t.key.slice(8)) * n + (t.fee || 0)) * 100) / 100 : null, stock: null };
@@ -129,11 +137,11 @@ const costCny = p => { if (p.product !== 'gpt') return null; const c = planInfo(
 const form = p => ({ product: p.product, plan: p.plan, title: p.title, subtitle: p.subtitle, description: p.description, badge: p.badge, price: (p.price / 100).toFixed(2), agentPrice: (p.agent_price / 100).toFixed(2), strategyId: p.strategy_id, stockLimit: p.stock_limit ?? '', maxPerOrder: p.max_per_order, sort: p.sort, enabled: !!p.enabled, categoryId: p.category_id ?? '' });
 
 function edit(p) {
-  const v = p ? form(p) : { product: P || 'gpt', plan: '', title: '', subtitle: '', description: '', badge: '', price: '', agentPrice: '', strategyId: '', stockLimit: '', maxPerOrder: 10, sort: 0, enabled: true, categoryId: CSEL && CSEL !== 'none' ? +CSEL : '' };
+  const v = p ? form(p) : { product: ['gpt', 'tg'].includes(P) ? P : 'gpt', plan: '', title: '', subtitle: '', description: '', badge: '', price: '', agentPrice: '', strategyId: '', stockLimit: '', maxPerOrder: 10, sort: 0, enabled: true, categoryId: CSEL && CSEL !== 'none' ? +CSEL : '' };
   const d = sheet({
     title: p ? '编辑商品' : '新建商品', sub: p ? `已售 ${p.sold}` : '买家付款后自动生成兑换码发货',
     body: `<div class="form">
-      <div class="f"><label>产品</label><div class="seg" id="ep"><button data-v="gpt">ChatGPT</button><button data-v="x">X Premium</button><button data-v="tg">Telegram</button></div></div>
+      <div class="f"><label>产品</label><div class="seg" id="ep"><button data-v="gpt">ChatGPT</button><button data-v="tg">Telegram</button></div></div>
       <div class="f"><label>套餐</label><select class="field" id="eplan"></select>
         <input class="field mono mt8 hidden" id="ecr" inputmode="numeric" placeholder="点数，250–9999999" aria-label="自定义点数"><div class="help" id="costHelp"></div></div>
       <div class="f"><label>发货策略 <small>生成兑换码时使用</small></label><select class="field" id="estr"></select></div>

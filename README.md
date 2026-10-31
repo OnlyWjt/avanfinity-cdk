@@ -1,6 +1,6 @@
 # CDK 兑换系统
 
-对接 Avanfinity 卡台的 CDK 兑换系统：生成兑换码 → 买家在兑换页兑换 → 系统按「兑换策略」检查后调用卡台开通 ChatGPT / X Premium / Telegram Premium。自带商城（卡网）：在线支付、自动发货、优惠券、买家账户、代理分销。
+对接 Avanfinity 卡台的 CDK 兑换系统：生成兑换码 → 买家在兑换页兑换 → 系统按「兑换策略」检查后调用卡台开通 ChatGPT / Telegram Premium（X Premium 已在卡台下线，见下文）。自带商城（卡网）：在线支付、自动发货、优惠券、买家账户、代理分销。
 
 - **管理后台** `/admin/`：总览、CDK 管理、生成、兑换记录（审核 / 重试 / 释放）、兑换策略、售价与利润、成功率分析、支付流水、Webhook、设置、主题与品牌
 - **兑换页** `/`（或 `/redeem`）、**凭证查询** `/receipt.html`、**商城** `/shop/`
@@ -38,10 +38,10 @@ npm start
 
 1. **设置 → 卡台 API**：填卡台地址、App-Id、App-Secret，点「测试连接」
 2. 卡台控制台里给 API Key 开权限（少一个对应的功能就用不了，「测试连接」会逐个检查读权限），并把服务器出口 IP 加入白名单：
-   - 读：`cdk:read`、`gpt:read`、`x-direct:read`、`tg-direct:read`、`products:read`、`cards:read`、`account:read`（显示卡台余额）
-   - 写：`cdk:purchase`、`gpt:write`、`x-direct:write`、`tg-direct:write`
+   - 读：`cdk:read`、`gpt:read`、`tg-direct:read`、`products:read`、`cards:read`、`account:read`（显示卡台余额）
+   - 写：`cdk:purchase`、`gpt:write`、`tg-direct:write`
 3. **Webhook**：把页面上的接收地址填到卡台控制台，把卡台给的 `whsec_…` 签名密钥填回来，点「发送自检事件」
-4. **设置 → X / Telegram 付款通道**：选一个卡产品（X/TG 兑换时卡台自动开卡付款）
+4. **设置 → Telegram 付款通道**：选一个卡产品（TG 兑换时卡台自动开卡付款）
 5. **兑换策略**：默认策略是自有码；按需新建，比如「淘宝渠道 · 严格」
 6. **生成 CDK**，把码发给买家
 
@@ -52,6 +52,15 @@ npm start
 - **健康检查**：`GET /healthz`，正常返回 `{"ok":true}`
 - **备份**：SQLite 用 `npm run backup`（在线快照，不要直接复制运行中的数据库文件）；PostgreSQL / MySQL 用 `pg_dump` / `mysqldump`。命令见 docs/deploy.md
 - **命令行建管理员 / 重置密码**：`npm run admin:create -- 邮箱 密码`（Docker：`docker compose exec app npm run admin:create -- 邮箱 密码`）
+
+## X Premium 已下线
+
+X Premium 已在卡台下线（2026-10），系统不再生成、兑换、上架、出售 X：
+
+- 已有的 X 兑换记录、商城订单、统计照常能查；后台「CDK 管理 / 兑换记录 / 支付流水」的筛选里标为「X（已下线）」
+- 没兑换的 X 码：买家输入时提示「已停止开通，请联系客服」。CDK 管理页会显示还剩几张，建议撤销后给买家换别的产品
+- 商城里的 X 商品自动不再显示，后台商品列表标「已停售」
+- 还在进行中的 X 兑换会转成「需要客服处理」：卡台已经查不到结果，请到卡台后台核对是否已开通 / 已扣款
 
 ## 通知
 
@@ -113,11 +122,11 @@ npm start
 ## 兑换策略能做什么
 
 - **我方控制**（随时可改）：IP / 设备频率、码有效期、兑换时段、拦截地区、同一账号限兑次数、只允许 Free 账号、邮箱域名黑白名单、价格保护（拦截 / 转人工 / 放行）、失败自动重试或转人工
-- **生成时写入批次**：X/TG 单码成本上限、GPT 每码独立支付、GPT 结账地区
+- **生成时写入批次**：TG 单码成本上限、GPT 每码独立支付、GPT 结账地区
 - **卡台强制**（改不了）：报价有效期、报价频率、一次性令牌、账号资格判定
 
 说明：
-- 「同一账号」对 ChatGPT 按 Session 里的账号 ID 计算（只存哈希）；对 X/TG 按用户名
+- 「同一账号」对 ChatGPT 按 Session 里的账号 ID 计算（只存哈希）；对 Telegram 按用户名
 - 用户粘贴的 ChatGPT Session 只放在内存里 30 分钟（用于自动重试 / 审核通过后继续），不写入数据库
 - 拦截地区需要部署在 Cloudflare 后面（读取 `CF-IPCountry`）
 
@@ -145,7 +154,7 @@ TEST_DATABASE_URL=mysql://user:pass@localhost:3306/cdk_test npm test      # 在 
 npm run typecheck
 ```
 
-模拟卡台的失败场景：GPT Session 邮箱含 `decline` → 拒付；含 `expired` → Session 无效；`"plan":"plus"` → 已是会员；X/TG 用户名含 `prem` → 已是会员。模拟卡台同时提供四种支付网关（易支付 / 支付宝 / 微信 / TronGrid），密钥见 `GET http://localhost:8090/mock/pay/keys`，收银台上点「模拟支付成功」即可走完付款回调。
+模拟卡台的失败场景：GPT Session 邮箱含 `decline` → 拒付；含 `expired` → Session 无效；`"plan":"plus"` → 已是会员；TG 用户名含 `prem` → 已是会员。模拟卡台同时提供四种支付网关（易支付 / 支付宝 / 微信 / TronGrid），密钥见 `GET http://localhost:8090/mock/pay/keys`，收银台上点「模拟支付成功」即可走完付款回调。
 
 ## 接入真实卡台前需要核对
 

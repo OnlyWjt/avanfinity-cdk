@@ -31,8 +31,8 @@
       <div class="xs faint mt12" id="serverInfo"></div>
     </section>
     <section class="card glass s7">
-      <h3>X / Telegram 付款通道</h3>
-      <p class="sm muted mb12">X / TG 兑换时由卡台的付款通道完成付款。这里只选择通道，付款细节不会出现在后台和兑换页。</p>
+      <h3>Telegram 付款通道</h3>
+      <p class="sm muted mb12">Telegram 兑换时由卡台的付款通道完成付款。这里只选择通道，付款细节不会出现在后台和兑换页。</p>
       <div class="form">
         <div class="f"><label>付款通道</label><div class="row-flex"><select class="field" id="productCode"><option value="">加载中…</option></select><button class="btn" id="loadProducts">刷新</button></div></div>
         <div class="two"><div class="f"><label>付款人名</label><input class="field mono" id="firstName"></div><div class="f"><label>付款人姓</label><input class="field mono" id="lastName"></div></div>
@@ -58,7 +58,7 @@
       <h3>兑换页 <a class="link" href="/" target="_blank">打开 ↗</a></h3>
       <div class="form">
         <div class="f"><label>页面说明</label><textarea class="field" id="rDesc" style="font-family:var(--sans);font-size:13px;min-height:70px" maxlength="300"></textarea><div class="help">标语、品牌名在「主题与品牌」里修改</div></div>
-        <div class="f"><label>开放的产品</label><div class="row-flex"><label class="row-flex"><input type="checkbox" id="pGpt"> ChatGPT</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" id="pX"> X Premium</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" id="pTg"> Telegram</label></div></div>
+        <div class="f"><label>开放的产品</label><div class="row-flex"><label class="row-flex"><input type="checkbox" id="pGpt"> ChatGPT</label><label class="row-flex" style="margin-left:14px"><input type="checkbox" id="pTg"> Telegram</label></div></div>
         <div class="f"><label>客服联系方式 <small>显示在兑换页「帮助」和失败提示里</small></label><input class="field" id="rContact" maxlength="100" placeholder="例如 Telegram @your_support"></div>
         <div class="toggle"><div>维护模式<p>开启后兑换页停止新的兑换</p></div><button class="sw" id="rMaint"></button></div>
         <div class="f"><label>维护提示</label><input class="field" id="rMaintMsg" maxlength="200"></div>
@@ -155,7 +155,7 @@ ready(async () => {
   $('#tgToken').placeholder = S.notify.tgTokenSet ? '已保存（不修改请留空）' : '123456:ABC-…';
   $('#tgState').innerHTML = S.notify.tgTokenSet && S.notify.tgChatId ? '<span class="badge ok">已配置</span>' : '<span class="badge idle">未配置</span>';
   const r = S.redeem;
-  $('#rDesc').value = r.desc; $('#pGpt').checked = r.products.gpt; $('#pX').checked = r.products.x; $('#pTg').checked = r.products.tg;
+  $('#rDesc').value = r.desc; $('#pGpt').checked = r.products.gpt; $('#pTg').checked = r.products.tg;
   $('#rContact').value = r.contact; $('#rMaint').classList.toggle('on', r.maintenance); $('#rMaintMsg').value = r.maintenanceMsg;
   $('#tsKey').value = r.turnstileSiteKey; $('#tsSet').textContent = r.turnstileSecretSet ? '已保存' : '未设置';
   swInit($('#rMaint'));
@@ -204,7 +204,7 @@ $('#saveNotify').onclick = e => run(e.currentTarget, '保存中…', async () =>
 $('#testNotify').onclick = e => run(e.currentTarget, '发送中…', async () => { await saveNotify(); await POST('/api/admin/settings/notify/test'); toast('测试消息已发送，请查看 Telegram'); });
 $('#saveRedeem').onclick = e => run(e.currentTarget, '保存中…', async () => {
   await PUT('/api/admin/settings/redeem', { desc: $('#rDesc').value, contact: $('#rContact').value, maintenance: $('#rMaint').classList.contains('on'), maintenanceMsg: $('#rMaintMsg').value,
-    products: { gpt: $('#pGpt').checked, x: $('#pX').checked, tg: $('#pTg').checked }, turnstileSiteKey: $('#tsKey').value.trim(), ...($('#tsSecret').value && { turnstileSecret: $('#tsSecret').value.trim() }) });
+    products: { gpt: $('#pGpt').checked, tg: $('#pTg').checked }, turnstileSiteKey: $('#tsKey').value.trim(), ...($('#tsSecret').value && { turnstileSecret: $('#tsSecret').value.trim() }) });
   $('#tsSecret').value = ''; toast('兑换页设置已保存');
 });
 

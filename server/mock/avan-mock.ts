@@ -22,7 +22,7 @@ const WEBHOOK_SECRET = process.env.MOCK_WEBHOOK_SECRET || 'whsec_' + '0'.repeat(
 const SPEED = Number(process.env.MOCK_SPEED || 1); // 状态推进速度倍率
 
 const app = new Hono();
-// MOCK_DENY=逗号分隔的接口路径（如 /x-direct/plans,/balance）：这些接口返回 403，模拟 API Key 缺权限
+// MOCK_DENY=逗号分隔的接口路径（如 /tg-direct/plans,/balance）：这些接口返回 403，模拟 API Key 缺权限
 const DENY = (process.env.MOCK_DENY || '').split(',').map(x => x.trim()).filter(Boolean);
 if (DENY.length) app.use('/api/v1/*', async (c, next) => (DENY.some(p => c.req.path === '/api/v1' + p) ? c.json({ code: 403, error: 'API 权限不足' }, 403) : next()));
 const hexs = (n: number) => randomBytes(n).toString('hex');
@@ -90,10 +90,12 @@ app.get('/api/v1/gpt-direct/cdk-offers', c => c.json(ok0({ offers: Object.entrie
 app.get('/api/v1/gpt-direct/plans', c => c.json(ok0({ version: 7, externalCardServiceFee: '1.00',
   plans: [...Object.keys(GPT_PRICES), ...CREDIT_TIERS].map(k => { const usd = chargeUsd(k); return { key: k, label: gptLabel(k), currency: 'usd', enabled: !!usd, serviceFeeUsdMinor: 80, customerServiceFee: '0.80', expectedAmountMinor: usd ? Math.round(Number(usd) * 100) : null, minAmountMinor: null, maxAmountMinor: null }; }),
   checkoutCountries: [{ country: 'US', currency: 'USD' }, { country: 'PH', currency: 'PHP' }], batchConcurrencyByCountry: { US: 8, PH: 3 }, cdkRegionSelectionEnabled: cdkMock.regionSelection })));
+/** 卡台只剩 Telegram（X Premium 已下线）：X 的接口不再注册，调用会 404 */
+const SOCIAL_KINDS: ('x' | 'tg')[] = ['tg'];
 const X_PLANS = [['premium_3m', 'Premium 3 个月', 'premium', 3, '1.00'], ['premium_6m', 'Premium 6 个月', 'premium', 6, '1.20'], ['premium_12m', 'Premium 12 个月', 'premium', 12, '1.50'], ['premium_plus_3m', 'Premium+ 3 个月', 'premium_plus', 3, '1.50'], ['premium_plus_6m', 'Premium+ 6 个月', 'premium_plus', 6, '2.00'], ['premium_plus_12m', 'Premium+ 12 个月', 'premium_plus', 12, '2.50']] as const;
 const TG_PLANS = [['premium_3m', 'Premium 3 个月', 'premium', 3, '0.60'], ['premium_6m', 'Premium 6 个月', 'premium', 6, '0.80'], ['premium_12m', 'Premium 12 个月', 'premium', 12, '1.00']] as const;
 const OFFICIAL: Record<string, number> = { 'x.premium_3m': 2400, 'x.premium_6m': 4600, 'x.premium_12m': 8400, 'x.premium_plus_3m': 6200, 'x.premium_plus_6m': 11800, 'x.premium_plus_12m': 22900, 'tg.premium_3m': 1199, 'tg.premium_6m': 1599, 'tg.premium_12m': 2899 };
-for (const K of ['x', 'tg'] as const) app.get('/api/v1/' + K + '-direct/plans', c => {
+for (const K of SOCIAL_KINDS) app.get('/api/v1/' + K + '-direct/plans', c => {
   const list = K === 'x' ? X_PLANS : TG_PLANS;
   return c.json(ok200({ paymentsEnabled: true, plans: list.map(([key, label, tier, months, fee]) => ({ key, label, tier, months, enabled: true, serviceFee: fee, pricingVersion: 14 })) }));
 });
@@ -222,7 +224,7 @@ app.post('/mock/cdk', async c => { Object.assign(cdkMock, await c.req.json()); r
 
 /* ---------------- X / TG CDK ---------------- */
 const issuerItem = (s: SocialCdk, withCode = false) => ({ id: s.id, plan: s.plan, status: s.status, ...(withCode ? { code: s.code } : {}), codePrefix: s.code.slice(0, 9), recipient: s.recipient, maxWalletDebitUsd: s.maxWalletDebitUsd, maxOfficialAmountMinor: s.maxOfficialAmountMinor, currency: s.currency, fundingAmountUsd: s.fundingAmountUsd, serviceFee: s.serviceFee, pricingVersion: 14, totalWalletDebitUsd: (Number(s.fundingAmountUsd) + Number(s.serviceFee) + 0.9).toFixed(4), cardId: null, fundingDispatched: ['funding', 'funded', 'paying', 'completed'].includes(s.status), paymentDispatched: ['paying', 'completed'].includes(s.status), fundingFeeUsd: '0.4000', openFeeUsd: '0.5000', createdAt: s.createdAt });
-for (const K of ['x', 'tg'] as const) app.post('/api/v1/' + K + '-direct/cdks/generate', async c => {
+for (const K of SOCIAL_KINDS) app.post('/api/v1/' + K + '-direct/cdks/generate', async c => {
   const kind = K as 'x' | 'tg', key = kind + idemKey(c);
   if (idem.has(key)) return c.json(ok200({ list: idem.get(key), replayed: true }));
   const b = await c.req.json();
@@ -237,9 +239,9 @@ for (const K of ['x', 'tg'] as const) app.post('/api/v1/' + K + '-direct/cdks/ge
   idem.set(key, list);
   return c.json(ok200({ list, replayed: false }));
 });
-for (const K of ['x', 'tg'] as const) app.get('/api/v1/' + K + '-direct/cdks', c => c.json(ok200({ list: [...social.values()].filter(s => s.kind === K).slice(-100).reverse().map(s => issuerItem(s)) })));
-for (const K of ['x', 'tg'] as const) app.get('/api/v1/' + K + '-direct/cdks/:id/export', c => { const s = social.get(c.req.param('id')!); return s ? c.json(ok200({ id: s.id, code: s.code })) : err(c, 404, 'not found'); });
-for (const K of ['x', 'tg'] as const) app.post('/api/v1/' + K + '-direct/cdks/:id/revoke', c => {
+for (const K of SOCIAL_KINDS) app.get('/api/v1/' + K + '-direct/cdks', c => c.json(ok200({ list: [...social.values()].filter(s => s.kind === K).slice(-100).reverse().map(s => issuerItem(s)) })));
+for (const K of SOCIAL_KINDS) app.get('/api/v1/' + K + '-direct/cdks/:id/export', c => { const s = social.get(c.req.param('id')!); return s ? c.json(ok200({ id: s.id, code: s.code })) : err(c, 404, 'not found'); });
+for (const K of SOCIAL_KINDS) app.post('/api/v1/' + K + '-direct/cdks/:id/revoke', c => {
   idemKey(c); const s = social.get(c.req.param('id')!); if (!s) return err(c, 404, 'not found');
   if (!['unused', 'prepared', 'preparing', 'review_required', 'ineligible', 'revoked'].includes(s.status)) return err(c, 409, '已派发资金操作，不能撤销', 'CDK_NOT_REVOCABLE');
   s.status = 'revoked'; return c.json(ok200(issuerItem(s)));
@@ -251,13 +253,13 @@ function socialFind(K: string, b: any) {
   if (!s || s.kind !== K) return null;
   return s;
 }
-for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/preview', async c => {
+for (const K of SOCIAL_KINDS) app.post('/api/public/' + K + '-cdk/preview', async c => {
   const b = await c.req.json(); const s = socialFind(K, b);
   if (!s) return err(c, 404, '兑换码不存在');
   if (s.device && s.device !== b.deviceToken) return err(c, 409, '兑换码已绑定其他设备', 'DEVICE_MISMATCH');
   return c.json(ok200(pubView(s)));
 });
-for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/preflight', async c => {
+for (const K of SOCIAL_KINDS) app.post('/api/public/' + K + '-cdk/preflight', async c => {
   const b = await c.req.json(); const s = socialFind(K, b);
   if (!s) return err(c, 404, '兑换码不存在');
   if (s.status === 'revoked') return err(c, 409, '兑换码已撤销', 'CDK_REVOKED');
@@ -271,7 +273,7 @@ for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/prefli
   if (s.amountMinor > s.maxOfficialAmountMinor) { s.status = 'failed_precharge'; s.errorCode = 'official_amount_exceeds_cap'; s.message = '官方金额超过发行者授权上限'; }
   return c.json(ok200(pubView(s)));
 });
-for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/redeem', async c => {
+for (const K of SOCIAL_KINDS) app.post('/api/public/' + K + '-cdk/redeem', async c => {
   const b = await c.req.json(); const s = socialFind(K, b);
   if (!s) return err(c, 404, '兑换码不存在');
   if (s.device !== b.deviceToken || s.clientRequestId !== b.clientRequestId) return err(c, 409, '绑定信息不匹配', 'BINDING_MISMATCH');
@@ -288,7 +290,7 @@ for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/redeem
   }
   return c.json(ok200(pubView(s)));
 });
-for (const K of ['x', 'tg'] as const) app.post('/api/public/' + K + '-cdk/result', async c => {
+for (const K of SOCIAL_KINDS) app.post('/api/public/' + K + '-cdk/result', async c => {
   const b = await c.req.json(); const s = socialFind(K, b);
   if (!s || s.device !== b.deviceToken) return err(c, 404, '找不到兑换');
   return c.json(ok200(pubView(s)));

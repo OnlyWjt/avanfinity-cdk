@@ -82,18 +82,18 @@ export async function insights(days: number) {
 
 export async function pricing() {
   const retail = getSetting('retail'), fx = getSetting('fx').usdCny, defaults = getSetting('socialDefaults');
-  const [offers, xp, tp] = await Promise.all([gptOffers(), socialPlans('x'), socialPlans('tg')]);
+  const [offers, tp] = await Promise.all([gptOffers(), socialPlans('tg')]);
   const unused = Object.fromEntries((await q.all<any>("SELECT CONCAT(product, '.', plan) k, COUNT(*) n FROM codes WHERE status = 'unused' GROUP BY product, plan")).map(r => [r.k, r.n]));
   const sold30 = Object.fromEntries((await q.all<any>("SELECT CONCAT(product, '.', plan) k, COUNT(*) n, AVG(CAST(cost_usd AS DECIMAL(20,6))) avg FROM redemptions WHERE status = 'completed' AND completed_at >= ? GROUP BY product, plan", [startOfDay(29)])).map(r => [r.k, r]));
   const gpt = planKeys('gpt').map(k => {
     const o = offers.val?.find(x => x.plan === k);
     return { key: k, label: fullPlanLabel('gpt', k), status: o?.pricingStatus ?? null, enabled: !!o?.enabled, cost: o?.salePrice ? Number(o.salePrice) : null, stock: o?.stock ?? null, unused: unused[`gpt.${k}`] || 0, retail: retail[`gpt.${k}`] ?? null, sold30: sold30[`gpt.${k}`]?.n || 0 };
   });
-  const social = (kind: 'x' | 'tg', r: typeof xp) => planKeys(kind).map(k => {
+  const social = (kind: 'tg', r: typeof tp) => planKeys(kind).map(k => {
     const p = r.val?.plans.find(x => x.key === k), d = defaults[`${kind}.${k}`];
     const avg = sold30[`${kind}.${k}`]?.avg;
     return { key: k, label: fullPlanLabel(kind, k), enabled: p?.enabled ?? null, serviceFee: p ? Number(p.serviceFee) : null, pricingVersion: p?.pricingVersion ?? null,
       defaults: d, costRef: avg ?? (d ? Number(d.fundingAmountUsd) + (p ? Number(p.serviceFee) : 0) : null), unused: unused[`${kind}.${k}`] || 0, retail: retail[`${kind}.${k}`] ?? null, sold30: sold30[`${kind}.${k}`]?.n || 0 };
   });
-  return { fx, gpt, x: social('x', xp), tg: social('tg', tp), errors: [offers.error, xp.error, tp.error].filter(Boolean), stale: !!(offers.stale || xp.stale || tp.stale) };
+  return { fx, gpt, tg: social('tg', tp), errors: [offers.error, tp.error].filter(Boolean), stale: !!(offers.stale || tp.stale) };
 }

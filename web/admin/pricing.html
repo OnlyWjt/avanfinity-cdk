@@ -15,12 +15,10 @@
     <div class="tblwrap"><table class="tbl"><thead><tr><th>套餐</th><th>报价状态</th><th class="num">成本 <small class="faint">USD</small></th><th class="num">平台库存</th><th class="num">我的未兑换</th><th class="num">近 30 天兑换</th><th style="width:150px">我的零售价</th><th class="num">单张利润</th></tr></thead><tbody id="gpt"></tbody></table></div>
   </section>
   <div class="grid">
-    <section class="card glass p0 s6"><div class="head"><h3>X Premium</h3></div>
-      <table class="tbl"><thead><tr><th>套餐</th><th class="num">参考成本 <small class="faint">USD</small></th><th style="width:120px">零售价</th><th class="num">利润</th><th></th></tr></thead><tbody id="x"></tbody></table></section>
-    <section class="card glass p0 s6"><div class="head"><h3>Telegram Premium</h3></div>
+    <section class="card glass p0 s12"><div class="head"><h3>Telegram Premium</h3></div>
       <table class="tbl"><thead><tr><th>套餐</th><th class="num">参考成本 <small class="faint">USD</small></th><th style="width:120px">零售价</th><th class="num">利润</th><th></th></tr></thead><tbody id="tg"></tbody></table></section>
   </div>
-  <p class="xs faint mt12">X / TG 的参考成本：有兑换记录时取近 30 天平均实际成本，否则按「默认预付额 + 服务费」估算。官方金额要在用户填写接收方后才能拿到。</p>
+  <p class="xs faint mt12">Telegram 的参考成本：有兑换记录时取近 30 天平均实际成本，否则按「默认预付额 + 服务费」估算。官方金额要在用户填写接收方后才能拿到。</p>
 </div>
 <script src="/assets/app.js"></script>
 <script>
@@ -37,17 +35,17 @@ async function load() {
     <td>${p.status === 'READY' ? '<span class="badge ok">✓ 有效</span>' : p.status ? '<span class="badge warn">◷ 等待报价</span>' : '<span class="badge idle">未知</span>'}</td>
     <td class="num">${money(p.cost)}</td><td class="num">${p.stock ?? '—'}${p.stock != null && p.stock < 20 ? ' <span class="c-warn">低</span>' : ''}</td><td class="num">${p.unused}</td><td class="num">${p.sold30}</td>
     <td>${inp('gpt.' + p.key, p.retail)}</td><td class="num">${profit(p.retail, p.cost)}</td></tr>`).join('');
-  const social = (k) => data[k].map(p => `<tr><td><b>${esc(p.label.replace(/^(X|Telegram) /, ''))}</b>${p.enabled === false ? ' <span class="badge idle">未开放</span>' : ''}<div class="xs faint">服务费 ${money(p.serviceFee)} · 未兑换 ${p.unused}</div></td>
+  const social = (k) => data[k].map(p => `<tr><td><b>${esc(p.label.replace(/^Telegram /, ''))}</b>${p.enabled === false ? ' <span class="badge idle">未开放</span>' : ''}<div class="xs faint">服务费 ${money(p.serviceFee)} · 未兑换 ${p.unused}</div></td>
     <td class="num">${p.costRef != null ? '≈ ' + money(p.costRef) : '—'}</td><td>${inp(k + '.' + p.key, p.retail)}</td><td class="num">${profit(p.retail, p.costRef)}</td>
     <td class="acts">${ed ? `<button class="btn sm" data-def="${k}.${p.key}">默认参数</button>` : ''}</td></tr>`).join('');
-  $('#x').innerHTML = social('x'); $('#tg').innerHTML = social('tg');
+  $('#tg').innerHTML = social('tg');
   $$('[data-ret]').forEach(i => i.onchange = async () => { try { await PUT('/api/admin/pricing/retail', { key: i.dataset.ret, price: i.value === '' ? null : Number(i.value) }); toast('零售价已保存'); load(); } catch (e) { toast(e.message, 'bad'); } });
   $$('[data-def]').forEach(b => b.onclick = () => defaults(b.dataset.def));
 }
 function defaults(key) {
   const [k, plan] = key.split('.'), p = data[k].find(x => x.key === plan), d = p.defaults || {};
   const m = dialog({
-    title: `${esc(p.label)} · 默认生成参数`, sub: `生成 ${k === 'x' ? 'X' : 'TG'} 兑换码时的默认值，生成页面也可以单独修改。官方金额会以这个币种在用户兑换时报价，必须和卡台实际报价币种一致。`,
+    title: `${esc(p.label)} · 默认生成参数`, sub: `生成 Telegram 兑换码时的默认值，生成页面也可以单独修改。官方金额会以这个币种在用户兑换时报价，必须和卡台实际报价币种一致。`,
     actions: [{ label: '取消' }, { label: '保存', kind: 'primary', onClick: async () => {
       await PUT('/api/admin/pricing/social-defaults', { key, currency: $('#cur', m.el).value, maxOfficialAmountMinor: Number($('#max', m.el).value), fundingAmountUsd: $('#fund', m.el).value });
       toast('已保存'); load();

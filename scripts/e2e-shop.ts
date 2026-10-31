@@ -53,11 +53,13 @@ ok((await admin('PUT', '/api/admin/shop/settings/shop', { enabled: true, title: 
 
 const strategies = (await admin('GET', '/api/admin/strategies')).data.list;
 const gptStrat = strategies.find((s: any) => s.prod.includes('gpt') && s.isDefault) || strategies.find((s: any) => s.prod.includes('gpt'));
-const xStrat = strategies.find((s: any) => s.prod.includes('x'));
+const tgStrat = strategies.find((s: any) => s.prod.includes('tg'));
 const P = (await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'plus', title: 'ChatGPT Plus 月卡', price: '39.90', agentPrice: '30', strategyId: gptStrat.id, stockLimit: 8, maxPerOrder: 5, badge: '热销' })).data;
 ok(P.id && P.price === 3990 && P.agent_price === 3000, '创建商品：零售 39.90，代理基础价 30.00，库存 8');
 ok((await admin('POST', '/api/admin/shop/products', { product: 'gpt', plan: 'plus', price: '10', agentPrice: '20', strategyId: gptStrat.id })).status === 400, '代理价高于零售价被拒绝');
-const PX = (await admin('POST', '/api/admin/shop/products', { product: 'x', plan: 'premium_3m', price: '50', strategyId: xStrat.id, enabled: false })).data;
+const PX = (await admin('POST', '/api/admin/shop/products', { product: 'tg', plan: 'premium_3m', price: '50', strategyId: tgStrat.id, enabled: false })).data;
+const xp = await admin('POST', '/api/admin/shop/products', { product: 'x', plan: 'premium_3m', price: '50', strategyId: tgStrat.id });
+ok(xp.status === 400 && /下线/.test(xp.data.error || ''), `X 已下线：不能再上架 → ${xp.status} ${xp.data.error || ''}`);
 const g1 = guest();
 const plist = (await g1('GET', '/api/shop/products')).data.list;
 ok(plist.some((p: any) => p.id === P.id && p.available === 8) && !plist.some((p: any) => p.id === PX.id), '前台只显示上架商品，带可售库存');
