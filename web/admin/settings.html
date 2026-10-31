@@ -23,10 +23,11 @@
     <section class="card glass s5">
       <h3>需要在卡台控制台做的事</h3>
       <div class="kv">
-        <div><span>1. 创建 API Key</span><b class="sm">勾选 cdk:read、cdk:purchase、x-direct、tg-direct 权限</b></div>
+        <div><span>1. 创建 API Key</span><b class="sm">勾选下面全部权限，少一个对应的功能就用不了</b></div>
         <div><span>2. IP 白名单</span><b class="sm">加入本服务器的出口 IP（生成码等写接口必须）</b></div>
         <div><span>3. Webhook</span><b class="sm"><a class="link" href="webhooks.html">接收地址与签名密钥 →</a></b></div>
       </div>
+      <div class="perms mt12" id="perms"></div>
       <div class="xs faint mt12" id="serverInfo"></div>
     </section>
     <section class="card glass s7">
@@ -93,7 +94,7 @@
     <div class="s12"><button class="btn primary" id="saveShop">保存商城设置</button></div>
   </div>
 
-  <div data-t="pay" class="grid hidden" id="payGrid"></div>
+  <div data-t="pay" class="hidden" id="payDesk"></div>
 
   <div data-t="mail" class="grid hidden">
     <section class="card glass s7"><h3>SMTP 邮件 <span id="mailState"></span></h3>
@@ -147,6 +148,7 @@ ready(async () => {
   $('#appSecret').placeholder = S.avan.appSecretMasked ? `已保存 ${S.avan.appSecretMasked}（不修改请留空）` : S.avan.appId ? '已保存（不修改请留空）' : 'sk_…';
   $('#connState').innerHTML = S.avan.appId ? '' : '<span class="badge warn">未配置</span>';
   $('#serverInfo').textContent = `对外地址 ${S.server.publicUrl} · 业务时区 ${S.server.timezone} · ${S.server.trustProxy ? '已信任反向代理' : '未启用反向代理 IP 识别'}`;
+  permList();
   $('#firstName').value = S.payment.firstName; $('#lastName').value = S.payment.lastName;
   $$('#notify [data-n]').forEach(b => { b.classList.toggle('on', !!S.notify[b.dataset.n]); swInit(b); });
   $('#tgChat').value = S.notify.tgChatId || ''; $('#lowTh').value = S.notify.lowStockThreshold;
@@ -171,10 +173,23 @@ $('#saveApi').onclick = e => run(e.currentTarget, '保存中…', async () => {
   await PUT('/api/admin/settings/avan', { baseUrl: $('#baseUrl').value.trim(), appId: $('#appId').value.trim(), ...($('#appSecret').value && { appSecret: $('#appSecret').value.trim() }) });
   $('#appSecret').value = ''; toast('已保存'); S = await GET('/api/admin/settings'); $('#appSecret').placeholder = S.avan.appSecretMasked ? `已保存 ${S.avan.appSecretMasked}（不修改请留空）` : '已保存（不修改请留空）'; loadProducts();
 });
+/* 权限清单：读权限测试连接后显示结果；写权限调用一次就会产生费用或改动数据，只能提示 */
+function permList(res) {
+  const by = Object.fromEntries((res || []).map(p => [p.key, p]));
+  $('#perms').innerHTML = S.avanPerms.map(p => {
+    const r = by[p.key];
+    const st = p.write ? '<span class="faint">无法自动检查</span>' : !r ? '<span class="faint">—</span>' : r.ok ? '<span class="c-ok">✓ 已开</span>' : `<span class="c-bad" title="${esc(r.error)}">✕ 缺少</span>`;
+    return `<div><code class="mono">${p.key}</code><span>${esc(p.what)}</span>${st}</div>`;
+  }).join('');
+}
 $('#testConn').onclick = e => run(e.currentTarget, '连接中…', async () => {
   const r = await POST('/api/admin/settings/avan/test');
-  $('#testRes').innerHTML = r.ok ? `<div class="note ok">✓ 连接成功 · ${r.ms}ms · GPT 套餐 ${r.offers} 个 · ${Object.entries(r.checks).map(([k, v]) => `${k} ${v}`).join(' · ')}</div>`
-    : `<div class="note bad">✕ ${esc(r.error)}${r.status === 401 ? '<br>App-Id / Secret 不正确' : r.status === 403 ? '<br>权限不足，或服务器 IP 不在白名单' : ''}</div>`;
+  if (!r.ok) { $('#testRes').innerHTML = `<div class="note bad">✕ ${esc(r.error)}${r.status === 401 ? '<br>App-Id / Secret 不正确' : ''}</div>`; return; }
+  permList(r.perms);
+  const miss = r.perms.filter(p => p.ok === false).map(p => p.key);
+  $('#testRes').innerHTML = miss.length
+    ? `<div class="note warn">已连上卡台（${r.ms}ms），但 API Key 缺少 ${miss.length} 个权限：<b>${miss.join('、')}</b>。到卡台控制台的 API Key 里勾选后再测一次。</div>`
+    : `<div class="note ok">✓ 连接成功 · ${r.ms}ms · 读权限都已开通（写权限请对照右侧清单确认已勾选）</div>`;
 });
 $('#savePay').onclick = e => run(e.currentTarget, '保存中…', async () => { await PUT('/api/admin/settings/payment', { productCode: $('#productCode').value, firstName: $('#firstName').value, lastName: $('#lastName').value }); toast('付款通道已保存'); });
 async function saveNotify() {
@@ -263,20 +278,6 @@ $('#totpBtn').onclick = async () => {
 $('#chPw').onclick = e => run(e.currentTarget, '修改中…', async () => { await POST('/api/auth/password', { oldPassword: $('#oldPw').value, newPassword: $('#newPw').value }); toast('密码已修改，请重新登录'); setTimeout(() => location.href = '/admin/login.html', 1200); });
 /* ---------------- 商城 / 支付 / 邮件 ---------------- */
 let SH = null;
-const PAYF = {
-  epay: { title: '易支付', desc: '彩虹易支付等通用接口（MD5 签名），一个商户号可以开支付宝、微信、QQ 钱包等', fields: [
-    ['name', '前台显示名称', 'text', '例如：支付宝 / 微信'], ['apiUrl', '接口地址', 'text', '例如 https://pay.example.com，不含 submit.php'], ['pid', '商户 ID', 'text'], ['key', '商户密钥', 'secret'],
-    ['types', '开放的支付方式', 'text', '逗号分隔：alipay 支付宝、wxpay 微信、qqpay QQ 钱包、bank 网银']] },
-  alipay: { title: '支付宝（官方）', desc: '支付宝开放平台 · 公钥模式 RSA2。当面付出二维码，网站支付跳转收银台', fields: [
-    ['appId', 'APPID', 'text'], ['mode', '接入方式', 'select', [['precreate', '当面付（扫码）'], ['page', '电脑网站 / 手机网站支付']]], ['privateKey', '应用私钥', 'secretArea', 'PKCS8 格式，可以带或不带 BEGIN 行'],
-    ['alipayPublicKey', '支付宝公钥', 'area', '开放平台「接口加签方式」里的支付宝公钥，不是应用公钥'], ['gateway', '网关', 'text', '正式环境 https://openapi.alipay.com/gateway.do']] },
-  wechat: { title: '微信支付（官方）', desc: 'APIv3 · Native 扫码支付 · 微信支付公钥验签', fields: [
-    ['mchId', '商户号', 'text'], ['appId', 'AppID', 'text', '公众号或小程序 AppID，需与商户号绑定'], ['serialNo', '商户证书序列号', 'text'], ['privateKey', '商户 API 私钥', 'secretArea', 'apiclient_key.pem 的内容'],
-    ['apiV3Key', 'APIv3 密钥', 'secret', '32 位'], ['publicKeyId', '微信支付公钥 ID', 'text', 'PUB_KEY_ID_ 开头'], ['publicKey', '微信支付公钥', 'area'], ['api', '接口地址', 'text', 'https://api.mch.weixin.qq.com']] },
-  usdt: { title: 'USDT（TRC20）', desc: '固定收款地址 + 唯一金额（随机尾数识别订单），每 15 秒查链上到账，不需要第三方', fields: [
-    ['address', '收款地址', 'text', 'T 开头 34 位，建议用独立的收款钱包'], ['rate', '汇率', 'text', '1 USDT = 多少人民币，订单金额按这个换算'], ['tronApi', 'TronGrid 地址', 'text'],
-    ['apiKey', 'TronGrid API Key', 'secret', '选填；不填有频率限制，订单多时建议申请'], ['contract', 'USDT 合约地址', 'text', '一般不需要修改']] },
-};
 async function shopSettings(v) {
   if (!SH) SH = await GET('/api/admin/shop/settings');
   if (v === 'shop') {
@@ -302,33 +303,131 @@ $('#saveShop').onclick = e => run(e.currentTarget, '保存中…', async () => {
     allowRegister: on('shReg'), allowAgentApply: on('shAg'), freezeDays: $('#shFz').value, minWithdraw: $('#shMin').value, refDays: $('#shRef').value });
   SH = null; toast('商城设置已保存');
 });
-function payForms() {
-  const ready = Object.fromEntries(SH.channels.map(c => [c.key, c.ready]));
-  $('#payGrid').innerHTML = Object.entries(PAYF).map(([k, f]) => {
-    const v = SH.pay[k];
-    return `<section class="card glass s6" data-ch="${k}"><h3>${f.title} ${ready[k] ? '<span class="badge ok">✓ 可用</span>' : v.enabled ? '<span class="badge warn">配置不完整</span>' : '<span class="badge idle">未启用</span>'}</h3>
-      <p class="sm muted mb12">${f.desc}</p><div class="form">
-      <div class="toggle"><div>启用</div><button class="sw ${v.enabled ? 'on' : ''}" data-en></button></div>
-      ${f.fields.map(([n, label, type, help]) => {
-        const set = v[n + 'Set'], val = Array.isArray(v[n]) ? v[n].join(', ') : v[n] ?? '';
-        const ctl = type === 'select' ? `<select class="field" data-f="${n}">${help.map(([o, l]) => `<option value="${o}" ${o === val ? 'selected' : ''}>${l}</option>`).join('')}</select>`
-          : type === 'area' ? `<textarea class="field mono" data-f="${n}" style="min-height:70px;font-size:11.5px">${esc(val)}</textarea>`
-          : type === 'secretArea' ? `<textarea class="field mono" data-f="${n}" data-secret style="min-height:70px;font-size:11.5px" placeholder="${set ? '已保存（不修改请留空）' : ''}"></textarea>`
-          : `<input class="field mono" data-f="${n}" ${type === 'secret' ? `type="password" autocomplete="new-password" data-secret placeholder="${set ? '已保存（不修改请留空）' : ''}"` : `value="${esc(val)}"`}>`;
-        return `<div class="f"><label>${label}${type.startsWith('secret') ? ` <small>${set ? '已保存' : '加密保存'}</small>` : ''}</label>${ctl}${help && type !== 'select' ? `<div class="help">${help}</div>` : ''}</div>`;
-      }).join('')}
-      ${k !== 'usdt' ? `<div class="f"><label>异步通知地址 <small>部分平台需要在后台填写</small></label><div class="copyline xs">${esc(S.server.publicUrl)}/api/pay/notify/${k}<button data-copy="${esc(S.server.publicUrl)}/api/pay/notify/${k}">复制</button></div></div>` : ''}
-      <div><button class="btn primary" data-save>保存</button></div></div></section>`;
-  }).join('');
-  $$('#payGrid [data-en]').forEach(b => swInit(b));
-  $$('#payGrid [data-save]').forEach(b => b.onclick = e => run(e.currentTarget, '保存中…', async () => {
-    const box = b.closest('[data-ch]'), body = { enabled: $('[data-en]', box).classList.contains('on') };
-    $$('[data-f]', box).forEach(i => { if (!i.hasAttribute('data-secret') || i.value.trim()) body[i.dataset.f] = i.value; });
-    const r = await PUT('/api/admin/shop/settings/pay/' + box.dataset.ch, body);
-    toast(r.ready ? '已保存，渠道可用' : body.enabled ? '已保存，但配置还不完整' : '已保存', r.ready || !body.enabled ? 'ok' : 'warn');
-    SH = await GET('/api/admin/shop/settings'); payForms();
-  }));
+/* ---------------- 支付：收款台 ----------------
+   顶部：买家现在结账时看到的支付方式（直接取商城公开接口，和买家看到的完全一致）
+   左边：四个通道的状态（可用 / 缺几项 / 未启用）
+   右边：当前通道的配置，按「买家看到 / 商户信息 / 回调地址」分段
+   字段 [key, 标签, 类型, 说明, 选项]；miss 是服务端 missing() 里对应的名称，用来标出还没填的必填项 */
+const PAY_TYPES = { alipay: ['支付宝', 'pm-alipay', '支'], wxpay: ['微信', 'pm-wxpay', '微'], qqpay: ['QQ 钱包', 'pm-qqpay', 'Q'], bank: ['网银', 'pm-bank', '银'] };
+const PAYF = {
+  epay: { title: '易支付', sub: '一个商户号开支付宝、微信等', desc: '彩虹易支付等通用接口（MD5 签名）', callback: '多数易支付会在下单时自动带上，不用手填', secs: [
+    ['买家看到', '', [{ k: 'name', label: '显示名称', help: '支付选项下面的小字，例如「在线支付」' }, { k: 'types', label: '开放的支付方式', type: 'types', wide: true, miss: '至少一种支付方式', help: '只勾选你的易支付商户实际开通了的方式' }]],
+    ['商户信息', '在易支付后台的「商户信息」里找', [{ k: 'apiUrl', label: '接口地址', mono: true, ph: 'https://pay.example.com', help: '不含 submit.php', miss: '接口地址' }, { k: 'pid', label: '商户 ID', mono: true, miss: '商户 ID' }, { k: 'key', label: '商户密钥', type: 'secret', wide: true, miss: '商户密钥' }]],
+  ] },
+  alipay: { title: '支付宝（官方）', sub: '开放平台 · 公钥模式 RSA2', desc: '支付宝开放平台，钱直接进你的支付宝商户号', callback: '下单时自动带上，不用在开放平台填', secs: [
+    ['买家看到', '', [{ k: 'mode', type: 'modes', wide: true, opts: [['precreate', '当面付（扫码）', '订单页显示二维码，手机支付宝扫一扫'], ['page', '网站支付', '跳转到支付宝收银台，电脑和手机都能用']] }]],
+    ['开放平台信息', 'open.alipay.com → 我的应用 → 开发设置', [{ k: 'appId', label: 'APPID', mono: true, ph: '2021…', miss: 'APPID' }, { k: 'gateway', label: '网关', mono: true, help: '一般不用改' },
+      { k: 'privateKey', label: '应用私钥', type: 'secretArea', wide: true, ph: 'PKCS8 格式，带不带 BEGIN 行都可以', miss: '应用私钥' },
+      { k: 'alipayPublicKey', label: '支付宝公钥', type: 'area', wide: true, ph: '「接口加签方式」里的支付宝公钥', help: '注意是支付宝公钥，不是你自己的应用公钥', miss: '支付宝公钥' }]],
+  ] },
+  wechat: { title: '微信支付（官方）', sub: 'APIv3 · Native 扫码', desc: '微信支付商户平台，钱直接进你的微信商户号', callback: '下单时自动带上，不用在商户平台填', secs: [
+    ['买家看到', '', [{ type: 'text', wide: true, text: '订单页显示二维码，买家用微信扫一扫付款（Native 支付）。' }]],
+    ['商户信息', 'pay.weixin.qq.com → 账户中心 → API 安全', [{ k: 'mchId', label: '商户号', mono: true, miss: '商户号' }, { k: 'appId', label: 'AppID', mono: true, help: '和商户号绑定的公众号或小程序', miss: 'AppID' },
+      { k: 'serialNo', label: '商户证书序列号', mono: true, miss: '商户证书序列号' }, { k: 'apiV3Key', label: 'APIv3 密钥', type: 'secret', ph: '32 位', miss: 'APIv3 密钥' },
+      { k: 'privateKey', label: '商户 API 私钥', type: 'secretArea', wide: true, ph: 'apiclient_key.pem 的全部内容', miss: '商户 API 私钥' }]],
+    ['微信支付公钥', '用来验证回调确实来自微信', [{ k: 'publicKeyId', label: '公钥 ID', mono: true, ph: 'PUB_KEY_ID_…' }, { k: 'api', label: '接口地址', mono: true, help: '一般不用改' },
+      { k: 'publicKey', label: '微信支付公钥', type: 'area', wide: true, miss: '微信支付公钥' }]],
+  ] },
+  usdt: { title: 'USDT（TRC20）', sub: '收款地址 + 唯一金额，不需要第三方', desc: '每 15 秒查一次链上到账，按金额尾数识别订单', secs: [
+    ['收款', '', [{ k: 'address', label: '收款地址', mono: true, wide: true, ph: 'T 开头，34 位', help: '建议用一个只收款的独立钱包', miss: '收款地址' },
+      { k: 'rate', label: '汇率', type: 'rate' }, { type: 'calc' }]],
+    ['查链服务', '选填', [{ k: 'apiKey', label: 'TronGrid API Key', type: 'secret', ph: '不填也能用，订单多时建议申请' }, { k: 'contract', label: 'USDT 合约地址', mono: true, help: '一般不用改' }, { k: 'tronApi', label: 'TronGrid 地址', mono: true, help: '一般不用改' }]],
+  ] },
+};
+let PAY_CUR = 'epay', PAY_DIRTY = false, PAY_BUYER = [];
+const payIcon = k => `<span class="pm-ic pm-${esc(k)}">${{ alipay: '支', wxpay: '微', wechat: '微', usdt: '₮', qqpay: 'Q', bank: '银' }[k] || '¥'}</span>`;
+const payState = k => { const c = SH.channels.find(x => x.key === k); return !SH.pay[k].enabled ? 'off' : c.ready ? 'ok' : 'warn'; };
+const payMissing = k => SH.channels.find(x => x.key === k).missing;
+async function payForms() {
+  // 买家现在看到的支付方式：和商城结账用同一个接口
+  PAY_BUYER = (await GET('/api/shop/config').catch(() => null))?.payMethods || [];
+  $('#payDesk').innerHTML = `<section class="pay-pre glass" aria-label="买家结账预览">
+      <div class="pp-lbl"><b>买家结账时看到</b>按这个顺序排列，第一个默认选中</div><div class="pp-list" id="payBuyer"></div><div class="pp-sum" id="paySum"></div>
+      <div class="note warn pp-dup hidden" id="payDup"></div></section>
+    <div class="pay-desk"><nav class="pay-list glass" aria-label="支付通道"><h4>支付通道</h4><div id="payChs"></div>
+      <p>买家付款后，支付平台会通知回调地址确认到账；通知不到时系统也会主动去查单，不会漏单。</p></nav>
+      <section class="pay-panel glass" id="payPanel"></section></div>`;
+  payTop(); payList(); payPanel();
 }
+function payTop() {
+  $('#payBuyer').innerHTML = PAY_BUYER.map((m, i) => `<div class="pp-pm ${i ? '' : 'first'}">${payIcon(m.icon)}<span><b>${esc(m.label)}</b><small>${esc(m.note || '')}</small></span><em>${m.method === 'epay' ? '易支付' : m.method === 'usdt' ? '链上' : '官方'}</em></div>`).join('')
+    || '<div class="pp-pm none">还没有可用的支付方式，买家现在没法下单</div>';
+  const n = SH.channels.filter(c => c.ready).length, w = Object.keys(PAYF).filter(k => payState(k) === 'warn').length;
+  $('#paySum').innerHTML = `<b>${n} / 4</b>个通道可用${w ? `<br><span class="c-warn">${w} 个开着但没配完</span>` : ''}`;
+  const dup = PAY_BUYER.some(m => m.method === 'epay' && m.sub === 'alipay') && PAY_BUYER.some(m => m.method === 'alipay');
+  const dupWx = PAY_BUYER.some(m => m.method === 'epay' && m.sub === 'wxpay') && PAY_BUYER.some(m => m.method === 'wechat');
+  $('#payDup').classList.toggle('hidden', !dup && !dupWx);
+  const both = [dup && '支付宝', dupWx && '微信'].filter(Boolean);
+  $('#payDup').textContent = `⚠ 易支付和官方通道都开了${both.join('、')}，买家会看到两个${both.join('、两个')}入口。建议每种只留一个。`;
+}
+function payList() {
+  $('#payChs').innerHTML = Object.entries(PAYF).map(([k, f]) => {
+    const s = payState(k), m = payMissing(k);
+    return `<button type="button" class="pay-ch ${k === PAY_CUR ? 'on' : ''}" data-ch="${k}"><span class="dot ${s}"></span><b>${f.title}</b><span class="st ${s}">${s === 'ok' ? '可用' : s === 'warn' ? `缺 ${m.length} 项` : '未启用'}</span><small>${f.sub}</small></button>`;
+  }).join('');
+  $$('#payChs [data-ch]').forEach(b => b.onclick = async () => {
+    if (PAY_DIRTY && !(await confirmBox({ title: '放弃没保存的修改？', body: `${PAYF[PAY_CUR].title}有修改还没保存。`, ok: '放弃修改', danger: true }))) return;
+    PAY_CUR = b.dataset.ch; PAY_DIRTY = false; payList(); payPanel();
+  });
+}
+function payField(fd, v, miss) {
+  const val = fd.k ? v[fd.k] : null;
+  const missOn = fd.miss && miss.some(m => m.startsWith(fd.miss));
+  let ctl = '';
+  if (fd.type === 'types') ctl = `<div class="pay-types">${Object.entries(PAY_TYPES).map(([t, [n, cls, ic]]) => `<button type="button" class="pay-type ${(val || []).includes(t) ? 'on' : ''}" data-type="${t}" aria-pressed="${(val || []).includes(t)}"><span class="pm-ic ${cls}">${ic}</span>${n}<i>✓</i></button>`).join('')}</div>`;
+  else if (fd.type === 'modes') ctl = `<div class="pay-modes">${fd.opts.map(([o, t, d]) => `<button type="button" class="pay-mode ${val === o ? 'on' : ''}" data-pmode="${o}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
+  else if (fd.type === 'text') return `<p class="pay-text wide">${fd.text}</p>`;
+  else if (fd.type === 'calc') { const r = Number(v.rate) || 0; return `<div class="f"><label>买家看到的金额</label><div class="pay-calc" id="payCalc">${r > 0 ? `¥100.00 的订单 → <b>${(100 / r).toFixed(4)} USDT</b> 左右` : '先填汇率'}<span>尾数随机，用来识别订单</span></div></div>`; }
+  else if (fd.type === 'rate') ctl = `<div class="inputgrp"><span>1 USDT =</span><input class="mono" data-f="rate" value="${esc(val ?? '')}" inputmode="decimal"><span>元</span></div>`;
+  else if (fd.type === 'secret' || fd.type === 'secretArea') ctl = v[fd.k + 'Set']
+    ? `<div class="pay-secret" data-secret-box="${fd.k}"><span class="mono">••••••••••••</span><span class="c-ok">✓ 已保存</span><button type="button" class="btn sm" data-replace="${fd.k}" data-area="${fd.type === 'secretArea' ? 1 : ''}" data-ph="${esc(fd.ph || '')}">更换</button></div>`
+    : fd.type === 'secretArea' ? `<textarea class="field mono" data-f="${fd.k}" data-secret placeholder="${esc(fd.ph || '')}"></textarea>`
+    : `<input class="field mono" data-f="${fd.k}" data-secret type="password" autocomplete="new-password" placeholder="${esc(fd.ph || '')}">`;
+  else if (fd.type === 'area') ctl = `<textarea class="field mono" data-f="${fd.k}" placeholder="${esc(fd.ph || '')}">${esc(val ?? '')}</textarea>`;
+  else ctl = `<input class="field ${fd.mono ? 'mono' : ''}" data-f="${fd.k}" value="${esc(val ?? '')}" placeholder="${esc(fd.ph || '')}">`;
+  const note = fd.type?.startsWith('secret') ? '<small>加密保存</small>' : '';
+  return `<div class="f ${fd.wide ? 'wide' : ''} ${missOn ? 'miss' : ''}">${fd.label ? `<label>${fd.label}${note}</label>` : ''}${ctl}${fd.help ? `<div class="help">${fd.help}</div>` : ''}</div>`;
+}
+function payPanel() {
+  const k = PAY_CUR, f = PAYF[k], v = SH.pay[k], s = payState(k), m = payMissing(k), miss = v.enabled ? m : [];
+  const st = s === 'ok' ? '<div class="pay-state ok"><b>✓ 可用</b><span>买家结账时能看到这个通道。</span></div>'
+    : s === 'warn' ? `<div class="pay-state warn"><b>还差 ${m.length} 项</b><span>${esc(m.join('、'))}。填完之前买家看不到这个通道。</span></div>`
+    : `<div class="pay-state off"><b>未启用</b><span>打开右上角的开关${m.length ? '，填好下面的信息' : ''}，保存后买家就能用。</span></div>`;
+  const url = `${SH.publicUrl}/api/pay/notify/${k}`;
+  const cb = f.callback ? `<div class="pay-sec"><h3>回调地址 <small>${f.callback}</small></h3>
+      <div class="copyline">${esc(url)}<button type="button" data-copy="${esc(url)}" data-msg="回调地址已复制">复制</button></div>
+      ${SH.publicUrlOk ? '' : '<div class="note warn mt8">⚠ 当前对外地址不是外网 https 地址，支付平台的回调到不了，订单只能靠系统主动查单入账。在部署配置里设置 PUBLIC_URL。</div>'}</div>` : '';
+  $('#payPanel').innerHTML = `<div class="pay-head"><div><h2>${f.title}</h2><p>${f.desc}</p></div>
+      <label class="pay-en">启用<button type="button" class="sw ${v.enabled ? 'on' : ''}" id="payEn" aria-pressed="${v.enabled}" aria-label="启用${f.title}"></button></label></div>
+    ${st}
+    ${f.secs.map(([t, hint, fields]) => `<div class="pay-sec"><h3>${t}${hint ? ` <small>${hint}</small>` : ''}</h3><div class="pay-grid">${fields.map(fd => payField(fd, v, miss)).join('')}</div></div>`).join('')}
+    ${cb}
+    <div class="pay-foot"><span class="c-warn" id="payDirty"></span><div><button class="btn" type="button" id="payReset">放弃修改</button><button class="btn primary" type="button" id="paySave">保存</button></div></div>`;
+  const dirty = () => { PAY_DIRTY = true; $('#payDirty').textContent = '● 有未保存的修改'; };
+  swInit($('#payEn'), dirty);
+  $$('#payPanel [data-type]').forEach(b => b.onclick = () => { b.classList.toggle('on'); b.setAttribute('aria-pressed', b.classList.contains('on')); dirty(); });
+  $$('#payPanel [data-pmode]').forEach(b => b.onclick = () => { $$('#payPanel [data-pmode]').forEach(x => x.classList.toggle('on', x === b)); dirty(); });
+  $$('#payPanel [data-replace]').forEach(b => b.onclick = () => {
+    const box = b.closest('[data-secret-box]'), ph = b.dataset.ph || '填新的值，保存后替换';
+    box.outerHTML = b.dataset.area ? `<textarea class="field mono" data-f="${b.dataset.replace}" data-secret placeholder="${esc(ph)}"></textarea>` : `<input class="field mono" data-f="${b.dataset.replace}" data-secret type="password" autocomplete="new-password" placeholder="${esc(ph)}">`;
+    const el = $(`#payPanel [data-f="${b.dataset.replace}"]`); el.focus(); el.oninput = dirty;
+  });
+  $$('#payPanel [data-f]').forEach(i => i.oninput = () => {
+    dirty();
+    if (i.dataset.f === 'rate' && $('#payCalc')) { const r = Number(i.value) || 0; $('#payCalc').innerHTML = `${r > 0 ? `¥100.00 的订单 → <b>${(100 / r).toFixed(4)} USDT</b> 左右` : '先填汇率'}<span>尾数随机，用来识别订单</span>`; }
+  });
+  $('#payReset').onclick = () => { PAY_DIRTY = false; payPanel(); };
+  $('#paySave').onclick = e => run(e.currentTarget, '保存中…', async () => {
+    const body = { enabled: $('#payEn').classList.contains('on') };
+    $$('#payPanel [data-f]').forEach(i => { if (!i.hasAttribute('data-secret') || i.value.trim()) body[i.dataset.f] = i.value; });
+    if ($('#payPanel [data-type]')) body.types = $$('#payPanel [data-type].on').map(b => b.dataset.type);
+    const pm = $('#payPanel [data-pmode].on'); if (pm) body.mode = pm.dataset.pmode;
+    const r = await PUT('/api/admin/shop/settings/pay/' + k, body);
+    toast(r.ready ? '已保存，买家现在能用这个通道' : body.enabled ? `已保存，还差 ${r.missing.length} 项才能用` : '已保存', r.ready || !body.enabled ? 'ok' : 'warn');
+    PAY_DIRTY = false; SH = await GET('/api/admin/shop/settings'); await payForms();
+  });
+}
+window.addEventListener('beforeunload', e => { if (PAY_DIRTY) e.preventDefault(); });
 const mailBody = () => ({ enabled: on('mEn'), host: $('#mHost').value.trim(), port: $('#mPort').value, secure: on('mSec'), user: $('#mUser').value.trim(), from: $('#mFrom').value.trim(), fromName: $('#mFromName').value, ...($('#mPass').value && { pass: $('#mPass').value }) });
 $('#saveMail').onclick = e => run(e.currentTarget, '保存中…', async () => { await PUT('/api/admin/shop/settings/mail', mailBody()); $('#mPass').value = ''; SH = null; toast('邮件设置已保存'); shopSettings('mail'); });
 $('#testMail').onclick = async () => {

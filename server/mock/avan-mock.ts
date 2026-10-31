@@ -22,6 +22,9 @@ const WEBHOOK_SECRET = process.env.MOCK_WEBHOOK_SECRET || 'whsec_' + '0'.repeat(
 const SPEED = Number(process.env.MOCK_SPEED || 1); // 状态推进速度倍率
 
 const app = new Hono();
+// MOCK_DENY=逗号分隔的接口路径（如 /x-direct/plans,/balance）：这些接口返回 403，模拟 API Key 缺权限
+const DENY = (process.env.MOCK_DENY || '').split(',').map(x => x.trim()).filter(Boolean);
+if (DENY.length) app.use('/api/v1/*', async (c, next) => (DENY.some(p => c.req.path === '/api/v1' + p) ? c.json({ code: 403, error: 'API 权限不足' }, 403) : next()));
 const hexs = (n: number) => randomBytes(n).toString('hex');
 const ok0 = (data: unknown) => ({ code: 0, data });
 const ok200 = (data: unknown) => ({ code: 200, data });
@@ -94,6 +97,8 @@ for (const K of ['x', 'tg'] as const) app.get('/api/v1/' + K + '-direct/plans', 
   const list = K === 'x' ? X_PLANS : TG_PLANS;
   return c.json(ok200({ paymentsEnabled: true, plans: list.map(([key, label, tier, months, fee]) => ({ key, label, tier, months, enabled: true, serviceFee: fee, pricingVersion: 14 })) }));
 });
+// 钱包余额（只读）：MOCK_BALANCE 可以改成别的数测试余额不足的提示
+app.get('/api/v1/balance', c => c.json(ok0({ balance: process.env.MOCK_BALANCE || '1250.00', totalBalance: process.env.MOCK_BALANCE || '1300.00', riskLockedBalance: '50.00', retryReservedBalance: '0.00', promoBalance: '0.00', cumulativeDeposit: '5000.00', cumulativeSpend: '3700.00' })));
 app.get('/api/v1/products', c => c.json(ok0([{ productCode: 'MOCK-VISA-US', issuer: 'Mock', network: 'VISA', issuingArea: 'US', cardType: 'virtual', openFee: '0.50', rechargeRate: '0.015', minAmount: '5', maxAmount: '5000' }])));
 
 /* ---------------- GPT CDK 生成 ---------------- */

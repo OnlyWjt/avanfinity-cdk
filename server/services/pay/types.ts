@@ -13,7 +13,10 @@ export interface PayResult { paymentId: string; paid: boolean; tradeNo?: string;
 export interface Channel {
   key: 'epay' | 'usdt' | 'alipay' | 'wechat';
   label(): string;
+  /** 开关打开、必填项都填了：买家结账时能看到 */
   enabled(): boolean;
+  /** 还没填的必填项（字段的中文名，不管开关是否打开）；后台支付页据此提示「还差几项」 */
+  missing(): string[];
   /** 子类型（易支付：alipay / wxpay …） */
   subs?(): { key: string; label: string }[];
   create(i: CreateInput): Promise<PayAction>;

@@ -245,8 +245,8 @@ for (const t of ['shop', 'pay', 'mail']) {
   await page.screenshot({ path: `${OUT}/settings-${t}.png`, fullPage: true });
 }
 await page.goto(`${BASE}/admin/settings.html?tab=pay`, { waitUntil: 'networkidle0' }); await sleep(400);
-const ready = await page.$$eval('#payGrid [data-ch] h3 .badge.ok', e => e.length);
-const leaked = await page.evaluate(() => [...document.querySelectorAll('#payGrid [data-secret]')].some(i => (i as HTMLInputElement).value));
+const ready = await page.$$eval('#payChs .pay-ch .st.ok', e => e.length);
+const leaked = await page.evaluate(() => [...document.querySelectorAll('#payDesk [data-secret]')].some(i => (i as HTMLInputElement).value));
 console.log(ready === 4 && !leaked ? '✓ 支付设置：4 个渠道可用，密钥输入框为空（不回显）' : `✗ 支付设置异常 ready=${ready} leaked=${leaked}`);
 
 // 免注册买家：商城下单 → 易支付收银台 → 付款 → 回到订单页看到兑换码 → 一键兑换

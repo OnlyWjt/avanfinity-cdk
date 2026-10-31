@@ -531,14 +531,22 @@ async function refreshNav() {
     const F = p => api('GET', p, undefined, true);  // 外壳状态不走首屏缓存，避免把旧数字存回去
     const r = await F("/api/admin/redemptions?f=attention&size=1");
     const el = $("#nav-attn"); if (el) { el.textContent = r.counts.attention; el.classList.toggle("hidden", !r.counts.attention); }
-    const [w, so, ag] = await Promise.all([F("/api/admin/webhooks").catch(() => null), F("/api/admin/shop/orders?size=1").catch(() => null), F("/api/admin/shop/agents?status=pending").catch(() => null)]);
+    // 余额只给运营及以上角色：客服拿不到（403）就不显示
+    const [w, so, ag, bal] = await Promise.all([F("/api/admin/webhooks").catch(() => null), F("/api/admin/shop/orders?size=1").catch(() => null), F("/api/admin/shop/agents?status=pending").catch(() => null), F("/api/admin/avan/balance").catch(() => null)]);
     const pend = ag ? ag.total + (await F("/api/admin/shop/withdrawals?status=pending").catch(() => ({ list: [] }))).list.length : 0;
     for (const [id, n] of [["shop", so?.attention || 0], ["agent", pend]]) { const e = $("#nav-" + id); if (e) { e.textContent = n; e.classList.toggle("hidden", !n); } }
     const last = w?.stats.lastAt;
-    const conn = `<span class="dot" style="${w?.secretSet ? "" : "background:var(--warn);box-shadow:0 0 8px var(--warn)"}"></span>${w?.secretSet ? "已配置卡台" : "Webhook 未配置"}<p>最近事件 ${last ? ago(last) : "无"} · 24h 失败 ${w?.stats.failed24h ?? 0}</p>`;
+    const conn = `<span class="dot" style="${w?.secretSet ? "" : "background:var(--warn);box-shadow:0 0 8px var(--warn)"}"></span>${w?.secretSet ? "已配置卡台" : "Webhook 未配置"}${balanceLine(bal)}<p>最近事件 ${last ? ago(last) : "无"} · 24h 失败 ${w?.stats.failed24h ?? 0}</p>`;
     $("#conn").innerHTML = conn;
     ssSet("cdk-nav", { attn: r.counts.attention, conn, shop: so?.attention || 0, agent: pend });
   } catch { /* 外壳状态失败不影响页面 */ }
+}
+/** 侧栏卡台状态里的余额行：可用余额（有风控锁定时一起显示）；缺权限时提示去开 */
+function balanceLine(b) {
+  if (!b || !b.configured) return '';
+  if (b.balance == null) return `<a class="bal warn" href="settings.html" title="${esc(b.error || '')}">余额：${/account:read/.test(b.error || '') ? '缺少 account:read 权限' : '查询失败'}</a>`;
+  const usd = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<div class="bal"><span>可用余额</span><b class="mono">${usd(b.balance)}</b></div>${Number(b.locked) > 0 ? `<p>风控锁定 ${usd(b.locked)}</p>` : ''}`;
 }
 function accountModal() {
   dialog({

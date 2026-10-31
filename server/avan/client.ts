@@ -99,7 +99,21 @@ export const avan = {
 
   /* ---------------- 流水 ---------------- */
   allTransactions: (page = 1, pageSize = 100) => request<{ total: number; list: any[] }>('GET', '/cards/all-transactions', { query: { page, page_size: pageSize } }),
+
+  /* ---------------- 钱包（只读） ---------------- */
+  balance: () => request<AvanBalance>('GET', '/balance'),
 };
+
+/** 卡台钱包余额：金额都是十进制字符串（USD），不要转浮点做资金计算 */
+export interface AvanBalance {
+  /** 可用余额 */
+  balance: string;
+  totalBalance: string;
+  /** 支付风控锁定的部分 */
+  riskLockedBalance: string;
+  retryReservedBalance?: string;
+  promoBalance?: string;
+}
 
 export interface SocialIssuerItem {
   id: string; plan: string; status: string; code?: string; codePrefix: string; recipient: string | null;

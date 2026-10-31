@@ -138,7 +138,7 @@ adminShop.get('/settings', requireRole('admin'), c => {
   return c.json({
     shop: getSetting('shop'), mail: strip(m),
     pay: { epay: strip(p.epay), usdt: strip(p.usdt), alipay: strip(p.alipay), wechat: strip(p.wechat) },
-    channels: allChannels.map(ch => ({ key: ch.key, ready: ch.enabled() })),
+    channels: allChannels.map(ch => ({ key: ch.key, ready: ch.enabled(), missing: ch.missing() })),
     publicUrl: config.publicUrl, publicUrlOk: publicUrlOk(),
   });
 });
@@ -166,7 +166,8 @@ adminShop.put('/settings/pay/:ch{epay|usdt|alipay|wechat}', requireRole('admin')
   if (ch === 'alipay' && !['precreate', 'page'].includes(cur.mode)) cur.mode = 'precreate';
   await setSetting('pay', { ...all, [ch]: cur });
   await audit(c, `settings.pay.${ch}`, '', { enabled: cur.enabled });
-  return c.json({ ok: true, ready: allChannels.find(x => x.key === ch)!.enabled() });
+  const chan = allChannels.find(x => x.key === ch)!;
+  return c.json({ ok: true, ready: chan.enabled(), missing: chan.missing() });
 });
 adminShop.put('/settings/mail', requireRole('admin'), async c => {
   const b = await body(c), m = getSetting('mail');

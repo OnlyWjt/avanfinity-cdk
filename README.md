@@ -4,7 +4,7 @@
 
 - **管理后台** `/admin/`：总览、CDK 管理、生成、兑换记录（审核 / 重试 / 释放）、兑换策略、售价与利润、成功率分析、支付流水、Webhook、设置、主题与品牌
 - **兑换页** `/`（或 `/redeem`）、**凭证查询** `/receipt.html`、**商城** `/shop/`
-- 不展示任何虚拟卡、钱包、充值功能；支付流水不含卡号
+- 不展示虚拟卡、不提供充值；卡台钱包只读显示可用余额（后台侧栏和生成页）；支付流水不含卡号
 
 ## 运行要求
 
@@ -37,7 +37,9 @@ npm start
 首次打开 `https://你的域名/admin/` 会提示创建第一个管理员，然后：
 
 1. **设置 → 卡台 API**：填卡台地址、App-Id、App-Secret，点「测试连接」
-2. 卡台控制台里给 API Key 开权限：`cdk:read`、`cdk:purchase`、`x-direct:write`、`tg-direct:write`，并把服务器出口 IP 加入白名单
+2. 卡台控制台里给 API Key 开权限（少一个对应的功能就用不了，「测试连接」会逐个检查读权限），并把服务器出口 IP 加入白名单：
+   - 读：`cdk:read`、`gpt:read`、`x-direct:read`、`tg-direct:read`、`products:read`、`cards:read`、`account:read`（显示卡台余额）
+   - 写：`cdk:purchase`、`gpt:write`、`x-direct:write`、`tg-direct:write`
 3. **Webhook**：把页面上的接收地址填到卡台控制台，把卡台给的 `whsec_…` 签名密钥填回来，点「发送自检事件」
 4. **设置 → X / Telegram 付款通道**：选一个卡产品（X/TG 兑换时卡台自动开卡付款）
 5. **兑换策略**：默认策略是自有码；按需新建，比如「淘宝渠道 · 严格」

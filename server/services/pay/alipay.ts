@@ -50,7 +50,8 @@ async function call(method: string, biz: object, extra?: Record<string, string>)
 export const alipay: Channel = {
   key: 'alipay',
   label: () => '支付宝',
-  enabled: () => { const c = cfg(); return c.enabled && !!c.appId && !!c.privateKey && !!c.alipayPublicKey; },
+  missing: () => { const c = cfg(); return ([[!!c.appId, 'APPID'], [!!c.privateKey, '应用私钥'], [!!c.alipayPublicKey, '支付宝公钥']] as [boolean, string][]).filter(([ok]) => !ok).map(([, n]) => n); },
+  enabled: () => cfg().enabled && !alipay.missing().length,
   async create(i) {
     const c = cfg();
     // 支付宝侧的过期时间和订单一致（北京时间 yyyy-MM-dd HH:mm:ss）

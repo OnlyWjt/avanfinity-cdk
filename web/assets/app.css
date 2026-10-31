@@ -968,3 +968,91 @@ input[type=range]{accent-color:var(--a1)}
 [data-bg="paper"] .member small{color:var(--muted);opacity:1}
 [data-bg="paper"] .member .r{opacity:1;color:var(--muted)}
 [data-bg="paper"] .member .r .mono{color:var(--a3)}
+/* 设置 → 卡台 API：要勾选的权限清单 */
+.perms{border-radius:calc(var(--r)*.6);background:var(--inset);padding:2px 14px}
+.perms>div{display:grid;grid-template-columns:118px 1fr auto;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.perms>div:last-child{border:0}
+.perms code{font-size:11px}
+.perms>div>span:nth-child(2){color:var(--muted)}
+/* 侧栏卡台状态：可用余额 */
+.conn .bal{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);text-decoration:none}
+.conn .bal b{font-size:13.5px;color:var(--text);font-weight:600}
+.conn .bal.warn{color:var(--warn)}
+/* ============================================================
+   设置 → 支付：收款台
+   ============================================================ */
+.pay-pre{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:22px;padding:16px 20px;margin-bottom:16px}
+.pp-lbl{font-size:12px;color:var(--muted);line-height:1.4}
+.pp-lbl b{display:block;font-family:var(--display);font-size:20px;font-weight:750;color:var(--text)}
+[data-font="stub"] .pp-lbl b{font-weight:400}
+.pp-list{display:flex;gap:10px;flex-wrap:wrap}
+.pp-pm{display:flex;align-items:center;gap:10px;padding:9px 14px 9px 10px;border-radius:calc(var(--r)*.6);border:1px solid var(--border);background:var(--bg-solid);min-width:170px}
+.pp-pm.first{border-color:var(--a1);box-shadow:inset 0 0 0 1px var(--a1)}
+.pp-pm.none{border-style:dashed;color:var(--muted)}
+.pp-pm b{display:block;font-size:13px}
+.pp-pm small{display:block;font-size:11.5px;color:var(--muted)}
+.pp-pm em{font-style:normal;font-size:10.5px;color:var(--faint);margin-left:auto;padding-left:8px;white-space:nowrap}
+.pp-sum{text-align:right;font-size:12px;color:var(--muted);white-space:nowrap}
+.pp-sum b{display:block;font-family:var(--mono);font-size:20px;color:var(--text);font-weight:600}
+.pp-dup{grid-column:1/-1;margin-top:-6px}
+.pay-desk{display:grid;grid-template-columns:290px 1fr;gap:16px;align-items:start}
+.pay-list{padding:6px;position:sticky;top:16px}
+.pay-list h4{font-size:11.5px;color:var(--faint);font-weight:500;padding:10px 12px 6px}
+.pay-list>p{font-size:11.5px;color:var(--faint);padding:10px 12px 8px;border-top:1px solid var(--border);margin-top:6px;line-height:1.6}
+.pay-ch{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;width:100%;text-align:left;padding:11px 12px;border-radius:calc(var(--r)*.6)}
+.pay-ch:hover{background:var(--inset)}
+.pay-ch.on{background:var(--inset);box-shadow:inset 3px 0 0 var(--a1)}
+.pay-ch .dot{width:9px;height:9px;border-radius:50%;grid-row:span 2;box-shadow:inset 0 0 0 2px var(--border)}
+.pay-ch .dot.ok{background:var(--ok);box-shadow:none}.pay-ch .dot.warn{background:var(--warn);box-shadow:none}
+.pay-ch b{font-size:13.5px;font-weight:650}
+.pay-ch small{font-size:11.5px;color:var(--muted);grid-column:2}
+.pay-ch .st{font-size:11.5px;font-weight:650;grid-row:span 2}
+.pay-ch .st.ok{color:var(--ok)}.pay-ch .st.warn{color:var(--warn)}.pay-ch .st.off{color:var(--faint);font-weight:500}
+.pay-panel{padding:0;overflow:visible}
+.pay-head{display:flex;align-items:flex-start;gap:16px;padding:20px 24px 16px;border-bottom:1px solid var(--border)}
+.pay-head h2{font-size:22px;font-weight:750;line-height:1.2}
+[data-font="stub"] .pay-head h2{font-family:var(--display);font-size:26px;font-weight:400}
+.pay-head p{font-size:12.5px;color:var(--muted);margin-top:4px}
+.pay-en{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap;cursor:pointer}
+.pay-state{margin:16px 24px 0;padding:10px 14px;border-radius:calc(var(--r)*.6);font-size:12.5px;display:flex;gap:10px;align-items:baseline}
+.pay-state b{white-space:nowrap}
+.pay-state span{color:var(--text)}
+.pay-state.ok{background:color-mix(in srgb,var(--ok) 10%,transparent);color:var(--ok)}
+.pay-state.warn{background:color-mix(in srgb,var(--warn) 11%,transparent);color:var(--warn)}
+.pay-state.off{background:var(--inset);color:var(--muted)}
+.pay-sec{padding:20px 24px 4px}
+.pay-sec+.pay-sec{border-top:1px dashed var(--border);margin-top:14px}
+.pay-sec>h3{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:14px;display:flex;gap:10px;align-items:baseline}
+.pay-sec>h3 small{font-weight:400;color:var(--faint)}
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.pay-grid .f>label{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:600;margin-bottom:6px}
+.pay-grid .f>label small{font-weight:400;color:var(--faint);font-size:11.5px}
+.pay-grid .help{font-size:11.5px;color:var(--faint);margin-top:5px}
+.pay-grid .wide{grid-column:1/-1}
+.pay-grid textarea.field{min-height:76px;font-size:11.5px}
+.pay-grid .f.miss>label{color:var(--warn)}
+.pay-grid .f.miss :is(.field,.inputgrp){border-color:color-mix(in srgb,var(--warn) 55%,transparent)}
+.pay-text{font-size:12.5px;color:var(--muted)}
+.pay-secret{display:flex;align-items:center;gap:10px;padding:6px 6px 6px 12px;border-radius:calc(var(--r)*.5);border:1px solid var(--border);background:var(--inset);font-size:12px}
+.pay-secret .mono{letter-spacing:.1em;color:var(--muted)}
+.pay-secret .btn{margin-left:auto}
+.pay-types{display:flex;gap:8px;flex-wrap:wrap}
+.pay-type{display:flex;align-items:center;gap:8px;padding:7px 10px 7px 7px;border-radius:calc(var(--r)*.55);border:1px solid var(--border);background:var(--bg-solid);font-size:13px}
+.pay-type .pm-ic{width:22px;height:22px;font-size:11px;opacity:.35}
+.pay-type i{font-style:normal;width:15px;height:15px;border-radius:4px;border:1.5px solid var(--border);display:grid;place-items:center;font-size:10px;color:transparent}
+.pay-type.on{border-color:var(--a1);box-shadow:inset 0 0 0 1px var(--a1);font-weight:650}
+.pay-type.on .pm-ic{opacity:1}
+.pay-type.on i{background:var(--a1);border-color:var(--a1);color:var(--on-a)}
+.pay-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pay-mode{text-align:left;padding:12px 14px;border-radius:calc(var(--r)*.6);border:1px solid var(--border);background:var(--bg-solid)}
+.pay-mode b{display:block;font-size:13px}
+.pay-mode small{font-size:11.5px;color:var(--muted)}
+.pay-mode.on{border-color:var(--a1);box-shadow:inset 0 0 0 1px var(--a1)}
+.pay-calc{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:9px 12px;border-radius:calc(var(--r)*.5);background:color-mix(in srgb,var(--a2) 12%,var(--bg-solid));font-size:12.5px;color:var(--muted)}
+.pay-calc b{font-family:var(--mono);color:var(--text);font-weight:600}
+.pay-calc span{font-size:11.5px;color:var(--faint)}
+.pay-foot{display:flex;align-items:center;gap:10px;padding:14px 24px;margin-top:18px;border-top:1px solid var(--border);position:sticky;bottom:0;background:var(--bg-solid);border-radius:0 0 var(--r) var(--r);box-shadow:0 -10px 18px -16px rgba(0,0,0,.4)}
+.pay-foot>span{font-size:12px}
+.pay-foot>div{margin-left:auto;display:flex;gap:8px}
+@media (max-width:1100px){.pay-desk{grid-template-columns:1fr}.pay-list{position:static}.pay-pre{grid-template-columns:1fr}.pp-sum{text-align:left}}
+@media (max-width:640px){.pay-grid,.pay-modes{grid-template-columns:1fr}.pay-head,.pay-sec,.pay-foot{padding-left:16px;padding-right:16px}.pay-state{margin:14px 16px 0}}

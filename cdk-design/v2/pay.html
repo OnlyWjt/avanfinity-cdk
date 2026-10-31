@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设计稿 · 支付通道（收款台）</title>
+<style>
+@font-face{font-family:"Smiley Sans";src:url(../../web/assets/fonts/SmileySans-Oblique.woff2) format("woff2");font-display:swap}
+@font-face{font-family:"Martian Mono";src:url(../../web/assets/fonts/MartianMono-latin.woff2) format("woff2");font-weight:400 700;font-display:swap}
+:root{
+  --display:"Smiley Sans","PingFang SC","Microsoft YaHei",sans-serif;
+  --sans:"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"Martian Mono","SF Mono",Consolas,monospace;
+  --ground:#eef2f5; --card:#fff; --inset:#f3f6f9; --ink:#15233f; --muted:#5a6a80; --faint:#8a99ac;
+  --rule:rgba(21,35,63,.11); --rule2:rgba(21,35,63,.18); --ticket:#e6eef5;
+  --ok:#1e8a5a; --warn:#b7740a; --seal:#d3382b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);font-size:13.5px;line-height:1.55;color:var(--ink);background:var(--ground);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--mono)}
+.hidden{display:none!important}
+
+/* 后台外壳（与现有后台一致，只做示意） */
+.app{display:grid;grid-template-columns:220px 1fr;gap:16px;padding:16px;min-height:100vh}
+.side{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px 12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:750;font-size:15px;padding:0 6px 16px}
+.brand i{width:30px;height:30px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:800}
+.side h6{font-size:11px;color:var(--faint);font-weight:500;padding:12px 8px 4px}
+.side a{display:block;padding:7px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:13px}
+.side a.on{background:var(--inset);color:var(--ink);font-weight:650}
+.main{min-width:0;padding:4px 4px 60px}
+.crumb{font-size:12px;color:var(--faint)}
+h1{font-family:var(--display);font-weight:400;font-size:28px;line-height:1.2;margin-bottom:14px}
+.tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--card);border:1px solid var(--rule);margin-bottom:18px}
+.tabs button{padding:6px 13px;border-radius:7px;font-size:12.5px;color:var(--muted)}
+.tabs button.on{background:var(--ink);color:#fff;font-weight:650}
+
+/* ① 买家结账预览：一张收银小票 */
+.preview{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:22px;background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px 20px;margin-bottom:16px}
+.preview .lbl{font-size:12px;color:var(--muted);line-height:1.4}
+.preview .lbl b{display:block;font-family:var(--display);font-weight:400;font-size:20px;color:var(--ink)}
+.pms{display:flex;gap:10px;flex-wrap:wrap}
+.pm{display:flex;align-items:center;gap:10px;padding:9px 14px 9px 10px;border-radius:10px;border:1px solid var(--rule);background:var(--card);min-width:170px}
+.pm.first{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pm i{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:#fff;font-style:normal;font-weight:800;font-size:12.5px;flex:none}
+.pm b{display:block;font-size:13px}
+.pm small{display:block;font-size:11.5px;color:var(--muted)}
+.pm .via{font-size:10.5px;color:var(--faint);margin-left:auto;padding-left:8px;white-space:nowrap}
+.i-ali{background:#1677ff}.i-wx{background:#07c160}.i-usdt{background:#26a17b}.i-qq{background:#12b7f5}.i-bank{background:#c48a12}
+.preview .sum{text-align:right;font-size:12px;color:var(--muted);white-space:nowrap}
+.preview .sum b{display:block;font-family:var(--mono);font-size:20px;color:var(--ink);font-weight:600}
+.dup{grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--card));border:1px solid color-mix(in srgb,var(--warn) 30%,transparent);border-radius:9px;padding:8px 12px;margin-top:-6px}
+
+/* ② 通道列表 + 配置 */
+.desk{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+.list{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:6px;position:sticky;top:16px}
+.list h4{font-size:11.5px;color:var(--faint);font-weight:500;padding:10px 12px 6px}
+.ch{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;width:100%;text-align:left;padding:11px 12px;border-radius:10px}
+.ch:hover{background:var(--inset)}
+.ch.on{background:var(--inset);box-shadow:inset 3px 0 0 var(--ink)}
+.ch .dot{width:9px;height:9px;border-radius:50%;grid-row:span 2;box-shadow:inset 0 0 0 2px var(--rule2)}
+.ch .dot.ok{background:var(--ok);box-shadow:none}
+.ch .dot.warn{background:var(--warn);box-shadow:none}
+.ch b{font-size:13.5px}
+.ch small{font-size:11.5px;color:var(--muted);grid-column:2}
+.ch .st{font-size:11.5px;font-weight:650;grid-row:span 2}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.off{color:var(--faint);font-weight:500}
+.list .tip{font-size:11.5px;color:var(--faint);padding:10px 12px 8px;border-top:1px solid var(--rule);margin-top:6px;line-height:1.6}
+
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:14px}
+.p-head{display:flex;align-items:flex-start;gap:16px;padding:20px 24px 16px;border-bottom:1px solid var(--rule)}
+.p-head h2{font-family:var(--display);font-weight:400;font-size:26px;line-height:1.15}
+.p-head p{font-size:12.5px;color:var(--muted);margin-top:4px}
+.p-head .en{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap}
+.sw{width:38px;height:22px;border-radius:999px;background:var(--rule2);position:relative;transition:.2s;flex:none}
+.sw::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.sw.on{background:var(--ink)}.sw.on::after{left:19px}
+.state{margin:16px 24px 0;padding:10px 14px;border-radius:10px;font-size:12.5px;display:flex;gap:10px;align-items:baseline}
+.state.ok{background:color-mix(in srgb,var(--ok) 9%,var(--card));color:var(--ok)}
+.state.warn{background:color-mix(in srgb,var(--warn) 10%,var(--card));color:var(--warn)}
+.state.off{background:var(--inset);color:var(--muted)}
+.state b{font-weight:700;white-space:nowrap}
+.state span{color:var(--ink)}
+.state a{color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+
+.sec{padding:20px 24px 4px}
+.sec+.sec{border-top:1px dashed var(--rule2);margin-top:14px}
+.sec h3{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:14px;display:flex;gap:10px;align-items:baseline}
+.sec h3 small{font-weight:400;color:var(--faint)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.f label{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:6px}
+.f label small{font-weight:400;color:var(--faint)}
+.f .help{font-size:11.5px;color:var(--faint);margin-top:5px}
+.f.miss label{color:var(--warn)}
+.f.miss .in{border-color:color-mix(in srgb,var(--warn) 55%,transparent);background:color-mix(in srgb,var(--warn) 5%,var(--card))}
+.in{width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--rule);background:var(--inset);outline:none;font-size:13px}
+.in:focus{border-color:var(--ink);background:var(--card)}
+.in.mono{font-family:var(--mono);font-size:12px}
+textarea.in{min-height:76px;resize:vertical}
+.wide{grid-column:1/-1}
+/* 已保存的密钥：不再是一个空的密码框 */
+.secret{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;border-radius:9px;border:1px solid var(--rule);background:var(--inset)}
+.secret .dots{font-family:var(--mono);letter-spacing:.1em;color:var(--muted);font-size:12px}
+.secret .saved{font-size:11.5px;color:var(--ok);font-weight:600}
+.secret button{margin-left:auto;font-size:12px;font-weight:650;padding:4px 10px;border-radius:7px;border:1px solid var(--rule2);background:var(--card)}
+/* 开放的支付方式：开关块，不再手打 alipay, wxpay */
+.types{display:flex;gap:8px;flex-wrap:wrap}
+.type{display:flex;align-items:center;gap:8px;padding:8px 12px 8px 8px;border-radius:9px;border:1px solid var(--rule);background:var(--card);font-size:13px}
+.type i{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:#fff;font-style:normal;font-weight:800;font-size:11px;opacity:.35}
+.type.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);font-weight:650}
+.type.on i{opacity:1}
+.type .ck{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--rule2);margin-left:4px;display:grid;place-items:center;font-size:10px;color:#fff}
+.type.on .ck{background:var(--ink);border-color:var(--ink)}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mode{text-align:left;padding:12px 14px;border-radius:10px;border:1px solid var(--rule);background:var(--card)}
+.mode b{display:block;font-size:13px}
+.mode small{font-size:11.5px;color:var(--muted)}
+.mode.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+/* 回调地址：明确写「填到哪里」 */
+.cb{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 14px;border-radius:10px;background:var(--ticket)}
+.cb code{font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb button{font-size:12px;font-weight:650;padding:5px 12px;border-radius:7px;background:var(--ink);color:#fff;flex:none}
+.steps{list-style:none;counter-reset:s;margin-top:10px;font-size:12.5px;color:var(--muted);display:grid;gap:4px}
+.steps li{counter-increment:s;display:flex;gap:8px}
+.steps li::before{content:counter(s);font-family:var(--mono);font-size:10.5px;width:18px;height:18px;border-radius:50%;background:var(--inset);display:grid;place-items:center;flex:none;color:var(--ink)}
+.calc{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:var(--ticket);font-size:12.5px;color:var(--muted)}
+.calc b{font-family:var(--mono);color:var(--ink);font-weight:600}
+.foot{display:flex;align-items:center;gap:10px;padding:14px 24px;margin-top:18px;border-top:1px solid var(--rule);position:sticky;bottom:0;background:var(--card);border-radius:0 0 14px 14px;box-shadow:0 -10px 18px -14px rgba(21,35,63,.35)}
+.foot .dirty{font-size:12px;color:var(--warn)}
+.btn{padding:9px 18px;border-radius:9px;font-weight:650;font-size:13px;border:1px solid var(--rule2);background:var(--card)}
+.btn.ink{background:var(--ink);color:#fff;border-color:var(--ink)}
+.foot .r{margin-left:auto;display:flex;gap:8px}
+
+/* 评审用：切换演示状态 */
+.review{position:fixed;right:16px;bottom:16px;background:var(--ink);color:#fff;border-radius:12px;padding:10px 12px;font-size:12px;display:flex;gap:6px;align-items:center;z-index:9;box-shadow:0 12px 30px -12px rgba(0,0,0,.5)}
+.review button{color:#fff;opacity:.7;padding:4px 9px;border-radius:7px}
+.review button.on{background:#fff;color:var(--ink);opacity:1;font-weight:650}
+
+@media (max-width:1100px){.desk{grid-template-columns:1fr}.list{position:static}.preview{grid-template-columns:1fr}.preview .sum{text-align:left}}
+@media (max-width:760px){.app{grid-template-columns:1fr}.side{display:none}.grid2,.modes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i>C</i>CDK Console</div>
+    <a href="#">总览</a>
+    <h6>CDK</h6><a href="#">CDK 管理</a><a href="#">生成 CDK</a><a href="#">兑换记录</a><a href="#">兑换策略</a><a href="#">售价与利润</a>
+    <h6>商城</h6><a href="#">商品</a><a href="#">商城订单</a><a href="#">优惠券</a><a href="#">代理分销</a><a href="#">客户</a>
+    <h6>系统</h6><a href="#">Webhook</a><a class="on" href="#">设置</a><a href="#">主题与品牌</a>
+  </aside>
+
+  <main class="main">
+    <div class="crumb">系统</div>
+    <h1>设置</h1>
+    <div class="tabs"><button>卡台 API</button><button>兑换页</button><button>商城</button><button class="on">支付</button><button>邮件</button><button>管理员</button><button>安全</button></div>
+
+    <!-- ① 买家结账时看到的样子：随通道开关实时变化 -->
+    <section class="preview" aria-label="买家结账预览">
+      <div class="lbl"><b>买家结账时看到</b>按这个顺序排列，第一个默认选中</div>
+      <div class="pms" id="pms"></div>
+      <div class="sum" id="sum"></div>
+      <div class="dup hidden" id="dup">⚠ <span>易支付的「支付宝」和官方支付宝都开着，买家会看到两个支付宝入口。建议只留一个。</span></div>
+    </section>
+
+    <div class="desk">
+      <!-- ② 通道列表：一眼看出哪个能用、哪个缺东西 -->
+      <nav class="list" aria-label="支付通道">
+        <h4>支付通道</h4>
+        <div id="chs"></div>
+        <p class="tip">买家付款后，支付平台会通知这个地址确认到账；通知不到时系统也会主动去查单，不会漏单。</p>
+      </nav>
+
+      <!-- ③ 当前通道的配置 -->
+      <section class="panel" id="panel"></section>
+    </div>
+  </main>
+</div>
+
+<div class="review"><span>演示：</span><button data-demo="normal" class="on">日常</button><button data-demo="dup">两个支付宝</button><button data-demo="none">都没开</button></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const NOTIFY = 'https://pay.example.com/api/pay/notify/';
+/* 演示数据：易支付已配好，微信官方开了但缺 3 项，支付宝官方和 USDT 没开 */
+const CH = {
+  epay: { title: '易支付', sub: '一个商户号开支付宝、微信等', on: true, desc: '彩虹易支付等通用接口（MD5 签名）',
+    name: '在线支付', apiUrl: 'https://pay.example.com', pid: '1001', keySet: true, types: ['alipay', 'wxpay'] },
+  alipay: { title: '支付宝（官方）', sub: '开放平台 · 公钥模式 RSA2', on: false, desc: '支付宝开放平台，钱直接进你的支付宝商户号',
+    appId: '', mode: 'precreate', keySet: false, pub: '' },
+  wechat: { title: '微信支付（官方）', sub: 'APIv3 · Native 扫码', on: true, desc: '微信支付商户平台，钱直接进你的微信商户号',
+    mchId: '1600000000', appId: 'wx8888888888888888', serial: '', keySet: false, v3Set: false, pubId: '', pub: '' },
+  usdt: { title: 'USDT（TRC20）', sub: '收款地址 + 唯一金额，不需要第三方', on: false, desc: '每 15 秒查一次链上到账，按金额尾数识别订单',
+    address: '', rate: '7.2', apiKeySet: false },
+};
+const TYPES = { alipay: ['支付宝', 'i-ali', '支'], wxpay: ['微信', 'i-wx', '微'], qqpay: ['QQ 钱包', 'i-qq', 'Q'], bank: ['网银', 'i-bank', '银'] };
+/* 每个通道缺哪些必填项（真实页面由服务端判断） */
+const missing = k => {
+  const c = CH[k];
+  if (k === 'epay') return [!c.apiUrl && '接口地址', !c.pid && '商户 ID', !c.keySet && '商户密钥', !c.types.length && '至少一种支付方式'].filter(Boolean);
+  if (k === 'alipay') return [!c.appId && 'APPID', !c.keySet && '应用私钥', !c.pub && '支付宝公钥'].filter(Boolean);
+  if (k === 'wechat') return [!c.serial && '商户证书序列号', !c.keySet && '商户 API 私钥', !c.v3Set && 'APIv3 密钥'].filter(Boolean);
+  return [!c.address && '收款地址'].filter(Boolean);
+};
+const state = k => !CH[k].on ? 'off' : missing(k).length ? 'warn' : 'ok';
+let cur = 'epay';
+
+function preview() {
+  const list = [];
+  if (state('epay') === 'ok') CH.epay.types.forEach(t => list.push({ ic: TYPES[t], name: TYPES[t][0], note: CH.epay.name + ' · 跳转收银台', via: '易支付' }));
+  if (state('alipay') === 'ok') list.push({ ic: TYPES.alipay, name: '支付宝', note: CH.alipay.mode === 'precreate' ? '扫码付款' : '跳转支付宝', via: '官方' });
+  if (state('wechat') === 'ok') list.push({ ic: TYPES.wxpay, name: '微信支付', note: '扫码付款', via: '官方' });
+  if (state('usdt') === 'ok') list.push({ ic: ['USDT', 'i-usdt', '₮'], name: 'USDT', note: 'TRC20 转账', via: '链上' });
+  $('#pms').innerHTML = list.map((p, i) => `<div class="pm ${i ? '' : 'first'}"><i class="${p.ic[1]}">${p.ic[2]}</i><span><b>${p.name}</b><small>${p.note}</small></span><span class="via">${p.via}</span></div>`).join('')
+    || '<div class="pm" style="border-style:dashed;color:var(--muted)">还没有可用的支付方式，买家现在没法下单</div>';
+  const n = ['epay', 'alipay', 'wechat', 'usdt'].filter(k => state(k) === 'ok').length;
+  const w = ['epay', 'alipay', 'wechat', 'usdt'].filter(k => state(k) === 'warn').length;
+  $('#sum').innerHTML = `<b>${n} / 4</b>个通道可用${w ? `<br><span style="color:var(--warn)">${w} 个开着但没配完</span>` : ''}`;
+  $('#dup').classList.toggle('hidden', !(state('epay') === 'ok' && CH.epay.types.includes('alipay') && state('alipay') === 'ok'));
+}
+function list() {
+  $('#chs').innerHTML = Object.entries(CH).map(([k, c]) => {
+    const s = state(k), m = missing(k);
+    const label = s === 'ok' ? '可用' : s === 'warn' ? `缺 ${m.length} 项` : '未启用';
+    return `<button class="ch ${k === cur ? 'on' : ''}" data-k="${k}"><span class="dot ${s}"></span><b>${c.title}</b><span class="st ${s}">${label}</span><small>${c.sub}</small></button>`;
+  }).join('');
+  $$('.ch').forEach(b => b.onclick = () => { cur = b.dataset.k; render(); });
+}
+const field = (label, html, o = {}) => `<div class="f ${o.wide ? 'wide' : ''} ${o.miss ? 'miss' : ''}"><label>${label}${o.note ? `<small>${o.note}</small>` : ''}</label>${html}${o.help ? `<div class="help">${o.help}</div>` : ''}</div>`;
+const input = (v, o = {}) => `<input class="in ${o.mono ? 'mono' : ''}" value="${v || ''}" placeholder="${o.ph || ''}">`;
+const secret = (set, o = {}) => set
+  ? `<div class="secret"><span class="dots">••••••••••••</span><span class="saved">✓ 已保存</span><button type="button">更换</button></div>`
+  : (o.area ? `<textarea class="in mono" placeholder="${o.ph || ''}"></textarea>` : `<input class="in mono" type="password" placeholder="${o.ph || ''}">`);
+const callback = (k, where) => `<div class="sec"><h3>回调地址 <small>${where}</small></h3>
+  <div class="cb"><code>${NOTIFY}${k}</code><button type="button">复制</button></div></div>`;
+
+function panel() {
+  const k = cur, c = CH[k], s = state(k), m = missing(k);
+  const st = s === 'ok' ? `<div class="state ok"><b>✓ 可用</b><span>买家结账时能看到这个通道。</span></div>`
+    : s === 'warn' ? `<div class="state warn"><b>还差 ${m.length} 项</b><span>${m.join('、')}。填完之前买家看不到这个通道。</span></div>`
+    : `<div class="state off"><b>未启用</b><span>打开右上角的开关，填好下面的信息后买家才能用。</span></div>`;
+  const miss = n => c.on && m.includes(n);
+  let body = '';
+  if (k === 'epay') body = `
+    <div class="sec"><h3>买家看到</h3><div class="grid2">
+      ${field('显示名称', input(c.name), { help: '支付选项下面的小字，例如「在线支付」' })}
+      ${field('开放的支付方式', `<div class="types">${Object.entries(TYPES).map(([t, [n, cls, ic]]) => `<button type="button" class="type ${c.types.includes(t) ? 'on' : ''}" data-type="${t}"><i class="${cls}">${ic}</i>${n}<span class="ck">✓</span></button>`).join('')}</div>`, { wide: true, help: '只勾选你的易支付商户实际开通了的方式', miss: miss('至少一种支付方式') })}
+    </div></div>
+    <div class="sec"><h3>商户信息 <small>在易支付后台「商户信息」里找</small></h3><div class="grid2">
+      ${field('接口地址', input(c.apiUrl, { mono: true, ph: 'https://pay.example.com' }), { help: '不含 submit.php', miss: miss('接口地址') })}
+      ${field('商户 ID', input(c.pid, { mono: true }), { miss: miss('商户 ID') })}
+      ${field('商户密钥', secret(c.keySet), { wide: true, note: '加密保存', miss: miss('商户密钥') })}
+    </div></div>
+    ${callback(k, '多数易支付会自动带上，不用手填')}`;
+  if (k === 'alipay') body = `
+    <div class="sec"><h3>买家看到</h3>
+      <div class="modes">${[['precreate', '当面付（扫码）', '订单页显示二维码，手机支付宝扫一扫'], ['page', '网站支付', '跳转到支付宝收银台，电脑和手机都能用']].map(([v, t, d]) => `<button type="button" class="mode ${c.mode === v ? 'on' : ''}" data-pmode="${v}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
+    </div>
+    <div class="sec"><h3>开放平台信息 <small>open.alipay.com → 我的应用 → 开发设置</small></h3><div class="grid2">
+      ${field('APPID', input(c.appId, { mono: true, ph: '2021…' }), { miss: miss('APPID') })}
+      ${field('网关', input('https://openapi.alipay.com/gateway.do', { mono: true }), { help: '一般不用改' })}
+      ${field('应用私钥', secret(c.keySet, { area: true, ph: 'PKCS8 格式，带不带 BEGIN 行都可以' }), { wide: true, note: '加密保存', miss: miss('应用私钥') })}
+      ${field('支付宝公钥', `<textarea class="in mono" placeholder="「接口加签方式」里的支付宝公钥"></textarea>`, { wide: true, help: '注意是支付宝公钥，不是你自己的应用公钥', miss: miss('支付宝公钥') })}
+    </div></div>
+    ${callback(k, '下单时自动带上，不用在开放平台填')}`;
+  if (k === 'wechat') body = `
+    <div class="sec"><h3>买家看到</h3><p style="font-size:12.5px;color:var(--muted)">订单页显示二维码，买家用微信扫一扫付款（Native 支付）。</p></div>
+    <div class="sec"><h3>商户信息 <small>pay.weixin.qq.com → 账户中心 → API 安全</small></h3><div class="grid2">
+      ${field('商户号', input(c.mchId, { mono: true }))}
+      ${field('AppID', input(c.appId, { mono: true }), { help: '和商户号绑定的公众号或小程序' })}
+      ${field('商户证书序列号', input(c.serial, { mono: true }), { miss: miss('商户证书序列号') })}
+      ${field('APIv3 密钥', secret(c.v3Set, { ph: '32 位' }), { note: '加密保存', miss: miss('APIv3 密钥') })}
+      ${field('商户 API 私钥', secret(c.keySet, { area: true, ph: 'apiclient_key.pem 的全部内容' }), { wide: true, note: '加密保存', miss: miss('商户 API 私钥') })}
+    </div></div>
+    <div class="sec"><h3>微信支付公钥 <small>用来验证回调确实来自微信</small></h3><div class="grid2">
+      ${field('公钥 ID', input(c.pubId, { mono: true, ph: 'PUB_KEY_ID_…' }))}
+      ${field('接口地址', input('https://api.mch.weixin.qq.com', { mono: true }), { help: '一般不用改' })}
+      ${field('微信支付公钥', `<textarea class="in mono"></textarea>`, { wide: true })}
+    </div></div>
+    ${callback(k, '下单时自动带上，不用在商户平台填')}`;
+  if (k === 'usdt') body = `
+    <div class="sec"><h3>收款</h3><div class="grid2">
+      ${field('收款地址', input(c.address, { mono: true, ph: 'T 开头，34 位' }), { wide: true, help: '建议用一个只收款的独立钱包', miss: miss('收款地址') })}
+      ${field('汇率', `<div style="display:flex;align-items:center;gap:8px"><span style="white-space:nowrap;color:var(--muted)">1 USDT =</span>${input(c.rate, { mono: true })}<span style="color:var(--muted)">元</span></div>`)}
+      <div class="f wide"><label>买家看到的金额</label><div class="calc">¥100.00 的订单 → <b>13.8917 USDT</b><span style="color:var(--faint)">（尾数随机，用来识别订单）</span></div></div>
+    </div></div>
+    <div class="sec"><h3>查链服务 <small>选填</small></h3><div class="grid2">
+      ${field('TronGrid API Key', secret(c.apiKeySet, { ph: '不填也能用，订单多时建议申请' }), { note: '加密保存' })}
+      ${field('USDT 合约地址', input('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', { mono: true }), { help: '一般不用改' })}
+    </div></div>`;
+  $('#panel').innerHTML = `
+    <div class="p-head"><div><h2>${c.title}</h2><p>${c.desc}</p></div>
+      <label class="en">启用<button type="button" class="sw ${c.on ? 'on' : ''}" id="en" aria-label="启用 ${c.title}"></button></label></div>
+    ${st}${body}
+    <div class="foot"><span class="dirty" id="dirty"></span><div class="r"><button class="btn" type="button">放弃修改</button><button class="btn ink" type="button">保存</button></div></div>`;
+  $('#en').onclick = () => { c.on = !c.on; render(); };
+  $$('[data-type]').forEach(b => b.onclick = () => { const t = b.dataset.type; c.types = c.types.includes(t) ? c.types.filter(x => x !== t) : [...c.types, t]; render(); $('#dirty').textContent = '● 有未保存的修改'; });
+  $$('[data-pmode]').forEach(b => b.onclick = () => { c.mode = b.dataset.pmode; render(); $('#dirty').textContent = '● 有未保存的修改'; });
+  $$('#panel input, #panel textarea').forEach(i => i.oninput = () => { $('#dirty').textContent = '● 有未保存的修改'; });
+}
+function render() { preview(); list(); panel(); }
+$$('[data-demo]').forEach(b => b.onclick = () => {
+  $$('[data-demo]').forEach(x => x.classList.toggle('on', x === b));
+  const d = b.dataset.demo;
+  CH.epay.on = d !== 'none'; CH.wechat.on = d !== 'none';
+  Object.assign(CH.alipay, d === 'dup' ? { on: true, appId: '2021004100000000', keySet: true, pub: 'MIIB…' } : { on: false, appId: '', keySet: false, pub: '' });
+  cur = d === 'dup' ? 'alipay' : 'epay'; render();
+});
+render();
+</script>
+</body>
+</html>

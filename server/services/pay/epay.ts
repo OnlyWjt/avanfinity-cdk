@@ -21,7 +21,8 @@ export function epaySign(params: Record<string, string>, key: string) {
 export const epay: Channel = {
   key: 'epay',
   label: () => cfg().name || '在线支付',
-  enabled: () => { const c = cfg(); return c.enabled && !!c.apiUrl && !!c.pid && !!c.key; },
+  missing: () => { const c = cfg(); return ([[!!c.apiUrl, '接口地址'], [!!c.pid, '商户 ID'], [!!c.key, '商户密钥'], [!!c.types?.length, '至少一种支付方式']] as [boolean, string][]).filter(([ok]) => !ok).map(([, n]) => n); },
+  enabled: () => cfg().enabled && !epay.missing().length,
   subs: () => cfg().types.map(k => ({ key: k, label: SUB_LABEL[k] || k })),
   async create(i) {
     const c = cfg();

@@ -1,10 +1,12 @@
 /** 卡台报价目录（带短缓存）。卡台不可用时返回最近一次成功的结果 */
-import { avan, type CdkOffer, type SocialPlan, type SocialKind } from '../avan/client.ts';
+import { avan, type CdkOffer, type SocialPlan, type SocialKind, type AvanBalance } from '../avan/client.ts';
+import { permError } from '../avan/permissions.ts';
 
 interface Entry<T> { at: number; val: T }
 const cache = new Map<string, Entry<unknown>>();
 
-async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<{ val: T | null; error?: string; stale?: boolean }> {
+/** need：这个接口要的 API Key 权限，403 时报错里写明缺哪个 */
+async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>, need = ''): Promise<{ val: T | null; error?: string; stale?: boolean }> {
   const e = cache.get(key) as Entry<T> | undefined;
   if (e && Date.now() - e.at < ttlMs) return { val: e.val };
   try {
@@ -12,7 +14,7 @@ async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Prom
     cache.set(key, { at: Date.now(), val });
     return { val };
   } catch (err: any) {
-    return { val: e?.val ?? null, error: err?.message || String(err), stale: !!e };
+    return { val: e?.val ?? null, error: need ? permError(err, need) : err?.message || String(err), stale: !!e };
   }
 }
 export function invalidateCatalog() { cache.clear(); }
@@ -39,9 +41,11 @@ export function planLabel(product: string, plan: string) {
 }
 export const fullPlanLabel = (product: string, plan: string) => `${PRODUCT_NAME[product]} ${planLabel(product, plan)}`;
 
-export const gptOffers = () => cached<CdkOffer[]>('gptOffers', 60_000, () => avan.gptOffers());
-export const gptPlans = () => cached('gptPlans', 300_000, () => avan.gptPlans());
-export const socialPlans = (k: SocialKind) => cached<{ plans: SocialPlan[]; paymentsEnabled: boolean }>(`plans:${k}`, 300_000, () => avan.socialPlans(k));
+export const gptOffers = () => cached<CdkOffer[]>('gptOffers', 60_000, () => avan.gptOffers(), 'cdk:read');
+export const gptPlans = () => cached('gptPlans', 300_000, () => avan.gptPlans(), 'gpt:read');
+export const socialPlans = (k: SocialKind) => cached<{ plans: SocialPlan[]; paymentsEnabled: boolean }>(`plans:${k}`, 300_000, () => avan.socialPlans(k), `${k}-direct:read`);
+/** 卡台钱包余额（只读，30 秒缓存：后台每个页面的侧栏都会显示） */
+export const walletBalance = () => cached<AvanBalance>('balance', 30_000, () => avan.balance(), 'account:read');
 
 /** 目录里一个套餐的参考成本（USD）：预期金额 + 服务费；没开放、币种不是美元或金额格式异常时返回 null */
 export async function catalogUsd(key: string): Promise<{ usd: number; fee: number } | null> {

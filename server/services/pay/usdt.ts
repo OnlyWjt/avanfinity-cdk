@@ -30,7 +30,8 @@ export async function uniqueAmount(cents: number): Promise<number> {
 export const usdt: Channel = {
   key: 'usdt',
   label: () => 'USDT',
-  enabled: () => { const c = cfg(); return c.enabled && /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(c.address) && c.rate > 0; },
+  missing: () => { const c = cfg(); return ([[/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(c.address), c.address ? '收款地址（格式不对）' : '收款地址'], [c.rate > 0, '汇率']] as [boolean, string][]).filter(([ok]) => !ok).map(([, n]) => n); },
+  enabled: () => cfg().enabled && !usdt.missing().length,
   async create(i) {
     const c = cfg();
     return { type: 'crypto', address: c.address, amount: fmtUsdt(i.payment.crypto_amount!), network: 'TRC20' };

@@ -119,6 +119,8 @@
 <script>
 const S = { p: qs('p') || 'gpt', plan: null, qty: 10, strat: null };
 let cat, strategies, idemKey = null, dirtySocial = false;
+/** 卡台钱包余额（只读）：取不到时为 null，不影响生成 */
+let BAL = null;
 const newKey = () => { idemKey = null; };   // 参数变化后重新生成幂等键
 
 ready(async me => {
@@ -127,8 +129,8 @@ ready(async me => {
 });
 /** 首屏缓存刷新时重新取报价和策略，保留当前选择 */
 async function load() {
-  [cat, strategies] = await Promise.all([GET('/api/admin/catalog'), GET('/api/admin/strategies').then(r => r.list.filter(s => s.on))]);
-  if (cat.errors.length) $('#warn').innerHTML = `<div class="alert warn glass">⚠<span>卡台报价获取失败：${esc(cat.errors[0])}</span><a class="btn sm" href="settings.html">检查设置</a></div>`;
+  [cat, strategies, BAL] = await Promise.all([GET('/api/admin/catalog'), GET('/api/admin/strategies').then(r => r.list.filter(s => s.on)), GET('/api/admin/avan/balance').catch(() => null)]);
+  if (cat.errors.length) $('#warn').innerHTML = `<div class="alert warn glass">⚠<span>卡台报价获取失败：${cat.errors.map(esc).join('；')}</span><a class="btn sm" href="settings.html">检查设置</a></div>`;
   render();
 }
 
@@ -167,7 +169,7 @@ function render() {
       ? (dis ? `<div class="pc-cost">—</div><small>${p.credits && !own ? '需要自有码策略' : '等待卡台报价'}</small>`
         : p.credits ? `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><small>预估 · 兑换时按点数报价扣费</small>`
         : `<div class="pc-cost">${money(p.cost)}<small>/ 张</small></div><div class="meter ${p.stock < 30 ? 'low' : ''}"><i style="width:${Math.min(100, (p.stock / 400) * 100)}%"></i></div><small>平台库存 ${p.stock}</small>`)
-      : (dis ? '<div class="pc-cost">—</div><small>暂未开放</small>' : `<div class="pc-cost">${money(p.serviceFee)}<small>服务费</small></div><small>官方金额兑换时确定</small>`);
+      : (dis ? '<div class="pc-cost">—</div><small>暂未开放</small>' : (p.serviceFee == null ? '<div class="pc-cost">—<small>服务费</small></div><small class="c-warn">服务费没取到，见上方提示</small>' : `<div class="pc-cost">${money(p.serviceFee)}<small>服务费</small></div><small>官方金额兑换时确定</small>`));
     return `<button class="opt ${p.key === S.plan ? 'on' : ''}" data-k="${p.key}" ${dis ? 'disabled' : ''}><b>${name}</b>${body}</button>`;
   };
   const customOn = S.p === 'gpt' && isCr(S.plan) && !plans.find(p => p.key === S.plan);
@@ -230,13 +232,16 @@ function summary() {
   const costLabel = S.p !== 'gpt' ? '单码成本上限' : plan.credits ? '单码成本（预估）' : '单码成本';
   $('#sum').innerHTML = `<div>生成费用<b>$0.00</b></div><div>${costLabel}<b>${money(cost)}</b></div>
     ${S.p === 'gpt' ? (plan.credits ? '<div>平台库存<b>不占库存</b></div>' : `<div>平台库存<b>${plan.stock ?? '—'} 张</b></div>`) : ''}
-    <div class="tot">全部兑换${S.p === 'gpt' ? '预计' : '最多'}成本<b>${money(cost * q)}</b></div>`;
+    <div class="tot">全部兑换${S.p === 'gpt' ? '预计' : '最多'}成本<b>${money(cost * q)}</b></div>
+    ${BAL?.balance != null ? `<div>卡台可用余额<b class="${Number(BAL.balance) < cost * q ? 'c-warn' : ''}">${money(Number(BAL.balance))}</b></div>` : ''}`;
   $('#riskNote').innerHTML = bad ? `<span class="c-bad">✕ ${bad}</span>`
     : plan.credits ? 'ⓘ 点数：用户兑换时才向卡台生成点数 CDK，按当时的点数报价扣费、充值到用户账号，不改变订阅。'
     : own ? 'ⓘ 自有码：卡台码在用户兑换时才生成，买家拿不到，策略不可绕过。之后可随时再导出。'
     : S.p === 'gpt' ? 'ⓘ 托管码：系统会加密保存完整码；但买家拿到的是卡台码，可以绕过本系统直接去卡台兑换。'
     : 'ⓘ 托管码：生成时立即在卡台发行，不扣款；兑换时按上限扣款。';
   if (S.p !== 'gpt' && own && !cat.paymentConfigured) $('#riskNote').innerHTML += '<br><span class="c-warn">⚠ 还没设置付款通道，用户兑换时会失败</span>';
+  // 生成不扣钱，兑换时才扣：余额不够只提醒，不拦截
+  if (!bad && BAL?.balance != null && Number(BAL.balance) < cost * q) $('#riskNote').innerHTML += `<br><span class="c-warn">⚠ 全部兑换${S.p === 'gpt' ? '预计' : '最多'}要 ${money(cost * q)}，卡台可用余额只有 ${money(Number(BAL.balance))}。余额不够时兑换会失败，记得先充值</span>`;
   $('#go').disabled = !!bad;
   $('#go').innerHTML = `✦ 生成 ${q} 张`;
 }

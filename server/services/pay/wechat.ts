@@ -47,7 +47,8 @@ async function req(method: 'GET' | 'POST', path: string, body?: object) {
 export const wechat: Channel = {
   key: 'wechat',
   label: () => '微信支付',
-  enabled: () => { const c = cfg(); return c.enabled && !!c.mchId && !!c.appId && !!c.serialNo && !!c.privateKey && !!c.apiV3Key && !!c.publicKey; },
+  missing: () => { const c = cfg(); return ([[!!c.mchId, '商户号'], [!!c.appId, 'AppID'], [!!c.serialNo, '商户证书序列号'], [!!c.privateKey, '商户 API 私钥'], [!!c.apiV3Key, 'APIv3 密钥'], [!!c.publicKey, '微信支付公钥']] as [boolean, string][]).filter(([ok]) => !ok).map(([, n]) => n); },
+  enabled: () => cfg().enabled && !wechat.missing().length,
   async create(i) {
     const c = cfg();
     const d = await req('POST', '/v3/pay/transactions/native', {

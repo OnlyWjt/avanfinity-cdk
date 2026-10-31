@@ -10,7 +10,8 @@ import * as R from '../services/redeem.ts';
 import * as W from '../services/webhook.ts';
 import * as ST from '../services/stats.ts';
 import { getSetting, setSetting, patchSetting, avanCredentials, saveAvanCredentials, mask } from '../services/settings.ts';
-import { gptOffers, gptSalePrice, catalogUsd, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, isCredits } from '../services/catalog.ts';
+import { gptOffers, gptSalePrice, catalogUsd, socialPlans, invalidateCatalog, fullPlanLabel, planKeys, isCredits, walletBalance } from '../services/catalog.ts';
+import { checkPerms, AVAN_PERMS } from '../avan/permissions.ts';
 import { createUser } from '../services/auth.ts';
 import { encryptOpt } from '../crypto.ts';
 import { sendTelegram, dailyReportText } from '../services/notify.ts';
@@ -262,6 +263,8 @@ admin.get('/settings', requireRole('admin'), c => {
     payment: getSetting('payment'), notify: (({ tgTokenEnc, lastReportDay, ...n }) => ({ ...n, tgTokenSet: !!tgTokenEnc }))(getSetting('notify')),
     redeem: { ...r, turnstileSecretEnc: undefined, turnstileSecretSet: !!r.turnstileSecretEnc },
     server: { publicUrl: config.publicUrl, timezone: config.timezone, trustProxy: config.trustProxy },
+    // API Key 要勾选的权限：页面按这个列清单，测试连接后填上每个读权限的结果
+    avanPerms: AVAN_PERMS.map(p => ({ key: p.key, what: p.what, write: !p.check })),
   });
 });
 admin.put('/settings/avan', requireRole('admin'), async c => {
@@ -272,15 +275,21 @@ admin.put('/settings/avan', requireRole('admin'), async c => {
   await saveAvanCredentials(b); invalidateCatalog(); await audit(c, 'settings.avan', '', { baseUrl: b.baseUrl, appId: b.appId, secretChanged: !!b.appSecret });
   return c.json({ ok: true });
 });
+/* 测试连接：先确认连得上、App-Id / Secret 正确（403 说明连上了，只是缺权限），再逐个检查读权限 */
 admin.post('/settings/avan/test', requireRole('admin'), async c => {
   invalidateCatalog();
   const t0 = Date.now();
-  try {
-    const offers = await avan.gptOffers();
-    const checks: Record<string, string> = { 'cdk:read': '✓' };
-    for (const k of ['x', 'tg'] as const) checks[`${k}-direct`] = await avan.socialPlans(k).then(() => '✓', (e: AvanError) => `✕ ${e.status}`);
-    return c.json({ ok: true, ms: Date.now() - t0, offers: offers.length, checks });
-  } catch (e) { return c.json({ ok: false, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e), status: (e as AvanError).status }); }
+  try { await avan.gptOffers().catch(e => { if (!(e instanceof AvanError) || e.status !== 403) throw e; }); }
+  catch (e) { return c.json({ ok: false, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e), status: (e as AvanError).status }); }
+  const perms = await checkPerms();
+  return c.json({ ok: true, ms: Date.now() - t0, perms });
+});
+/* 卡台钱包余额（只读）：侧栏和生成页显示 */
+admin.get('/avan/balance', requireRole('operator'), async c => {
+  if (!avanCredentials().appId) return c.json({ configured: false });
+  const r = await walletBalance();
+  if (!r.val) return c.json({ configured: true, error: r.error || '查询失败' });
+  return c.json({ configured: true, balance: r.val.balance, total: r.val.totalBalance, locked: r.val.riskLockedBalance, stale: !!r.stale, error: r.error });
 });
 admin.get('/settings/products', requireRole('admin'), async c => {
   try { return c.json({ list: (await avan.products()).map((p: any) => ({ productCode: p.productCode, label: `${p.network || ''} ${p.issuingArea || ''} · 通道费 $${p.openFee ?? '?'}`.trim() })) }); }
