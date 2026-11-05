@@ -36,14 +36,11 @@ npm start
 
 首次打开 `https://你的域名/admin/` 会提示创建第一个管理员，然后：
 
-1. **设置 → 卡台 API**：填卡台地址、App-Id、App-Secret，点「测试连接」
-2. 卡台控制台里给 API Key 开权限（少一个对应的功能就用不了，「测试连接」会逐个检查读权限），并把服务器出口 IP 加入白名单：
-   - 读：`cdk:read`、`gpt:read`、`tg-direct:read`、`products:read`、`cards:read`、`account:read`（显示卡台余额）
-   - 写：`cdk:purchase`、`gpt:write`、`tg-direct:write`
-3. **Webhook**：把页面上的接收地址填到卡台控制台，把卡台给的 `whsec_…` 签名密钥填回来，点「发送自检事件」
-4. **设置 → Telegram 付款通道**：选一个卡产品（TG 兑换时卡台自动开卡付款）
-5. **兑换策略**：默认策略是自有码；按需新建，比如「淘宝渠道 · 严格」
-6. **生成 CDK**，把码发给买家
+1. **设置 → 卡台 API**：填卡台地址 `https://www.avanfinity.com`、App-Id、App-Secret，点「测试连接」（卡台那边怎么拿到这些，见下一节）
+2. **Webhook**：把卡台给的 `whsec_…` 签名密钥填进来，点「发送自检事件」
+3. **设置 → Telegram 付款通道**：选一个卡产品（TG 兑换时卡台自动开卡付款）
+4. **兑换策略**：默认策略是自有码；按需新建，比如「淘宝渠道 · 严格」
+5. **生成 CDK**，把码发给买家
 
 运维要点：
 - **MASTER_KEY 必须在 `.env` 里设置**：`PUBLIC_URL` 是 https 或 `NODE_ENV=production` 时，没设置会拒绝启动。它要和数据库备份**分开**保存
@@ -52,6 +49,31 @@ npm start
 - **健康检查**：`GET /healthz`，正常返回 `{"ok":true}`
 - **备份**：SQLite 用 `npm run backup`（在线快照，不要直接复制运行中的数据库文件）；PostgreSQL / MySQL 用 `pg_dump` / `mysqldump`。命令见 docs/deploy.md
 - **命令行建管理员 / 重置密码**：`npm run admin:create -- 邮箱 密码`（Docker：`docker compose exec app npm run admin:create -- 邮箱 密码`）
+
+## 卡台（Avanfinity）那边要做的事
+
+本系统所有开通都通过卡台 [avanfinity.com](https://www.avanfinity.com) 完成，费用从你的卡台钱包扣。第一次接入按顺序做：
+
+1. **注册登录**：[注册](https://www.avanfinity.com/register)并登录
+2. **开启 MFA**：按页面提示[绑定两步验证](https://www.avanfinity.com/mfa/setup)。没开 MFA 时，钱包、卡片、开发者密钥都是锁定的
+3. **充值钱包**：[充值](https://www.avanfinity.com/deposit)页用 USDT 充值，到账后在本系统后台侧栏能看到卡台可用余额。什么时候扣钱：
+   - GPT 订阅码：卡台生成 CDK 时按售价扣（自有码是买家兑换时才生成，托管码是生成批次时）
+   - GPT 点数、Telegram Premium：生成免费，买家兑换时按当时报价扣
+4. **创建 API 密钥**：打开[开发者](https://www.avanfinity.com/developer)页，点「创建密钥」（要求最近 5 分钟内登录过，超时就重新登录一次）：
+   - **权限（scope）**：下面全部勾上，少一个对应的功能就用不了（「测试连接」会逐个检查读权限）
+     - 读：`cdk:read`、`gpt:read`、`tg-direct:read`、`products:read`、`cards:read`、`account:read`
+     - 写：`cdk:purchase`、`gpt:write`、`tg-direct:write`
+   - **IP 白名单**：填部署本系统的服务器出口 IP（在服务器上执行 `curl -4 ifconfig.me` 查看）。生成码等写接口不在白名单内会被拒绝
+   - **Webhook URL**：给这个密钥配置 `{PUBLIC_URL}/api/webhooks/avanfinity`（本系统后台「Webhook」页可以直接复制）
+5. **保存密钥**：创建后页面显示 App-Id（`app_…`）、App Secret（`sk_…`）、Webhook Secret（`whsec_…`）。**两个 Secret 只显示一次**，马上复制下来填到本系统后台。App Secret 丢了只能删掉重建密钥，Webhook Secret 可以在开发者页轮换
+6. 回到本系统后台按上面的步骤填写、测试连接、发送自检事件
+
+常见问题：
+- **测试连接提示没有某个权限**：回卡台开发者页给这个密钥补勾对应 scope
+- **读接口正常、生成码失败**：多半是服务器出口 IP 不在白名单，或者换过服务器 / IP
+- **兑换失败提示余额不足**：去卡台充值钱包
+- **Webhook 自检收不到**：确认 `PUBLIC_URL` 是外网能访问的 https 地址，卡台里填的 Webhook URL 和后台显示的一致，签名密钥没有填错。Webhook 只是加速同步，漏掉的结果系统也会主动轮询补上
+- **密钥泄露**：立即在卡台开发者页删除或轮换，再把新密钥填回后台。App Secret 能直接动用钱包资金，只放在本系统后台，不要发给别人
 
 ## X Premium 已下线
 
