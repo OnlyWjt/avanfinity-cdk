@@ -1,10 +1,9 @@
 r"""Standard-library Cuse client. No shell interpolation and no automatic retries.
 
-from cuse_client import Cuse, CuseError
-cuse = Cuse(r'C:\work\MyAgents-Cuse\dist\cuse.exe')
-shot = cuse.snapshot(display=2)
-report = cuse.run([{'op': 'move', 'at': [200, 200]}],
-                  display=2, source=shot['frame'])
+Prefer v2 observe/act/capture using a session opened by the current binary.
+Keep returned reports and original action/capture IDs after uncertainty.
+Legacy snapshot/run/background methods remain for compatible callers; global
+run is Windows-only in current Mac-background-only builds.
 """
 import json
 import os
@@ -109,3 +108,93 @@ class Cuse:
                         report = None
                     raise CuseError('Cancelled by caller; inspect partial results.', report) from exc
             return self._decode(output, error, process.returncode)
+
+    @staticmethod
+    def _integer(value, low, high, name):
+        if type(value) is not int or not low <= value <= high:
+            raise ValueError(f'{name} must be an integer in {low}..{high}')
+        return value
+
+    def _session_call(self, command, session, *args, timeout=30, recovery=None):
+        """No retry or implicit renew/resume. Errors retain the parsed response.
+        On timeout the Host may still be working; query the original identifier.
+        """
+        session = str(Path(session).expanduser().resolve(strict=True))
+        try:
+            result = subprocess.run([self.binary, command, '--session', session, *args],
+                                    capture_output=True, encoding='utf-8', timeout=timeout,
+                                    creationflags=self.flags, check=False)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
+            raise CuseError('Transport interrupted; query the original ID. Do not replay.',
+                            {'outcome': 'unknown', 'recovery': recovery}) from exc
+        return self._decode(result.stdout, result.stderr, result.returncode)
+
+    def observe(self, session, *, scope=None, image=True, compact=True):
+        args = []
+        if not image:
+            args.append('--no-image')
+        if compact:
+            args.append('--compact')
+        if scope is not None:
+            if not isinstance(scope, str) or not scope:
+                raise ValueError('scope must be a current observed ref')
+            args += ['--scope', scope]
+        return self._session_call('observe', session, *args)
+
+    def act(self, session, *, action_id, observation_id, actions, timeout_ms=5000):
+        self._integer(timeout_ms, 100, 300000, 'timeout_ms')
+        if not isinstance(action_id, str) or not action_id or not isinstance(observation_id, str) or not observation_id:
+            raise ValueError('action_id and observation_id must come from this session')
+        if not isinstance(actions, list) or not 1 <= len(actions) <= 256:
+            raise ValueError('actions must contain 1..256 operations')
+        plan = dict(version=2, action_id=action_id, observation_id=observation_id,
+                    timeout_ms=timeout_ms, actions=actions)
+        encoded = json.dumps(plan, ensure_ascii=False, allow_nan=False)
+        if len(encoded.encode('utf-8')) > 2 * 1024 * 1024:
+            raise ValueError('plan exceeds 2 MiB')
+        # Static syntax/action validation remains the binary's single authority.
+        check = subprocess.run([self.binary, 'act', '--dry-run', '--json', encoded],
+                               capture_output=True, encoding='utf-8', timeout=10,
+                               creationflags=self.flags, check=False)
+        self._decode(check.stdout, check.stderr, check.returncode)
+        return self._session_call('act', session, '--json', encoded, '--brief',
+                                  timeout=timeout_ms / 1000 + 15,
+                                  recovery={'command': 'action-status', 'action_id': action_id})
+
+    def capture(self, session, *, capture_id, observation_id, region, dy,
+                max_pages=8, timeout_ms=120000, settle_ms=500):
+        if (not isinstance(capture_id, str) or not 1 <= len(capture_id) <= 128
+                or not all(c.isascii() and (c.isalnum() or c in '-_.') for c in capture_id)):
+            raise ValueError('capture_id must contain 1..128 ASCII letters/digits/-_.')
+        if not isinstance(observation_id, str) or not 1 <= len(observation_id) <= 512:
+            raise ValueError('observation_id must come from the current session')
+        if not isinstance(region, (tuple, list)) or len(region) != 4:
+            raise ValueError('region must be observed image-pixel XYWH')
+        for i, v in enumerate(region):
+            self._integer(v, 0 if i < 2 else 32, 2**32-1, 'region')
+        if region[0] + region[2] > 2**32-1 or region[1] + region[3] > 2**32-1:
+            raise ValueError('region overflows')
+        self._integer(dy, -10000, 10000, 'dy')
+        if not dy:
+            raise ValueError('dy must be nonzero')
+        self._integer(max_pages, 1, 32, 'max_pages')
+        self._integer(timeout_ms, 1000, 300000, 'timeout_ms')
+        self._integer(settle_ms, 100, 3000, 'settle_ms')
+        return self._session_call('capture', session, '--id', capture_id,
+            '--observation', observation_id, '--region', *map(str, region),
+            '--dy', str(dy), '--max-pages', str(max_pages), '--timeout-ms', str(timeout_ms),
+            '--settle-ms', str(settle_ms), timeout=timeout_ms / 1000 + 15,
+            recovery={'command': 'capture-status', 'capture_id': capture_id})
+
+    def capture_status(self, session, capture_id):
+        return self._session_call('capture-status', session, '--id', capture_id)
+
+    def renew(self, session, *, lease_secs=600):
+        """Explicit opt-in only. Does not resume a paused session or replay work."""
+        self._integer(lease_secs, 10, 1800, 'lease_secs')
+        path = str(Path(session).expanduser().resolve(strict=True))
+        result = subprocess.run([self.binary, 'session', 'renew', '--session', path,
+                                 '--lease-secs', str(lease_secs)], capture_output=True,
+                                encoding='utf-8', timeout=15,
+                                creationflags=self.flags, check=False)
+        return self._decode(result.stdout, result.stderr, result.returncode)

@@ -10,20 +10,25 @@ the entrypoint relative to the package root. Keep the directory structure intact
 
 Use the matching binary's absolute path. When MyAgents projects the Skill into a
 runtime-specific directory, it must supply the executable's stable absolute path
-or preserve the package's relative files. Never infer an app resource directory,
-fall through to PATH, or use an unrelated Cuse installation.
+or preserve the package's relative files. Resolve `scripts/cuse` from the package
+root, not the working directory; on Windows use `scripts/cuse.exe`. If the host
+supplies neither a usable entry nor the complete package, report it and stop.
+Never guess an app resource directory, search PATH or use another installation.
+
+Replace the example path with that absolute entry. Keep the quotes, including for
+paths with spaces. PowerShell also needs `&` to call a quoted path:
 
 ```bash
-CUSE="/absolute/path/to/cuse/scripts/cuse"
-"$CUSE" --help
-"$CUSE" readme
+"/absolute/path/to/cuse/scripts/cuse" info
 ```
 
 ```powershell
-$Cuse = 'C:\absolute\path\to\cuse\scripts\cuse.exe'
-& $Cuse --help
-& $Cuse readme
+& 'C:\absolute\path\to\cuse\scripts\cuse.exe' info
 ```
+
+The manuals show arguments such as `window list` or `readme sessions`; append
+them to the same quoted absolute entry in each call. No PATH entry or persistent
+shell variable is needed. Use `--help` and `schema` to discover supported commands.
 
 MyAgents distributes a complete bundle with its client. Its build pipeline consumes
 the public bundle feed; the running Agent does not check feeds or update binaries.
@@ -41,7 +46,7 @@ complete locally built `Cuse.app`, just as a packaged user does. A bare developm
 binary can exercise CLI/session behavior but lacks the App launch context needed
 for the badge's accessibility tree; it is not full native presentation acceptance.
 
-`cuse info` returns version, source_commit, source_dirty, target, local protocol
+`info` returns version, source_commit, source_dirty, target, local protocol
 version, build_id and compiled backends without accessing the desktop. Unknown
 source identity is null, not a clean release. build_id is a compatibility
 fingerprint, not an artifact hash or signature. Compare signed bytes with the
@@ -52,13 +57,28 @@ The independent MCP bundle uses root `cuse-mcp` with the same relative executabl
 path and metadata `args: ["mcp"]`. Its server exposes detailed references through
 `computer_use_readme`; it does not require a separate CLI Skill installation.
 
+## Policy refusals and recovery
+
+Read errors in this order, for both CLI and MCP:
+
+1. A non-null `policy` overrides `code` and permission hints for recovery.
+   `policy: "background_only"`, `reason: "foreground_disabled"` means Mac Cuse
+   refused foreground control, global input, focus or caller-hiding capture.
+   This is a Cuse capability limit, not missing OS access; `doctor --fix` cannot
+   enable it. A frontmost target returns `user_takeover` or pauses the session.
+   For an unknown policy, stop the affected Cuse operation and report it.
+2. Without `policy`, a legacy `background_only:` message identifies the same Cuse
+   capability limit. `reason` alone does not override `code`.
+3. Otherwise follow `code` and the error context. For `permission_denied`, use
+   `doctor` only when the error identifies missing OS access. An MCP session
+   ownership error requires the owning connection, not new OS permissions.
+
+Policy metadata does not erase earlier effects. If a result may have been sent,
+query its original action ID and inspect the application before further input.
+
 ## Permissions
 
-```text
-cuse doctor
-cuse doctor --deep
-cuse doctor --fix
-```
+Pass `doctor`, `doctor --deep` or `doctor --fix` to the same absolute entry.
 
 `doctor` returns JSON permission/display/desktop checks and the same build identity.
 Top-level `ok: true` and exit code 0 mean the diagnostic report was produced;

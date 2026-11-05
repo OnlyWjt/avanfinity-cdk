@@ -85,11 +85,11 @@ The following is a template: substitute the current IDs before execution.
   "actions": [{
     "op": "set_value",
     "target": {"ref": "ELEMENT_REF"},
-    "text": "Hello 世界 🧪",
+    "text": "Hello world 🧪",
     "expect": {
       "kind": "value_equals",
       "target": {"ref": "ELEMENT_REF"},
-      "value": "Hello 世界 🧪"
+      "value": "Hello world 🧪"
     }
   }]
 }
@@ -226,6 +226,19 @@ file or application outcome separately from a dispatched Save button.
 
 ## Recovery and control
 
+`policy` takes priority over `code` and permission hints. When it is
+`background_only`, `reason: "foreground_disabled"` means Cuse does not support
+the operation on Mac; permission prompts cannot enable it. For an unknown policy,
+stop the affected Cuse operation and report it.
+Without policy metadata, a legacy `background_only:` message has the same meaning;
+otherwise use the error context. Topic `setup` distinguishes OS access from
+MCP ownership failures. `reason` alone does not override `code`.
+
+Compatibility: local protocol v2 keeps `code: "permission_denied"`. Changing that
+code requires a new local protocol version, passing policy-first recovery tests
+for all supported clients, and a compatible path for clients that still use v2.
+Elapsed time or a Cuse release number alone does not end this transition.
+
 ```sh
 cuse session status --session SESSION_FILE
 cuse action-status --session SESSION_FILE --id SESSION_ID:SEQUENCE
@@ -252,7 +265,9 @@ Stop cannot withdraw messages already queued in the target App.
 - `stale_observation` / `stale_ref`: observe again and decide a new action from
   current state. Three recent native observations are retained; older refs expire.
 - `app_busy`: another operation or session owns the App. Query your session status.
-- `user_takeover` / paused: let the user finish, observe, then explicitly resume.
+- `user_takeover` / paused: background sessions require the target App in the
+  background; Windows foreground sessions require the target window frontmost.
+  Inspect current state, then explicitly resume.
 - `host_unavailable`: no request was sent; retry status to learn whether this
   session is still alive. A connection failure does not prove a restart.
 - `host_restarted` / ended: old actions are not replayed. Observe actual application
@@ -278,8 +293,8 @@ does not stop a later action. Cancellation never promises to undo delivered inpu
 
 macOS refuses foreground sessions, legacy global input and focus commands at the
 Host and worker boundaries. No command-line or environment override is provided.
-`open APP` launches in the background. A foreground target requires the user to
-switch Apps before background work; Cuse does not do that for them.
+`open APP` launches in the background. A frontmost target returns `user_takeover`
+or pauses the session.
 
 `cuse session open WINDOW --mode foreground` reserves both the App and physical desktop input. First focus the intended window explicitly with `cuse window focus WINDOW`; opening a foreground session does not activate it for you. The badge/status identifies Foreground. Mouse and keyboard actions use the user's system input, so human parallel work is for background sessions only. Leaving that App pauses the session; switching to another window of the same App is rejected before the next physical input. Ref-based semantic actions still use UIA. Coordinates remain pixels in the returned window image.
 

@@ -107,9 +107,9 @@ cuse apps
 
 On Mac, `open APP` accepts an app name, bundle ID or .app path and launches
 without requesting activation. Then select a window and open a background
-session. A frontmost target means wait for the user to leave that App; do not
-focus another app or choose foreground mode. Standalone window/UI mutations
-are refused; use session actions, including `window_prepare` for restoration.
+session. A frontmost target returns `user_takeover` or pauses the session.
+Cuse refuses foreground mode and standalone window/UI mutations on Mac;
+use session actions, including `window_prepare` for restoration.
 
 On Windows, use the process name from `apps` (e.g. `msedge`, `Notepad`) or a
 distinctive window title. `focus` checks the actual foreground window and errors

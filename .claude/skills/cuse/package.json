@@ -7,58 +7,101 @@
       "size": 11558
     },
     "SKILL.md": {
-      "sha256": "2a4ecf94af46815ba881c77025c28958edf5afe895dc6f5ef17a803ab6bfd2e6",
-      "size": 4732
+      "sha256": "ae36ace3dc3b960a36b06519ae22d5de23b94f6f1a921c584e259cd2b238fa57",
+      "size": 5759
     },
     "THIRD_PARTY_NOTICES.md": {
       "sha256": "73c6b6774b9d2f17613c02cd8de8dbadb1f2b9e33643beac81102b3c5aa5e23e",
       "size": 2792
     },
     "references/background.md": {
-      "sha256": "b76c91d690bf550f8f014c398f9652f69d8f5a67c420fffdf1d785cf27296001",
-      "size": 9811
+      "sha256": "28bf2ead86f42e24144723bebd652d46c18bbbd46e54b9ecf9d336b138445e16",
+      "size": 9605
     },
     "references/batch.md": {
-      "sha256": "75777d645ea10ec9dcd7e0ff5e80529597eae1c832954cdb60ca753d473e1115",
-      "size": 7214
+      "sha256": "a7ed80e1c4d65be95781c10d51fb44bb894f697e9662c2818fe3ef4adf6da7f4",
+      "size": 7007
     },
     "references/input.md": {
-      "sha256": "f2eb78fff3b8546257290ad8e18921d2aac822302256b9535c52981d0d578480",
-      "size": 6754
+      "sha256": "ec8efc802f0598dd09c9b2b868d19116c54be7eacf855676c801c71e810dbbae",
+      "size": 6759
     },
     "references/observation.md": {
       "sha256": "460cee8c7f20b48fa980c97ee28c0dd29fc10698777c7d4369dd41b83a4f7e46",
       "size": 5997
     },
+    "references/reading.md": {
+      "sha256": "e40ac2b582e6503c1e192182e02d73b8942ff4a88cd869a4f2a93c2eae189cf0",
+      "size": 13064
+    },
     "references/session-details.md": {
-      "sha256": "95e7dc96c82b84a4093e7e0f8400a202ff3a79f95efb296eda66c6dc06bed3be",
-      "size": 18978
+      "sha256": "c245fb2df2ce6fcde9d95efd9975d9810fe497df4d8bc51f42f06e02b0413ee9",
+      "size": 19892
     },
     "references/sessions.md": {
-      "sha256": "24dc2792f49413323317e0556e6c77ab61613e42a9bd62cc60347bcdbca2c2e2",
-      "size": 8116
+      "sha256": "34afdf22d2c8fdb5a34627c35fc25f94847e72291695306b29aa17531390406d",
+      "size": 8656
     },
     "references/setup.md": {
-      "sha256": "f7c7e7e53bf79885365d793f99425301bcbb89b5ad6185503fbad44fd5b3d897",
-      "size": 4689
+      "sha256": "e581da87d254b685e94de4b9e683ce2fa5d1052d0c6a57abef6fbab5c10f1607",
+      "size": 6317
     },
     "references/windows.md": {
-      "sha256": "32fd99f3317e222808289fa7f5422a107dcaecd2e2acf354661329473a0a53ce",
-      "size": 6797
+      "sha256": "d12e0bf5bc173fc2487e5dcd3e4f9e92f23e0bec8cd269cf26206e16003875d6",
+      "size": 6777
     },
     "scripts/cuse.exe": {
-      "sha256": "c6a7da9e8ee333807ea559569acdf768c3544cb8295c1891c49b4869919421fc",
-      "size": 7504384
+      "sha256": "a5611e95b50e598d0ae7189cbc63421463f1fe87311d8ee98023c06f0484d13b",
+      "size": 7948288
     },
     "scripts/cuse_client.py": {
-      "sha256": "a53ec47eb178fe3b2392a1ee7c6b49e36bf7b89960a958216105082311b673cf",
-      "size": 5723
+      "sha256": "a95adad82dc2fdffa164ae39ebe7dcb87ba89da90a9e23c39f2e0560599ab910",
+      "size": 11338
     }
   },
   "kind": "skill",
   "name": "cuse",
+  "native_validation": {
+    "executable_sha256": "a5611e95b50e598d0ae7189cbc63421463f1fe87311d8ee98023c06f0484d13b",
+    "platform": "windows-x64",
+    "probes": {
+      "x86_64-pc-windows-msvc": {
+        "build_id": "x86_64-pc-windows-msvc-238aa562ec2535df",
+        "compiled_backends": [
+          {
+            "name": "windows_uia",
+            "runtime_requirements": "Interactive desktop; accessible native provider and supported control pattern",
+            "scope": "native_controls"
+          },
+          {
+            "name": "windows_native_edit",
+            "runtime_requirements": "Verified Unicode Edit/RichEdit HWND ownership and UIA text selection",
+            "scope": "selection_replacement"
+          },
+          {
+            "name": "windows_foreground",
+            "runtime_requirements": "Explicitly focused target; foreground mode; allowed integrity level",
+            "scope": "physical_input"
+          },
+          {
+            "name": "windows_graphics_capture",
+            "runtime_requirements": "Supported Windows capture runtime; renderable unprotected target; fresh native frame",
+            "scope": "session_window_images"
+          }
+        ],
+        "input_policy": "background_or_explicit_foreground",
+        "local_protocol_version": 2,
+        "ok": true,
+        "source_commit": "bb243f7f1025814137e0056aa305961b846f34cf",
+        "source_dirty": false,
+        "target": "x86_64-pc-windows-msvc",
+        "version": "0.4.8"
+      }
+    },
+    "schema_version": 1
+  },
   "platform": "windows-x64",
   "schema_version": 1,
-  "source_commit": "92115c15398723e37b1235cb32001684aa0a7367",
-  "version": "0.4.1"
+  "source_commit": "bb243f7f1025814137e0056aa305961b846f34cf",
+  "version": "0.4.8"
 }

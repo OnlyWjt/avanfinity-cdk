@@ -2,14 +2,14 @@
 
 A session controls one App across calls. macOS permits background control only;
 the user works in another App. If the target is frontmost, opening refuses
-`user_takeover`; entering it later pauses the session. Wait for the user to leave
-that App and explicitly resume. Do not focus another App, request foreground
-mode, use legacy input or bypass a refusal through shell/other tools.
+`user_takeover`; entering it later pauses the session. Resume explicitly once
+the target is no longer frontmost.
 `cuse open APP` launches a Mac app in the background; list windows afterwards.
 
 Windows also supports explicit foreground mode: focus the selected window,
-then open with `--mode foreground`. This shares physical input; leaving that App
-pauses work. Background failures never change modes.
+then open with `--mode foreground`. This shares physical input; losing focus on
+that window pauses work. Resume requires it to be frontmost. Background failures
+never change modes.
 
 ## Start and observe
 
@@ -42,7 +42,7 @@ before the next ref-based action; `observation_summary` is not a control tree.
 This template needs IDs and a ref from your current session/observation:
 
 ```json
-{"version":2,"action_id":"SESSION_ID:SEQUENCE","observation_id":"OBSERVATION_ID","timeout_ms":5000,"actions":[{"op":"set_value","target":{"ref":"REF"},"text":"Hello 世界 🧪","expect":{"kind":"value_equals","target":{"ref":"REF"},"value":"Hello 世界 🧪"}}]}
+{"version":2,"action_id":"SESSION_ID:SEQUENCE","observation_id":"OBSERVATION_ID","timeout_ms":5000,"actions":[{"op":"set_value","target":{"ref":"REF"},"text":"Hello world 🧪","expect":{"kind":"value_equals","target":{"ref":"REF"},"value":"Hello world 🧪"}}]}
 ```
 
 Use status.next_sequence. `act --dry-run --file plan.json` checks syntax/bounds
@@ -99,6 +99,11 @@ of hidden/minimized windows; verified UIA semantic work may still be possible.
 
 ## Verify and recover
 
+Read `policy` before `code`. `background_only` with `foreground_disabled` means
+Cuse does not support the operation, even when `code` is `permission_denied`.
+A legacy `background_only:` message has the same meaning. Read topic `setup`
+for unknown policies, OS permission failures and MCP ownership errors.
+
 `verified` proves only the recorded state/postcondition; `dispatched` proves
 dispatch; `result_unknown` means it may have happened. An image error can follow
 a successful write. Query `action-status --session FILE --id SESSION_ID:SEQUENCE`
@@ -128,3 +133,8 @@ MCP: first read computer_use_readme, then session_open returns result.session;
 pass it to observe/act/control tools. act receives {session,plan}. Tool schemas
 supply arguments and observations include native image content. Disconnect ends
 that connection's sessions; cancellation targets the pending request only.
+
+For long lists/conversations, read `cuse readme reading`: compact snapshot paging,
+scoped native reads, bounded window collection, persistent evidence and recovery.
+Observe now reports `readability` for the target, capture, tree and lease; this
+is distinct from `doctor`'s environment checks.

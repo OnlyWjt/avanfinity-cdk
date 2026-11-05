@@ -10,7 +10,7 @@ Use `cuse batch --file plan.json`; add `--dry-run` for JSON/file validation
 without desktop initialization. It cannot validate live targets or backend key
 support. Existing single-action commands remain available.
 
-In the 0.4 candidate, CLI batch/stroke and MCP run_actions reserve desktop
+CLI batch/stroke and MCP run_actions reserve desktop
 input for one bounded operation through Cuse Host. Any active Cuse window
 session, including background sessions in different apps, conflicts and returns
 `app_busy`; finish or stop those sessions before starting a foreground batch.
@@ -69,7 +69,7 @@ Action fields (`op` plus the fields listed; no arbitrary code):
 | focus | `window`; Verified native focus, also updates the foreground guard |
 | pause | `ms:0..30000`; cancellable delay |
 | wait | `condition`, optional `timeout_ms:100..30000` (3000) |
-| ui_invoke | `target`; Windows UIA Invoke or Mac AXPress, exactly one ready match |
+| ui_invoke | `target`; Windows UIA Invoke, exactly one ready match |
 | ui_set_value | `target`, exactly one of `text` or `file`; replaces field value |
 
 UI target: `{"window":"hwnd:...","automation_id":"id"}` or exact `name`,
@@ -86,10 +86,8 @@ Batch execution is Windows-only; Mac may validate a batch with --dry-run but
 cannot execute it. Use Mac sessions or background plans instead. Incomplete
 native trees cannot prove absence or uniqueness.
 
-Use positive display IDs from displays on Mac. Windows also supports combined
-desktop 0. Clipboard ownership and native text semantics differ; read topic
-`input` when exact typing or clipboard preservation matters. Platform acceptance
-evidence belongs to the corresponding report, not a cross-platform assumption.
+Use IDs returned by `displays`; Windows display 0 selects the combined desktop.
+Read topic `input` for typing methods and clipboard preservation.
 
 JSON files accept UTF-8 with optional BOM (plan <=2 MiB, text <=1 MiB, no NUL).
 Text file paths resolve relative to the plan directory and are read before input.

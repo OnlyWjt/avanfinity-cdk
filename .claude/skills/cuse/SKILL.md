@@ -1,55 +1,51 @@
 ---
 name: cuse
 description: |
-  Computer Use（操作电脑／桌面控制）with the `cuse` CLI: screenshots, mouse,
-  keyboard, displays, and application windows. Use for native desktop apps,
-  system UI, or explicit Cuse testing when a Cuse CLI is available. If Cuse MCP
-  tools are the supplied interface, use the Cuse MCP Skill. For browser tasks,
-  prefer available dedicated browser tools or skills such as Playwright; use
-  Cuse only when none can perform the interaction, or Cuse is requested.
+  Control desktop apps with the bundled CLI at its absolute path; macOS supports background windows only.
+  For browser tasks, use only when Cuse is requested or no browser tool can perform the interaction.
 ---
 
 # Cuse — native computer use
 
-Use Cuse for native apps/system UI or explicit Cuse testing. For browser tasks,
-prefer an available dedicated browser tool when it can perform the interaction.
-Use the matching CLI; do not install or update tools during a task. A release
-bundle has `scripts/cuse` beside this Skill (`scripts/cuse.exe` on Windows).
-For a source checkout, use the supplied CLI path; its launcher is not present
-in the source tree. Use the full path; `cuse` below is shorthand for it.
+Use the interface the user requests. Otherwise, prefer connected Cuse MCP tools
+and the `cuse-mcp` Skill; use this CLI workflow when those tools are unavailable.
+For browser work, prefer a dedicated browser tool unless Cuse is requested or
+that tool cannot perform the interaction.
 
-## Choose and complete the workflow
+Use the host-supplied absolute executable path, or resolve `scripts/cuse` relative
+to this Skill's package root (`scripts/cuse.exe` on Windows). Quote the path;
+see [setup](references/setup.md) for shell examples. Do not run bare `cuse` or
+search PATH. If the entry is missing or incompatible, report the bundle problem
+and stop; do not install, update or substitute another copy during a task.
 
-**macOS is background-only.** `--mode foreground`, legacy global input and focus
-commands are refused by the executable, Host and worker. There is no override.
-Do not use another tool, AppleScript or shell input injection to bypass a refusal.
-If the target is not running, `cuse open APP` launches it in the background; then
-list its windows. Opening an app does not prove its window is ready.
+**macOS is background-only.** Cuse refuses foreground sessions, global input,
+focus and caller-hiding capture. A frontmost target returns `user_takeover`;
+entering it pauses the session. `open APP` launches in the background.
+`policy: "background_only"` is a Cuse capability limit, not missing OS access.
+Read `readme setup` for error details.
 
-**Background window sessions** keep the user's pointer and foreground App free.
-Use this for supported Mac native controls/graphics or Windows UIA controls:
+Commands below are arguments to the absolute executable path above.
 
-1. `cuse window list` — select a current, unambiguous window ID.
-   If it is already frontmost, background open will refuse `user_takeover`;
-   wait for the user to switch to another App. Never switch Apps for them or
-   try foreground commands to work around this refusal.
-2. `cuse session open WINDOW_ID` — retain `result.session_file`. If the Mac
-   window is hidden or minimized, read `readme sessions` first and add
-   `--allow-restore` only when restoring it is authorized.
-3. `cuse observe --session SESSION_FILE` — inspect image and native refs.
-4. Read `cuse readme sessions` if needed; submit a plan with
-   `cuse act --session SESSION_FILE --file plan.json` (or `--json 'JSON'`).
-   Include the observed target, action ID and supported postcondition.
-   `window_prepare` runs alone without `expect`.
-   Query the receipt after uncertainty; never blindly replay.
-   Use `act --brief` for a large control tree: it keeps action records and
-   image metadata, then call `observe` when fresh element refs are needed.
-5. Verify actual application state, then `cuse session stop --session SESSION_FILE`.
+1. `info`, then `window list` — check identity and choose an unambiguous window ID.
+2. `session open WINDOW_ID` — retain `result.session_file`.
+3. `observe --session SESSION_FILE` — inspect the image and native refs.
+4. Read `readme sessions`, then `act --session SESSION_FILE --file plan.json`.
+5. Verify the application state, then `session stop --session SESSION_FILE`.
+
+After an uncertain action, query `action-status --session SESSION_FILE --id ACTION_ID`
+and inspect the application; never blindly replay. Keep each session on its original
+interface for recovery and stop. Dispatch alone does not prove success.
+
+## Background sessions
+
+For a hidden or minimized Mac target, read `readme sessions` before opening it;
+add `--allow-restore` only when restoration is authorized. That topic also covers
+`window_prepare`, postconditions and action receipts. Use `act --brief` for a large
+control tree, then `observe` when fresh refs are needed.
 
 The user works in another App. Entering the target App pauses the session;
 resume is explicit. Other windows of the same App share state and are not a
-separate human/Agent workspace. Unsupported actions refuse; do not silently
-focus the target or switch to global input.
+separate human/Agent workspace. Cuse returns errors for unsupported actions.
 In a large dialog, `traversal_complete:false` means selectors cannot prove
 uniqueness. Use a fresh observed ref when the intended control is identifiable
 from its available role/name/automation ID and context, and has the needed
@@ -59,11 +55,12 @@ partial selector as unique.
 
 **Windows only: explicit foreground work** shares the physical desktop with the user:
 `window focus WINDOW_ID` → `session open WINDOW_ID --mode foreground`, then
-observe/act/stop as above. Coordinates still come from the session window image.
+observe/act/stop as above. The session pauses when that window loses focus;
+resume requires it to be frontmost. Coordinates come from the session image.
 
 ## Read only what you need
 
-- `<command> --help`: command syntax; `cuse schema`: generated v2 action schema.
+- `<command> --help`: command syntax; `schema`: generated v2 action schema.
 - `readme sessions`: minimal plan, result strength and recovery.
 - `readme session-details`: advanced observation, native action and lifecycle contracts.
 - `readme windows`: window controls and standalone native UI queries.
@@ -77,3 +74,25 @@ and explicit postconditions. A failed screenshot can follow a successful write;
 inspect the receipt and application before doing anything again.
 In Mac background mode, a `move` receipt may not produce Safari/WebKit hover.
 Check the resulting menu, tooltip or business state before relying on it.
+
+## Long lists and conversations
+
+Choose a verified business interface when it exposes the needed data. For desktop
+reading, inspect a small native list/row first; use current images for visual or
+mixed content. Run setup checks once and reuse them until relevant conditions
+change. Environment readiness does not prove the target window is readable.
+
+Read the `reading` manual topic before a long traversal. Start with compact
+observation and page its saved rows with `read-tree` (MCP: `read_tree`); scope a
+recognizable current ref when the native tree itself is incomplete. Bounds
+intersection is not proof of visibility. Prefer advertised native selection with
+a selected-state postcondition, then verify the opened content/title.
+
+When the current binary/schema exposes `capture`, use its explicit page/time
+budget and a region selected from the current image. It saves original pages and
+a journal, checking stability, overlap and repetition before advancing. Query
+`capture-status` (MCP: `capture_status`) after uncertainty. Saved image overlap
+never proves a message/date range complete: record business anchors and attachment
+gaps separately. Pause, takeover, changed context or failed capture preserves
+partial results. Recover from saved anchors with a fresh observation; never replay
+an uncertain scroll. Check the executable's help/schema for available commands.

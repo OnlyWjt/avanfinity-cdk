@@ -1,10 +1,9 @@
 # macOS background window plans
 
-Prefer background operation for supported Mac apps while the user works in another
-app. Never silently fall back to `focus`, global mouse/keyboard, or clipboard paste.
-If the app rejects directed input, inspect the result and report that this operation
-is unsupported in Mac background-only mode. Do not take over the foreground. Different windows of the same app still share
-keyboard focus and app state; do not edit the user's active app in background mode.
+Cuse controls supported Mac apps in the background without focus, global input
+or clipboard paste. Unsupported Cuse operations return errors.
+Different windows of the same app share keyboard focus and app state;
+user activation of that app stops the run.
 
 1. `cuse window list` (MCP: `window_list`) finds window IDs without activation.
 2. `cuse background snapshot WINDOW_ID` (MCP: `background_snapshot`) returns

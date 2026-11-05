@@ -56,9 +56,10 @@ cuse key "Return" --accessibility
 
 `auto` sends ordinary text directly and normally pastes multiline text through
 the clipboard. If clipboard text cannot be saved, auto uses direct input instead.
-`direct` avoids the clipboard. `clipboard` pastes and then restores prior text if
-the clipboard still contains Cuse's payload. On Windows, `accessibility` typing
-also uses clipboard paste; it is not UI Automation or a way around elevation.
+`direct` avoids the clipboard. `clipboard` pastes and restores prior text only
+while native ownership and the payload still match Cuse's write. On Windows,
+`accessibility` typing also uses clipboard paste; it is not UI Automation or a
+way around elevation.
 The Windows key accessibility path uses the same input events as ordinary keys.
 If typing appears ineffective, verify focus and the field's current content
 before selecting another method; do not blindly repeat the payload.
@@ -77,7 +78,7 @@ check the actual field before continuing. A restore failure returns
 `result_unknown` on both standalone and Host-managed paste paths, because input
 may already have been delivered; do not retry it blindly.
 
-The 0.4 candidate shares one clipboard cleanup path across clipboard and
+Cuse shares one clipboard cleanup path across clipboard and
 accessibility typing. Saved text plus paste text, JSON-escaped, must fit a
 256 KiB cleanup record; otherwise Cuse refuses before writing (use `direct`).
 For foreground input and batches, restoration facts stay in memory on the private pipe.
